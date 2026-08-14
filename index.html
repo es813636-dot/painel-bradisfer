@@ -867,6 +867,7 @@ async function carregarDados() {
 }
 
 const donutColors = { RUPTURA: '#e66767', BAIXO: '#199e70', EXCESSO: '#3987e5', OK: '#008300' };
+const SITUACOES = ['RUPTURA', 'BAIXO', 'EXCESSO', 'OK'];
 function hexToRgba(hex, alpha) {
   const h = hex.replace('#', '');
   const r = parseInt(h.substring(0, 2), 16), g = parseInt(h.substring(2, 4), 16), b = parseInt(h.substring(4, 6), 16);
@@ -877,6 +878,9 @@ const CHART_TOOLTIP_STYLE = {
   backgroundColor: '#1c1c21', borderColor: '#26262c', borderWidth: 1, cornerRadius: 8,
   titleColor: '#D4D4D4', bodyColor: '#D4D4D4', padding: 10, displayColors: false,
 };
+const rootStyle = getComputedStyle(document.documentElement);
+const GOLD_COLOR = rootStyle.getPropertyValue('--gold').trim();
+const GOLD_BRIGHT_COLOR = rootStyle.getPropertyValue('--gold-bright').trim();
 const badgeClass = s => ({ RUPTURA: 'badge-ruptura', BAIXO: 'badge-baixo', EXCESSO: 'badge-excesso', OK: 'badge-ok' }[s] || 'badge-ok');
 // Texto exibido pro usuário — a chave interna continua "RUPTURA" (usada
 // em comparações e filtros), só o texto na tela muda.
@@ -2076,84 +2080,88 @@ function renderizar() {
   }
 
   // ---- gráfico de barras (por marca) — Chart.js ----
+  // Só os dados (labels/values/cores) são reescritos a cada render; as
+  // options ficam fixas desde a criação e leem filtroMarca/filtroSituacao
+  // por closure. Reatribuir chart.options inteiro corrompe os "resolvers"
+  // internos do Chart.js (erro "Cannot convert object to primitive value").
   const barLabels = marcasOrdenadas.map(([m]) => m);
   const barValues = marcasOrdenadas.map(([, v]) => v);
-  const barBg = marcasOrdenadas.map(([m]) => m === filtroMarca ? getComputedStyle(document.documentElement).getPropertyValue('--gold-bright').trim() : getComputedStyle(document.documentElement).getPropertyValue('--gold').trim());
-  const barCtx = document.getElementById('bar-chart');
-  const barChartConfig = {
-    labels: barLabels,
-    datasets: [{ data: barValues, backgroundColor: barBg, borderRadius: 4, maxBarThickness: 20 }],
-  };
-  const barChartOptions = {
-    indexAxis: 'y',
-    responsive: true, maintainAspectRatio: false,
-    animation: false,
-    onClick: (evt, elements) => {
-      if (!elements.length) return;
-      const marca = barChartInstance.data.labels[elements[0].index];
-      filtroMarca = filtroMarca === marca ? '' : marca;
-      marcaExpandidaTabela = filtroMarca; // '' se desmarcou, ou a marca se marcou
-      mostrarItensNormaisMarca = false;
-      buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
-      buscaMarcaTexto = '';
-      renderizar();
-    },
-    onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
-    plugins: {
-      legend: { display: false },
-      tooltip: Object.assign({}, CHART_TOOLTIP_STYLE, { callbacks: { label: ctx => fmtMoeda(ctx.parsed.x) } }),
-    },
-    scales: {
-      x: { ticks: { color: '#8A8A8A', callback: v => fmtMoedaCompacta(v) }, grid: { color: '#26262c' } },
-      y: { ticks: { color: '#D4D4D4', font: { size: 11 } }, grid: { display: false } },
-    },
-  };
+  const barBg = marcasOrdenadas.map(([m]) => m === filtroMarca ? GOLD_BRIGHT_COLOR : GOLD_COLOR);
   if (barChartInstance) {
-    barChartInstance.data = barChartConfig;
-    barChartInstance.options = Object.assign(barChartInstance.options, barChartOptions);
+    barChartInstance.data.labels = barLabels;
+    barChartInstance.data.datasets[0].data = barValues;
+    barChartInstance.data.datasets[0].backgroundColor = barBg;
     barChartInstance.update();
   } else {
-    barChartInstance = new Chart(barCtx, { type: 'bar', data: barChartConfig, options: barChartOptions });
+    barChartInstance = new Chart(document.getElementById('bar-chart'), {
+      type: 'bar',
+      data: { labels: barLabels, datasets: [{ data: barValues, backgroundColor: barBg, borderRadius: 4, maxBarThickness: 20 }] },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        animation: false,
+        onClick: (evt, elements) => {
+          if (!elements.length) return;
+          const marca = barChartInstance.data.labels[elements[0].index];
+          filtroMarca = filtroMarca === marca ? '' : marca;
+          marcaExpandidaTabela = filtroMarca; // '' se desmarcou, ou a marca se marcou
+          mostrarItensNormaisMarca = false;
+          buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
+          buscaMarcaTexto = '';
+          renderizar();
+        },
+        onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+        plugins: {
+          legend: { display: false },
+          tooltip: Object.assign({}, CHART_TOOLTIP_STYLE, { callbacks: { label: ctx => fmtMoeda(ctx.parsed.x) } }),
+        },
+        scales: {
+          x: { ticks: { color: '#8A8A8A', callback: v => fmtMoedaCompacta(v) }, grid: { color: '#26262c' } },
+          y: { ticks: { color: '#D4D4D4', font: { size: 11 } }, grid: { display: false } },
+        },
+      },
+    });
   }
 
   // ---- donut (por situação) — Chart.js ----
-  const situKeys = Object.keys(situacaoCount);
-  const situTotalReal = Object.values(situacaoCount).reduce((a, b) => a + b, 0);
+  const situTotalReal = SITUACOES.reduce((s, k) => s + situacaoCount[k], 0);
   const donutCenterEl = document.getElementById('donut-center-n');
   if (donutCenterEl) donutCenterEl.textContent = fmtNum(situTotalReal);
 
-  const donutValues = situKeys.map(k => situacaoCount[k]);
-  const donutBg = situKeys.map(k => filtroSituacao && filtroSituacao !== k ? hexToRgba(donutColors[k], 0.35) : donutColors[k]);
-  const donutOffset = situKeys.map(k => filtroSituacao === k ? 10 : 0);
-  const donutCtx = document.getElementById('donut-chart');
-  const donutChartConfig = {
-    labels: situKeys.map(k => situacaoLabel(k)),
-    datasets: [{ data: donutValues, backgroundColor: donutBg, offset: donutOffset, borderWidth: 0, hoverOffset: 6 }],
-  };
-  const donutChartOptions = {
-    responsive: true, maintainAspectRatio: false, cutout: '68%',
-    animation: false,
-    onClick: (evt, elements) => {
-      if (!elements.length) return;
-      const s = situKeys[elements[0].index];
-      filtroSituacao = filtroSituacao === s ? '' : s;
-      renderizar();
-    },
-    onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
-    plugins: {
-      legend: { display: false },
-      tooltip: Object.assign({}, CHART_TOOLTIP_STYLE, { callbacks: { label: ctx => ctx.label + ': ' + fmtNum(ctx.parsed) } }),
-    },
-  };
+  const donutValues = SITUACOES.map(k => situacaoCount[k]);
+  const donutBg = SITUACOES.map(k => filtroSituacao && filtroSituacao !== k ? hexToRgba(donutColors[k], 0.35) : donutColors[k]);
+  const donutOffset = SITUACOES.map(k => filtroSituacao === k ? 10 : 0);
   if (donutChartInstance) {
-    donutChartInstance.data = donutChartConfig;
-    donutChartInstance.options = Object.assign(donutChartInstance.options, donutChartOptions);
+    donutChartInstance.data.datasets[0].data = donutValues;
+    donutChartInstance.data.datasets[0].backgroundColor = donutBg;
+    donutChartInstance.data.datasets[0].offset = donutOffset;
     donutChartInstance.update();
   } else {
-    donutChartInstance = new Chart(donutCtx, { type: 'doughnut', data: donutChartConfig, options: donutChartOptions });
+    donutChartInstance = new Chart(document.getElementById('donut-chart'), {
+      type: 'doughnut',
+      data: {
+        labels: SITUACOES.map(k => situacaoLabel(k)),
+        datasets: [{ data: donutValues, backgroundColor: donutBg, offset: donutOffset, borderWidth: 0, hoverOffset: 6 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '68%',
+        animation: false,
+        onClick: (evt, elements) => {
+          if (!elements.length) return;
+          const s = SITUACOES[elements[0].index];
+          filtroSituacao = filtroSituacao === s ? '' : s;
+          renderizar();
+        },
+        onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+        plugins: {
+          legend: { display: false },
+          tooltip: Object.assign({}, CHART_TOOLTIP_STYLE, { callbacks: { label: ctx => ctx.label + ': ' + fmtNum(ctx.parsed) } }),
+        },
+      },
+    });
   }
 
-  document.getElementById('donut-legend').innerHTML = situKeys.map(k =>
+  document.getElementById('donut-legend').innerHTML = SITUACOES.map(k =>
     '<div class="legend-item ' + (filtroSituacao === k ? 'active' : '') + '" data-sit="' + k + '">' +
       '<span><span class="legend-dot" style="background:' + donutColors[k] + '"></span>' + situacaoLabel(k) + '</span>' +
       '<span>' + fmtNum(situacaoCount[k]) + '</span>' +
