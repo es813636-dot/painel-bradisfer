@@ -1,0 +1,2142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bradisfer — Painel de Estoque</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep: #0b0b0d;
+    --bg-page: #0b0b0d;
+    --navy: #141414;
+    --navy-light: #141414;
+    --gold: #FFB800;
+    --gold-bright: #FFC933;
+    --gold-dark: #B88600;
+    --glass: #131316;
+    --glass-border: #26262c;
+    --glass-hover: #1c1c21;
+    --text: #D4D4D4;
+    --text-muted: #8A8A8A;
+    --text-faint: #6B6B6B;
+    /* Status quartet re-derived to clear WCAG/CVD checks against this dark
+       surface (validated with the dataviz skill's palette validator) — the
+       previous neon set failed the lightness band, and amber collided with
+       the brand gold used elsewhere for emphasis. */
+    --red-a: #e66767; --red-b: #8a3838;
+    --amber-a: #199e70; --amber-b: #0d5c42;
+    --blue-a: #3987e5; --blue-b: #1c4d8f;
+    --green-a: #008300; --green-b: #045c1f;
+    --font-display: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    --font-body: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Consolas', 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; font-family: var(--font-body); color: var(--text);
+    background: var(--bg-page);
+    min-height: 100vh;
+  }
+  ::selection { background: var(--gold); color: var(--bg-deep); }
+
+  .topbar {
+    background: var(--bg-deep);
+    border-bottom: 1px solid var(--gold);
+    color: white; padding: 14px 28px 12px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    position: sticky; top: 0; z-index: 20;
+  }
+  .topbar::before { content: none; }
+  }
+  .brand { display: flex; align-items: center; gap: 13px; }
+  .brand-mark {
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    filter: none;
+  }
+  .brand-mark img { width: 100%; height: 100%; object-fit: contain; }
+  .brand-text h1 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 700; letter-spacing: 0.2px; }
+  .brand-text p { margin: 2px 0 0; font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+  .status { display: flex; align-items: center; gap: 18px; font-size: 13px; color: var(--text-muted); }
+  .pulse-wrap { display: flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 12px; }
+  .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--green-a); animation: pulse 2s infinite; }
+  @keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.4; }
+    100% { opacity: 1; }
+  }
+  .refresh-btn {
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text);
+    padding: 7px 14px; font-size: 12px; font-family: var(--font-body); font-weight: 600;
+    cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  }
+  .refresh-btn:hover { background: var(--glass-hover); border-color: var(--gold); }
+  .refresh-btn:active { opacity: 0.8; }
+  .refresh-btn:disabled { opacity: 0.4; cursor: default; }
+
+
+  .container { max-width: none; margin: 0; padding: 22px 32px 60px; position: relative; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .kpi-card {
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px;
+    padding: 16px 18px; box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    min-width: 0; overflow: hidden;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  }
+  .kpi-card:hover { background: var(--glass-hover); border-color: #333339; transform: translateY(-1px); }
+  .kpi-card.clickable { cursor: pointer; }
+  .kpi-card.clickable.active { border-color: var(--gold); background: var(--glass-hover); box-shadow: 0 0 0 1px var(--gold); }
+  .kpi-card .label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; line-height: 1.3; }
+  .kpi-card .value {
+    font-family: var(--font-mono); font-size: 21px; font-weight: 600; color: var(--text); line-height: 1.15;
+    white-space: nowrap; cursor: default;
+  }
+
+  .kpi-card.hero { background: var(--glass); border-left: 2px solid var(--gold); }
+  .kpi-card.hero .label { color: var(--text-muted); }
+  .kpi-card.hero .value { color: var(--gold); }
+
+  .kpi-card.accent-red .value { color: var(--red-a); }
+  .kpi-card.accent-amber .value { color: var(--amber-a); }
+  .kpi-card.accent-blue .value { color: var(--blue-a); }
+  .kpi-card.accent-gold {
+    background: var(--gold); border-color: var(--gold);
+  }
+  .kpi-card.accent-gold .label { color: rgba(0,0,0,0.65); }
+  .kpi-card.accent-gold .value { color: #000; }
+
+  .panels { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 860px) { .panels { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px; padding: 18px 20px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  }
+  .panel h2 { font-family: var(--font-display); font-size: 12px; font-weight: 600; color: var(--gold); margin: 0 0 4px; letter-spacing: 0.8px; text-transform: uppercase; }
+  .panel .hint { font-size: 11px; color: var(--text-faint); margin: 0 0 14px; }
+
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; cursor: pointer; }
+  .bar-row .glabel { width: 130px; flex-shrink: 0; font-size: 11px; color: var(--text-muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-row.active .glabel { color: var(--gold-bright); font-weight: 600; }
+  .bar-track { flex: 1; height: 10px; background: #1a1a1e; overflow: hidden; border-radius: 5px; }
+  .bar-fill { height: 100%; background: var(--gold); border-radius: 5px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1), background 0.2s; }
+  .bar-row.active .bar-fill { background: var(--gold-bright); }
+  .bar-row:hover .bar-fill { filter: brightness(1.2); }
+  .bar-value { width: 92px; flex-shrink: 0; font-family: var(--font-mono); font-weight: 600; font-size: 12px; text-align: right; color: var(--text); }
+
+  .donut-wrap { display: flex; flex-direction: column; align-items: center; }
+  .donut-ring-wrap { position: relative; width: 160px; height: 160px; }
+  .donut-svg circle { transition: stroke-dasharray 0.6s cubic-bezier(0.22,1,0.36,1), opacity 0.2s, filter 0.2s; cursor: pointer; }
+  .donut-svg circle:hover { filter: brightness(1.3); }
+  .donut-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: none; text-align: center;
+  }
+  .donut-center .n { font-family: var(--font-mono); font-size: 26px; font-weight: 600; color: var(--text); line-height: 1; }
+  .donut-center .l { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+  .legend { display: flex; flex-direction: column; gap: 9px; margin-top: 18px; width: 100%; font-size: 13px; }
+  .legend-item { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 5px 8px; transition: background 0.12s; color: var(--text-muted); }
+  .legend-item:hover { background: var(--glass-hover); }
+  .legend-item.active { background: var(--glass-hover); color: var(--text); font-weight: 600; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+
+  .filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  select, input[type=search], input[type=text] {
+    padding: 8px 12px; border: 1px solid var(--glass-border); border-radius: 8px;
+    background: var(--glass); color: var(--text); font-size: 13px; font-family: var(--font-body);
+  }
+  input[type=search], input[type=text] { width: 200px; }
+  select option { background: var(--bg-page); color: var(--text); }
+  input[type=search]::placeholder, input[type=text]::placeholder { color: var(--text-faint); }
+  select:focus, input:focus { outline: 1px solid var(--gold); outline-offset: 1px; }
+  .chip { font-size: 11px; padding: 5px 12px; border: 1px solid var(--glass-border); border-radius: 999px; background: var(--glass); cursor: pointer; color: var(--text-muted); transition: all 0.15s; }
+  .chip:hover { border-color: var(--text-faint); color: var(--text); }
+  .chip.active { background: var(--gold); color: #000; border-color: var(--gold); font-weight: 700; }
+  .clear-link { font-size: 12px; color: var(--gold); cursor: pointer; text-decoration: underline; margin-left: auto; }
+
+  .autocomplete-wrap { position: relative; }
+  .autocomplete-list {
+    position: absolute; top: calc(100% + 4px); left: 0; min-width: 220px; max-width: 320px;
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 10px;
+    z-index: 30; overflow: hidden;
+    max-height: 260px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .autocomplete-item { padding: 9px 13px; font-size: 13px; color: var(--text); cursor: pointer; }
+  .autocomplete-item:hover, .autocomplete-item.destaque { background: var(--glass-hover); }
+  .autocomplete-empty { padding: 10px 13px; font-size: 12px; color: var(--text-faint); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; padding: 8px 12px; color: var(--text-faint); font-weight: 600;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--gold);
+    cursor: pointer; user-select: none; white-space: nowrap; transition: color 0.15s;
+  }
+  thead th:hover { color: var(--gold-bright); }
+  thead th .arrow { font-size: 9px; opacity: 0.6; margin-left: 3px; }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid var(--glass-border); color: var(--text); font-family: var(--font-body); font-size: 13px; }
+  tbody tr { transition: background 0.1s; }
+  tbody tr:hover { background: var(--glass-hover); }
+  tbody tr.clickable { cursor: pointer; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 50; padding: 20px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .modal-backdrop.open { opacity: 1; pointer-events: all; }
+  .modal-panel {
+    background: var(--glass);
+    border: 1px solid var(--gold); border-radius: 14px;
+    max-width: 560px; width: 100%; max-height: 85vh; overflow-y: auto;
+    padding: 24px 26px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    transform: translateY(12px); transition: transform 0.22s cubic-bezier(0.22,1,0.36,1);
+  }
+  .modal-backdrop.open .modal-panel { transform: translateY(0); }
+  .modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 6px; }
+  .modal-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: white; line-height: 1.35; }
+  .modal-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .modal-close {
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text-muted);
+    width: 28px; height: 28px; cursor: pointer; flex-shrink: 0;
+    font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  }
+  .modal-close:hover { background: var(--glass-hover); color: white; }
+
+  .mock-warning {
+    background: rgba(255,184,0,0.08); border: 1px solid var(--gold); border-radius: 8px; color: var(--gold);
+    padding: 10px 14px; font-size: 12px; margin: 16px 0; line-height: 1.5;
+  }
+
+  .modal-section { margin-top: 20px; }
+  .modal-section-title { font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal-stat { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 10px; padding: 12px 14px; }
+  .modal-stat .k { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+  .modal-stat .v { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text); }
+
+  .suggestion-box {
+    background: var(--gold); border-radius: 10px;
+    padding: 16px 18px; margin-top: 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .suggestion-box .k { font-size: 12px; color: rgba(0,0,0,0.7); font-weight: 600; }
+  .suggestion-box .v { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: #000; }
+
+  .rotina-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+  .rotina-card {
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 10px;
+    padding: 12px 14px; transition: background 0.15s, border-color 0.15s;
+  }
+  .rotina-card.clickable { cursor: pointer; }
+  .rotina-card.clickable:hover { background: var(--glass-hover); border-color: var(--gold); }
+  .rotina-card .rc-nome { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; margin-bottom: 8px; min-height: 34px; }
+  .rotina-card .rc-rodape { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+  .rotina-tipo { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-faint); }
+  .rotina-status-nao-encontrado { font-size: 11px; color: var(--text-faint); font-style: italic; }
+
+  .modal-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  .modal-table thead th {
+    text-align: left; padding: 7px 10px; color: var(--text-faint); font-weight: 600;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 1px solid var(--glass-border); cursor: default;
+  }
+  .modal-table tbody td { padding: 9px 10px; border-bottom: 1px solid var(--glass-border); color: var(--text); font-family: var(--font-body); font-size: 12.5px; }
+  .modal-table tbody tr:last-child td { border-bottom: none; }
+  .modal-table .num { text-align: right; }
+  .badge { padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; display: inline-block; text-transform: uppercase; letter-spacing: 0.3px; }
+  .badge::before { content: "● "; }
+  .badge-ruptura { background: rgba(230,103,103,0.14); color: var(--red-a); }
+  .badge-baixo { background: rgba(25,158,112,0.14); color: var(--amber-a); }
+  .badge-excesso { background: rgba(57,135,229,0.14); color: var(--blue-a); }
+  .badge-ok { background: rgba(0,131,0,0.14); color: var(--green-a); }
+  .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  .loading, .error-box { text-align: center; padding: 70px 20px; color: var(--text-muted); }
+  .error-box { color: var(--red-a); max-width: 480px; margin: 0 auto; line-height: 1.6; }
+  .spinner {
+    width: 30px; height: 30px; border: 3px solid var(--glass-border); border-top-color: var(--gold);
+    border-radius: 50%; margin: 0 auto 14px; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer { text-align: center; padding: 22px; color: var(--text-faint); font-size: 12px; font-family: var(--font-body); }
+
+  /* ==================== AJUSTES PARA CELULAR/TABLET ==================== */
+  @media (max-width: 700px) {
+    .topbar { padding: 14px 16px 12px; gap: 8px; }
+    .brand-mark { width: 32px; height: 32px; }
+    .brand-text h1 { font-size: 15px; }
+    .brand-text p { font-size: 10px; }
+    .status { gap: 10px; font-size: 11px; flex-wrap: wrap; }
+    .refresh-btn { padding: 7px 12px; font-size: 12px; }
+
+    .container { padding: 16px 12px 40px; }
+
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 1px; margin-bottom: 18px; }
+    .kpi-card { padding: 12px 14px; }
+    .kpi-card .label { font-size: 10px; margin-bottom: 6px; }
+    .kpi-card .value { font-size: 18px; }
+
+    .panel { padding: 16px; }
+    .panel h2 { font-size: 12px; }
+
+    .filters { gap: 8px; }
+    .filters > .autocomplete-wrap,
+    input[type=search], input[type=text] { width: 100%; }
+    .clear-link { margin-left: 0; }
+
+    /* Tabelas viram roláveis na horizontal em vez de espremer ou vazar da tela */
+    table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+    thead th, tbody td { padding: 9px 10px; }
+    .modal-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+
+    /* "Marcas que precisam de compra" — vira cartão em vez de rolar pro
+       lado, pra dar pra ver tudo de uma vez sem gesto nenhum. */
+    .marcas-criticas-table { display: block; overflow-x: visible; white-space: normal; width: 100%; }
+    .marcas-criticas-table thead { display: none; }
+    .marcas-criticas-table tbody { display: block; }
+    .marcas-criticas-table tbody tr {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px;
+      padding: 12px 14px; border-bottom: 1px solid var(--glass-border);
+    }
+    .marcas-criticas-table tbody tr td:first-child { grid-column: 1 / -1; }
+    .marcas-criticas-table tbody td {
+      display: flex; flex-direction: column; align-items: flex-start;
+      border: none; padding: 0; font-size: 13px; white-space: normal;
+    }
+    .marcas-criticas-table tbody td.num { align-items: flex-start; text-align: left; }
+    .marcas-criticas-table tbody td::before {
+      content: attr(data-label); color: var(--text-faint); font-size: 9px;
+      text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; font-weight: 600;
+    }
+    .marcas-criticas-table tbody td:first-child { font-size: 14px; font-weight: 600; }
+    .marcas-criticas-table tbody td:first-child::before { content: none; }
+
+    .modal-backdrop { padding: 0; align-items: flex-end; }
+    .modal-panel {
+      max-width: 100%; width: 100%; max-height: 92vh;
+      padding: 20px 16px 24px;
+    }
+    .modal-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .modal-title { font-size: 16px; }
+
+    .rotina-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+    .rotina-card { padding: 10px 12px; }
+
+    .bar-row .glabel { width: 78px; font-size: 11px; }
+    .bar-value { width: 68px; font-size: 11px; }
+
+    .donut-ring-wrap { width: 130px; height: 130px; }
+    .donut-svg { width: 130px !important; height: 130px !important; }
+
+    .suggestion-box { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .suggestion-box .v { font-size: 21px; }
+
+    /* botões de ação em pilha, ocupando a largura toda — mais fácil de tocar */
+    .panel > div[style*="display:flex"][style*="justify-content:space-between"] {
+      flex-direction: column; align-items: stretch !important;
+    }
+  }
+  @media (max-width: 420px) {
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .modal-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark"><img src="data:image/png;base64,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" alt="Bradisfer"></div>
+    <div class="brand-text">
+      <h1>Bradisfer — Painel de estoque</h1>
+      <p id="subtitle">conectando...</p>
+    </div>
+  </div>
+  <div class="status">
+    <div class="pulse-wrap"><span class="pulse"></span><span id="updated-label">carregando</span></div>
+    <button class="refresh-btn" id="refresh-btn" onclick="carregarDados()">Atualizar agora</button>
+  </div>
+</div>
+
+<div class="container" id="app">
+  <div class="loading" id="loading-state">
+    <div class="spinner"></div>
+    Buscando dados na planilha...
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal-panel" id="modal-panel"></div>
+</div>
+
+<footer>SYSEMP → GOOGLE SHEETS → PAINEL · atualização automática a cada 10 min</footer>
+
+<script>
+const SHEET_ID = '1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A';
+const SHEET_NAME = 'BaseLooker';
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(SHEET_NAME);
+const ANALISE_SHEET_NAME = 'AnaliseMinMax';
+const ANALISE_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(ANALISE_SHEET_NAME);
+// Ponte (Apps Script Web App) que busca compras/vendas reais na Sysemp,
+// um produto por vez, sob demanda (ao clicar num item).
+const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzlQJOM_53MJDm3OIuGGhtl-XDJK69ckZmqy300W0Ius7MJ4MTas7OgIuoNlfTtXSbwaw/exec';
+const AUTO_REFRESH_MS = 5 * 60 * 1000;
+
+// Marcas que não são mais compradas mas ainda aparecem no estoque —
+// ficam de fora do painel inteiro (KPIs, gráficos, tabela). Comparação
+// não diferencia maiúsculas/minúsculas nem espaços nas pontas.
+// Para voltar a incluir uma marca, é só apagar a linha correspondente.
+const MARCAS_EXCLUIDAS = [
+  'PLASTILIT',
+  'MAXI FORCE',
+  'AGATA',
+  'MINASUL',
+  'COMEP',
+  'TRIOPLAST',
+  'IV PLAST',
+  'DAMA METAIS',
+  'WORLD TINTAS',
+  'MORLAN',
+  'RIOMAR',
+  'PAULICEIA',
+  'TBR',
+  'TEKBOND',
+].map(m => m.trim().toUpperCase());
+
+let dadosCompletos = [];
+let filtroGrupo = '';
+let filtroSituacao = '';
+let filtroMarca = '';
+let buscaMarcaTexto = ''; // o que está digitado no campo de marca (pode não ter sido selecionado ainda)
+let mostrarSugestoesMarca = false;
+let buscaTexto = '';
+let ordemCol = 'valorRepor';
+let ordemDir = -1;
+let ordemColMarca = 'urgencia';
+let ordemDirMarca = -1;
+let marcaExpandidaTabela = '';
+let abaSelecionada = 'estoque'; // 'estoque' ou 'vendas'
+let mostrarItensNormaisMarca = false; // segunda seção (estoque normal/excesso) começa fechada
+let mostrarMarcasUrgentes = false; // lista de marcas com compra urgente começa fechada
+let buscaItensCriticosTexto = ''; // busca dentro da seção de itens críticos
+let buscaItensNormaisTexto = ''; // busca dentro da seção "demais itens"
+let pedidosEmAberto = new Map(); // normalizarProduto(produto) -> quantidade em aberto (soma se repetir)
+// Dados da planilha de análise (Média, Desvio, Ponto de Pedido, etc.) —
+// persiste entre atualizações. Se uma busca vier vazia ou muito menor que
+// a anterior (Google Sheets sendo editado bem na hora da consulta, por
+// exemplo), mantém os últimos dados bons em vez de perder tudo.
+let minMaxPlanilhaPersistente = new Map();
+let diaRotinaSelecionado = null; // null até carregar — definido pra "hoje" (ou SEG se hoje for fim de semana)
+
+// ----------------------------------------------------------------------
+// Rotina de Compras (ROTINA_DE_COMPRAS_BRADISFER_v2) — quais fornecedores
+// revisar em cada dia da semana, conforme o Lead Time de cada um.
+// t: 'SEMANAL' | 'QUINZENAL' | 'MENSAL' · d: dia da semana ('SEG'..'SEX')
+// s: null (semanal) | 'S1+S3'/'S2+S4' (quinzenal) | 1..4 (mensal, número da semana do mês)
+// ----------------------------------------------------------------------
+// Lead Time Total por marca (dias) — independe do produto bater ou não
+// na planilha de análise, então cobre também os casos sem match.
+// Já inclui os aliases confirmados: TD METAIS -> SV METAIS,
+// AGUIA FORCE -> AGUIA FORCE (PYRAMID).
+const LEAD_TIME_POR_MARCA = {
+  'ADELBRAS': 29,
+  'AGUIA FORCE': 271,
+  'AGUIA FORCE (PYRAMID)': 271,
+  'AKATO': 45,
+  'ALIANÇA': 51,
+  'ALLTAPE': 46,
+  'ARTBOR': 76,
+  'ASTONIA': 76,
+  'AVANT': 61,
+  'BRASFORT': 41,
+  'BRASLIDER': 46,
+  'CASTOR': 35,
+  'CHEMICOLOR': 35,
+  'CHESIQUIMICA': 61,
+  'CLARINOX': 29,
+  'COLOR&COLA': 55,
+  'COMPEL': 32,
+  'DAMA METAIS': 28,
+  'DELFLEX': 56,
+  'DEPLASTI': 45,
+  'DISFLEX': 29,
+  'DIVERSOS': 23,
+  'DIX': 23,
+  'DOAN': 23,
+  'EDUARDO EPI': 23,
+  'ELITE': 23,
+  'ETANIZ': 28,
+  'FERTAK': 28,
+  'FIOLUX': 30,
+  'FIRMEZA': 166,
+  'FORCE': 46,
+  'FOX BRASIL': 51,
+  'GARDEN': 23,
+  'GERDAU': 29,
+  'GIROCOR': 28,
+  'GOMES GARCIA': 58,
+  'GTFIX': 56,
+  'HIPERFITA': 23,
+  'IBERE': 25,
+  'ILUMI': 42,
+  'IMBAT': 37,
+  'INJEPLASTEC': 38,
+  'INJEREST': 23,
+  'INPLAST': 23,
+  'ISAC SACARIA': 32,
+  'ITAQUA': 37,
+  'IV PLAST': 23,
+  'JIMO': 46,
+  'JNG': 23,
+  'JOPACK': 23,
+  'KALIPSO': 23,
+  'KIAN': 30,
+  'KNC': 23,
+  'LINHAL': 30,
+  'LIXAS TATU': 30,
+  'LONAPACK': 23,
+  'LORENZETTI': 23,
+  'LOTUS': 23,
+  'LUCONI': 30,
+  'MAESTRO': 30,
+  'MASTIFLEX': 23,
+  'MAX FERRAMENTAS': 44,
+  'MAXI FORCE': 23,
+  'MB': 23,
+  'MEGAÓ': 23,
+  'METALOSA': 23,
+  'MINASUL': 30,
+  'MOMFORT': 23,
+  'MORIA': 46,
+  'MORLAN': 29,
+  'MULTIFIX': 46,
+  'MUNDIAL PRIME': 23,
+  'NAUTIKA': 46,
+  'NEW PALLETS': 23,
+  'NEW-FIX': 37,
+  'OAMA INDUSTRIA DE VALVULAS EIRELI': 23,
+  'OVERTIME': 46,
+  'PADO': 46,
+  'PAULICEIA': 46,
+  'PENEIRAS SÃO JORGE': 30,
+  'PILLER': 56,
+  'PLASTILIT': 23,
+  'PRATIMIX': 46,
+  'PYRAMID': 53,
+  'RAYCO': 23,
+  'RAYMA BOMBAS': 23,
+  'RIOMAR': 46,
+  'ROCO': 46,
+  'ROPER PLAST': 61,
+  'S.LOPES': 23,
+  'SAMPAFLEX': 30,
+  'SANTANA': 46,
+  'SERLONAS': 61,
+  'SOLDACAPA': 61,
+  'SOLUÇÃO': 23,
+  'SS METAIS': 35,
+  'STARFER': 23,
+  'SV METAIS': 39,
+  'SV METAIS-REPAROS': 39,
+  'TAF': 45,
+  'TBR': 23,
+  'TD METAIS': 39,
+  'TECNOPRADO': 30,
+  'TECNYL': 46,
+  'TEKBOND': 23,
+  'TERMOBRAS': 46,
+  'TINTAS JUMBO': 46,
+  'TOOLS WORLD': 23,
+  'TORALF': 23,
+  'TRAMONTINA': 29,
+  'TRAMONTINA FERRAMENTA': 38,
+  'TUBOS BRAVO': 23,
+  'UNIFIO': 61,
+  'UNIFORTTE': 46,
+  'UNIPRO': 31,
+  'UNIWELD': 46,
+  'VEDA FLON': 23,
+  'VEDATUDO': 23,
+  'VEDAX': 23,
+  'VITESSE': 23,
+  'VONDER': 20,
+  'WHILCLA': 23,
+  'WORLD TINTAS': 23,
+  'WS CORRENTES': 46
+};
+
+const ROTINA_COMPRAS = [
+  {f:'FERTAK',t:'SEMANAL',d:'SEG',s:null},
+  {f:'OAMA INDUSTRIA DE VALVULAS EIRELI',t:'SEMANAL',d:'SEG',s:null},
+  {f:'MUNDIAL PRIME',t:'SEMANAL',d:'TER',s:null},
+  {f:'VEDAX',t:'SEMANAL',d:'TER',s:null},
+  {f:'DIVERSOS',t:'SEMANAL',d:'QUA',s:null},
+  {f:'GIROCOR',t:'SEMANAL',d:'QUA',s:null},
+  {f:'INJEPLASTEC',t:'SEMANAL',d:'QUA',s:null},
+  {f:'PYRAMID',t:'SEMANAL',d:'QUA',s:null},
+  {f:'SV METAIS (OAMA ou TD METAIS)',t:'SEMANAL',d:'QUA',s:null},
+  {f:'HIPERFITA( IMPERIO HIPER)',t:'SEMANAL',d:'QUI',s:null},
+  {f:'INJEREST',t:'SEMANAL',d:'QUI',s:null},
+  {f:'RAYCO (KIAN)',t:'SEMANAL',d:'QUI',s:null},
+  {f:'SV METAIS-REPAROS (BRUNO DIAS)',t:'SEMANAL',d:'QUI',s:null},
+  {f:'TRAMONTINA (ELETRIK)',t:'SEMANAL',d:'QUI',s:null},
+  {f:'VEDATUDO (DRYKO)',t:'SEMANAL',d:'QUI',s:null},
+  {f:'ETANIZ (CHESIQUIMICA)',t:'SEMANAL',d:'SEX',s:null},
+  {f:'INPLAST',t:'SEMANAL',d:'SEX',s:null},
+  {f:'TRAMONTINA FERRAMENTA  (MULT)',t:'SEMANAL',d:'SEX',s:null},
+  {f:'ADELBRAS (CCL)',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'CASTOR',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'CLARINOX',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'COMPEL',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'DISFLEX',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'DOAN',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'FIOLUX',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'IBERE (MAXI RUBBER )',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'IMBAT',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'ITAQUA',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'LINHAL',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'LIXAS TATU',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'LUCONI',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'SAMPAFLEX',t:'QUINZENAL',d:'SEG',s:'S1+S3'},
+  {f:'CHEMICOLOR (BASTON)',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'GERDAU',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'ILUMI',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'KIAN',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'MAESTRO',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'MINASUL',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'NEW-FIX',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'PENEIRAS SÃO JORGE',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'SS METAIS',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'TAF',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'TECNOPRADO',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'UNIPRO',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'VONDER',t:'QUINZENAL',d:'QUA',s:'S2+S4'},
+  {f:'AGUIA FORCE (PYRAMID)',t:'MENSAL',d:'SEG',s:1},
+  {f:'AVANT (LPS)',t:'MENSAL',d:'SEG',s:1},
+  {f:'BRASLIDER',t:'MENSAL',d:'SEG',s:1},
+  {f:'DEPLASTI',t:'MENSAL',d:'SEG',s:1},
+  {f:'GTFIX',t:'MENSAL',d:'SEG',s:1},
+  {f:'MULTIFIX',t:'MENSAL',d:'SEG',s:1},
+  {f:'PADO',t:'MENSAL',d:'SEG',s:1},
+  {f:'SANTANA',t:'MENSAL',d:'SEG',s:1},
+  {f:'TERMOBRAS',t:'MENSAL',d:'SEG',s:1},
+  {f:'UNIFORTTE',t:'MENSAL',d:'SEG',s:1},
+  {f:'ARTBOR',t:'MENSAL',d:'TER',s:2},
+  {f:'BRASFORT (BRAFT)',t:'MENSAL',d:'TER',s:2},
+  {f:'DELFLEX',t:'MENSAL',d:'TER',s:2},
+  {f:'MORIA',t:'MENSAL',d:'TER',s:2},
+  {f:'ROPER PLAST',t:'MENSAL',d:'TER',s:2},
+  {f:'SOLDACAPA',t:'MENSAL',d:'TER',s:2},
+  {f:'ASTONIA',t:'MENSAL',d:'QUA',s:3},
+  {f:'CHESIQUIMICA',t:'MENSAL',d:'QUA',s:3},
+  {f:'FORCE',t:'MENSAL',d:'QUA',s:3},
+  {f:'JIMO',t:'MENSAL',d:'QUA',s:3},
+  {f:'NAUTIKA',t:'MENSAL',d:'QUA',s:3},
+  {f:'PILLER',t:'MENSAL',d:'QUA',s:3},
+  {f:'ROCO',t:'MENSAL',d:'QUA',s:3},
+  {f:'TECNYL',t:'MENSAL',d:'QUA',s:3},
+  {f:'WS CORRENTES',t:'MENSAL',d:'QUA',s:3},
+  {f:'AKATO',t:'MENSAL',d:'QUI',s:4},
+  {f:'ALLTAPE',t:'MENSAL',d:'QUI',s:4},
+  {f:'COLOR&COLA (PETKOV)',t:'MENSAL',d:'QUI',s:4},
+  {f:'FIRMEZA',t:'MENSAL',d:'QUI',s:4},
+  {f:'FOX BRASIL',t:'MENSAL',d:'QUI',s:4},
+  {f:'MAX FERRAMENTAS',t:'MENSAL',d:'QUI',s:4},
+  {f:'OVERTIME',t:'MENSAL',d:'QUI',s:4},
+  {f:'PRATIMIX',t:'MENSAL',d:'QUI',s:4},
+  {f:'SERLONAS',t:'MENSAL',d:'QUI',s:4},
+  {f:'UNIFIO',t:'MENSAL',d:'QUI',s:4}
+];
+
+function fmtMoeda(v) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }); }
+function fmtNum(v) { return v.toLocaleString('pt-BR'); }
+
+// Versão abreviada pros cards de KPI (evita estourar a largura do card
+// com valores grandes, tipo R$ 4.334.163 -> R$ 4,33 mi)
+function fmtMoedaCompacta(v) {
+  const abs = Math.abs(v);
+  if (abs >= 1000000) return 'R$ ' + (v / 1000000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' mi';
+  if (abs >= 1000) return 'R$ ' + (v / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' mil';
+  return fmtMoeda(v);
+}
+
+function parseNumeroBR(raw) {
+  if (raw === undefined || raw === null) return 0;
+  let s = String(raw).trim();
+  if (s === '') return 0;
+  s = s.replace(/[^0-9,.\-]/g, '');
+  if (s === '' || s === '-') return 0;
+  if (s.includes(',') && s.includes('.')) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (s.includes(',')) {
+    s = s.replace(',', '.');
+  } else if (s.includes('.')) {
+    const partes = s.split('.');
+    if (partes.length > 1 && partes[partes.length - 1].length === 3) {
+      s = s.replace(/\./g, '');
+    }
+  }
+  const num = parseFloat(s);
+  return isNaN(num) ? 0 : num;
+}
+
+function parseCSV(texto) {
+  const linhas = [];
+  let campo = '', linhaAtual = [], dentroAspas = false;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i], prox = texto[i + 1];
+    if (dentroAspas) {
+      if (c === '"' && prox === '"') { campo += '"'; i++; }
+      else if (c === '"') { dentroAspas = false; }
+      else { campo += c; }
+    } else {
+      if (c === '"') { dentroAspas = true; }
+      else if (c === ',') { linhaAtual.push(campo); campo = ''; }
+      else if (c === '\r') { /* ignora */ }
+      else if (c === '\n') { linhaAtual.push(campo); campo = ''; linhas.push(linhaAtual); linhaAtual = []; }
+      else { campo += c; }
+    }
+  }
+  if (campo !== '' || linhaAtual.length > 0) { linhaAtual.push(campo); linhas.push(linhaAtual); }
+  if (linhas.length === 0) return [];
+  const cabecalho = linhas[0];
+  return linhas.slice(1).filter(l => l.some(v => v !== '')).map(l => {
+    const obj = {};
+    cabecalho.forEach((h, idx) => { obj[h] = l[idx] !== undefined ? l[idx] : ''; });
+    return obj;
+  });
+}
+
+function animarNumero(el, valorFinal, formatador, duracaoMs) {
+  // Garante o valor certo mesmo se a página estiver em segundo plano —
+  // navegadores pausam requestAnimationFrame em abas/telas não visíveis,
+  // então sem isso o cartão fica travado em 0 até alguém focar a aba.
+  el.textContent = formatador(valorFinal);
+  ajustarFonteParaCaber(el);
+  if (document.hidden) return;
+
+  const inicio = performance.now();
+  const de = 0;
+  function passo(agora) {
+    const t = Math.min(1, (agora - inicio) / duracaoMs);
+    const ease = 1 - Math.pow(1 - t, 3);
+    el.textContent = formatador(de + (valorFinal - de) * ease);
+    ajustarFonteParaCaber(el);
+    if (t < 1) requestAnimationFrame(passo);
+  }
+  requestAnimationFrame(passo);
+}
+
+// Garante que o valor NUNCA estoure a largura do card: reduz o
+// tamanho da fonte em passos pequenos até caber, com um piso mínimo
+// legível. Roda a cada frame da animação (é uma operação barata).
+function ajustarFonteParaCaber(el) {
+  const tamanhoMax = 27, tamanhoMin = 14;
+  let tamanho = tamanhoMax;
+  el.style.fontSize = tamanho + 'px';
+  while (el.scrollWidth > el.clientWidth && tamanho > tamanhoMin) {
+    tamanho -= 1;
+    el.style.fontSize = tamanho + 'px';
+  }
+}
+
+// Espera um pouquinho depois da última tecla digitada antes de redesenhar
+// o painel inteiro — sem isso, cada letra redesenha tudo (KPIs, gráficos,
+// tabelas), o que fica pesado principalmente no celular.
+function debounce(fn, atrasoMs) {
+  let temporizador = null;
+  return function (...args) {
+    clearTimeout(temporizador);
+    temporizador = setTimeout(() => fn.apply(this, args), atrasoMs);
+  };
+}
+
+function normalizarProduto(texto) {
+  return String(texto || '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+async function carregarDados() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  btn.textContent = 'Atualizando...';
+  document.getElementById('subtitle').textContent = 'conectando...';
+
+  try {
+    const [respBase, respAnalise] = await Promise.all([
+      fetch(CSV_URL + '&t=' + Date.now()),
+      fetch(ANALISE_CSV_URL + '&t=' + Date.now()).catch(() => null), // fonte opcional — não trava o painel se falhar
+    ]);
+    if (!respBase.ok) throw new Error('HTTP ' + respBase.status);
+    const textoBase = await respBase.text();
+    const parsedData = parseCSV(textoBase);
+    const linhas = parsedData.filter(r => r['Código Barras'] && String(r['Código Barras']).trim() !== '');
+
+    // ---- fonte 2 (opcional): Mínimo/Máximo calculados na planilha de análise ----
+    const minMaxPlanilha = new Map();
+    if (respAnalise && respAnalise.ok) {
+      const textoAnalise = await respAnalise.text();
+      const linhasAnalise = parseCSV(textoAnalise);
+      linhasAnalise.forEach(r => {
+        const chave = normalizarProduto(r['Produto']);
+        const minRaw = r['Estoque Mínimo (Planilha)'];
+        const maxRaw = r['Estoque Máximo (Planilha)'];
+        const descontinuada = String(r['Descontinuada'] || '').trim().toUpperCase() === 'SIM';
+        const temMinMaxValido = !descontinuada && minRaw !== '' && maxRaw !== '' && minRaw !== undefined && maxRaw !== undefined;
+        if (chave) {
+          minMaxPlanilha.set(chave, {
+            min: temMinMaxValido ? parseNumeroBR(minRaw) : null,
+            max: temMinMaxValido ? parseNumeroBR(maxRaw) : null,
+            temMinMaxValido,
+            descontinuada,
+            mediaMensal: parseNumeroBR(r['Média Mensal']),
+            desvioPadrao: parseNumeroBR(r['Desvio Padrão']),
+            curva: r['Curva'] || '',
+            leadTimeTotal: parseNumeroBR(r['Lead Time Total']),
+            pontoPedido: r['Ponto de Pedido'] !== '' ? parseNumeroBR(r['Ponto de Pedido']) : null,
+            pedidoSugerido: r['Pedido Sugerido'] !== '' ? parseNumeroBR(r['Pedido Sugerido']) : null,
+            nivelAtendimento: parseNumeroBR(r['Nível Atendimento']),
+            constanteZ: parseNumeroBR(r['Constante Z']),
+            tempoReposicaoMeses: parseNumeroBR(r['Tempo Reposição (Meses)']),
+            loteMinimo: parseNumeroBR(r['Lote Mínimo']),
+            loteEconomico: parseNumeroBR(r['Lote Econômico']),
+            vendaMediaDia3M: parseNumeroBR(r['Venda Média Dia (3M)']),
+            estoqueSeguranca: r['Estoque de Segurança'] !== '' ? parseNumeroBR(r['Estoque de Segurança']) : null,
+          });
+        }
+      });
+    }
+
+    // Só substitui os dados persistentes se a busca trouxe algo razoável.
+    // Se veio vazia ou muito menor que a versão anterior (ex.: planilha
+    // sendo editada bem na hora da consulta automática), mantém a última
+    // versão boa em vez de fazer produtos "perderem" o match temporariamente.
+    const ehRazoavel = minMaxPlanilha.size > 0 &&
+      (minMaxPlanilhaPersistente.size === 0 || minMaxPlanilha.size >= minMaxPlanilhaPersistente.size * 0.5);
+    if (ehRazoavel) {
+      minMaxPlanilhaPersistente = minMaxPlanilha;
+    }
+
+    let qtdComOverride = 0;
+
+    dadosCompletos = linhas.map(r => {
+      const estoque = parseNumeroBR(r['Estoque Atual']);
+      const custo = parseNumeroBR(r['Custo Unitário']);
+
+      let minimo = parseNumeroBR(r['Estoque Mínimo']);
+      let maximo = parseNumeroBR(r['Estoque Máximo']);
+      let fonteMinMax = 'sysemp';
+
+      const overridePlanilha = minMaxPlanilhaPersistente.get(normalizarProduto(r['Produto']));
+      if (overridePlanilha && overridePlanilha.temMinMaxValido) {
+        minimo = overridePlanilha.min;
+        maximo = overridePlanilha.max;
+        fonteMinMax = 'planilha';
+        qtdComOverride++;
+      }
+
+      const situacao = estoque <= 0 ? 'RUPTURA' : (estoque < minimo ? 'BAIXO' : (estoque > maximo ? 'EXCESSO' : 'OK'));
+      const valorEstoque = estoque * custo;
+      const valorRepor = (situacao === 'RUPTURA' || situacao === 'BAIXO') ? Math.max(0, (minimo - estoque) * custo) : 0;
+      return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras: String(r['Código Barras'] || '').trim(), estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null };
+    });
+
+    const totalAntesExclusao = dadosCompletos.length;
+    dadosCompletos = dadosCompletos.filter(d => !MARCAS_EXCLUIDAS.includes(d.marca.trim().toUpperCase()));
+    const qtdExcluida = totalAntesExclusao - dadosCompletos.length;
+
+    document.getElementById('subtitle').textContent = fmtNum(dadosCompletos.length) + ' produtos monitorados em tempo real' +
+      (qtdExcluida > 0 ? ' · ' + fmtNum(qtdExcluida) + ' ocultos (marcas excluídas)' : '') +
+      (qtdComOverride > 0 ? ' · ' + fmtNum(qtdComOverride) + ' com mín/máx da planilha de análise' : '');
+    document.getElementById('updated-label').textContent = 'atualizado às ' + new Date().toLocaleTimeString('pt-BR');
+    renderizar();
+  } catch (err) {
+    document.getElementById('app').innerHTML =
+      '<div class="error-box">Não consegui buscar os dados agora (' + err.message + ').<br><br>' +
+      'Se este arquivo foi aberto direto do computador (duplo clique), publique-o num link real primeiro — ' +
+      'navegadores bloqueiam esse tipo de busca em páginas locais. ' +
+      'Confira também se a planilha está compartilhada como "qualquer pessoa com o link pode visualizar".</div>';
+    document.getElementById('subtitle').textContent = 'falha ao carregar';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Atualizar agora';
+  }
+}
+
+const donutColors = { RUPTURA: '#FF3B3B', BAIXO: '#FFB800', EXCESSO: '#4FA3FF', OK: '#3BFF6E' };
+const badgeClass = s => ({ RUPTURA: 'badge-ruptura', BAIXO: 'badge-baixo', EXCESSO: 'badge-excesso', OK: 'badge-ok' }[s] || 'badge-ok');
+// Texto exibido pro usuário — a chave interna continua "RUPTURA" (usada
+// em comparações e filtros), só o texto na tela muda.
+const situacaoLabel = s => (s === 'RUPTURA' ? 'ESTOQUE ZERADO' : s);
+
+
+// ----------------------------------------------------------------------
+// PAINEL DE DETALHE (dados de exemplo, até a Sysemp liberar o endpoint
+// de histórico de compras/vendas — ver Especificacao_Historico_Compras_Vendas.docx)
+// ----------------------------------------------------------------------
+function hashTexto(txt) {
+  let h = 0;
+  for (let i = 0; i < txt.length; i++) { h = ((h << 5) - h + txt.charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+
+function gerarComprasExemplo(produto) {
+  const seed = hashTexto(produto.produto + produto.marca);
+  const rnd = (min, max, offset) => min + ((seed + offset * 977) % 1000) / 1000 * (max - min);
+  const fornecedores = ['Distribuidora Central', produto.marca + ' Indústria', 'Comercial Atacado SP', 'Fornecedor Direto'];
+
+  const compras = [];
+  let diasAcumulados = Math.floor(rnd(3, 40, 0));
+  for (let i = 0; i < 5; i++) {
+    const data = new Date(Date.now() - diasAcumulados * 86400000);
+    compras.push({
+      data: data.toLocaleDateString('pt-BR'),
+      numeroNf: 100000 + ((seed + i * 3331) % 899999),
+      fornecedor: fornecedores[(seed + i) % fornecedores.length],
+      quantidade: Math.max(1, Math.round(rnd(produto.minimo * 0.6, produto.minimo * 2.2, i + 1))),
+    });
+    diasAcumulados += Math.floor(rnd(15, 60, i + 10));
+  }
+  return compras;
+}
+
+// ----------------------------------------------------------------------
+// Busca compras e vendas REAIS na Sysemp (via ponte do Apps Script),
+// um produto por vez, sob demanda — só quando o usuário clica no item.
+// ----------------------------------------------------------------------
+async function buscarComprasVendasReais(codigoBarras) {
+  const resultado = { compras: null, vendas: null, erro: null };
+  if (!codigoBarras) { resultado.erro = 'Produto sem código de barras.'; return resultado; }
+
+  // Cadeia navegador -> Apps Script -> Sysemp pode travar sem avisar —
+  // limita a espera a 15s por chamada, pra sempre cair no modo de exemplo
+  // em vez de ficar preso na tela de carregamento pra sempre.
+  // Aplicativos da Web do Apps Script têm uma sobrecarga própria de
+  // infraestrutura (redirecionamentos internos do Google) que pode levar
+  // vários segundos, mesmo quando o código em si roda rápido — por isso
+  // a margem é generosa (30s), não é sinal de código lento.
+  const TIMEOUT_MS = 30000;
+  function fetchComTimeout(url) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+  }
+
+  try {
+    const [respCompras, respVendas] = await Promise.all([
+      fetchComTimeout(WEBAPP_URL + '?codBarra=' + encodeURIComponent(codigoBarras) + '&tipo=compras'),
+      fetchComTimeout(WEBAPP_URL + '?codBarra=' + encodeURIComponent(codigoBarras) + '&tipo=vendas'),
+    ]);
+    const jsonCompras = await respCompras.json();
+    const jsonVendas = await respVendas.json();
+
+    if (jsonCompras.ok && jsonCompras.dados && jsonCompras.dados.retorno && jsonCompras.dados.retorno[0]) {
+      const itemCompras = jsonCompras.dados.retorno[0];
+      resultado.compras = (itemCompras.ultimas_compras || []).map(c => ({
+        data: c['Data da Compra'] ? new Date(c['Data da Compra'] + 'T00:00:00').toLocaleDateString('pt-BR') : '—',
+        numeroNf: c['Número NF'] || '—',
+        fornecedor: c['Fornecedor'] || '—',
+        quantidade: parseFloat(c['Quantidade Comprada']) || 0,
+        custo: parseFloat(c['Custo Unitário']) || 0,
+      }));
+    }
+
+    if (jsonVendas.ok && jsonVendas.dados && jsonVendas.dados.retorno && jsonVendas.dados.retorno[0]) {
+      const itemVendas = jsonVendas.dados.retorno[0];
+      resultado.vendas = {
+        mediaMensal12M: parseFloat(itemVendas['Média Mensal 12 Meses']) || 0,
+        totalVendido12M: parseFloat(itemVendas['Total vendido 12 Meses']) || 0,
+        dataUltimaVenda: itemVendas['Data Última Venda'] ? new Date(itemVendas['Data Última Venda'] + 'T00:00:00').toLocaleDateString('pt-BR') : '—',
+        qtdUltimaVenda: parseFloat(itemVendas['Quantidade Última Venda']) || 0,
+      };
+    }
+
+    if (!resultado.compras && !resultado.vendas) {
+      resultado.erro = 'Sysemp não retornou dados para este produto.';
+    }
+  } catch (err) {
+    resultado.erro = err.name === 'AbortError'
+      ? 'A Sysemp demorou demais para responder (mais de 30s).'
+      : 'Falha ao buscar dados reais (' + err.message + ').';
+  }
+
+  return resultado;
+}
+
+// Calcula o Pedido Sugerido usando o estoque e pedidos em aberto AO VIVO
+// (não o valor estático que veio junto com a planilha de análise) — usada
+// tanto no painel de detalhe quanto na geração do arquivo pro Sysemp, pra
+// nunca mostrar números diferentes em lugares diferentes do painel.
+// Ponto de Pedido/Estoque de Segurança/Lote continuam vindo da planilha
+// (não dependem do estoque do momento, só a Necessidade depende).
+// Extrai o múltiplo de compra do NOME do produto — a Sysemp/fornecedor
+// costuma colocar entre parênteses no final, ex.: "...BRASFORT (6)" =
+// só pode comprar em múltiplos de 6. É o dado mais confiável que existe
+// (vem direto da embalagem do fornecedor), então essa regra vale sempre,
+// mesmo quando a planilha Excel tiver um Lote Mínimo diferente cadastrado.
+function extrairLoteDoNome(nomeProduto) {
+  // Procura "(N)" em QUALQUER lugar do nome — a Sysemp às vezes coloca no
+  // final ("...BRASFORT (6)"), às vezes no meio ("...LATÃO (20) REF:...
+  // - TAF"). Pega a primeira ocorrência de um número puro entre parênteses.
+  const match = String(nomeProduto || '').match(/\((\d+)\)/);
+  if (!match) return null;
+  const lote = parseInt(match[1], 10);
+  return lote > 0 ? lote : null;
+}
+
+// Arredonda uma quantidade sugerida PRA CIMA, pro múltiplo do lote do
+// produto (se o nome tiver um). Não mexe em quantidade 0 (nada a comprar
+// continua sendo nada a comprar).
+function ajustarParaLoteDoNome(quantidade, produto) {
+  if (!quantidade || quantidade <= 0) return quantidade;
+  const lote = extrairLoteDoNome(produto.produto);
+  if (!lote) return quantidade;
+  return Math.ceil(quantidade / lote) * lote;
+}
+
+function calcularPedidoSugeridoAoVivo(produto) {
+  const an = produto.analise;
+  if (!an || an.descontinuada || an.pontoPedido == null || an.estoqueSeguranca == null) return null;
+  const emAbertoAoVivo = pedidosEmAberto.get(normalizarProduto(produto.produto)) || 0;
+  const pedidoCalculado = an.pontoPedido - an.estoqueSeguranca;
+  const estoqueConsolidadoAoVivo = produto.estoque + emAbertoAoVivo;
+  const necessidadeAoVivo = Math.max(0, an.pontoPedido - estoqueConsolidadoAoVivo + pedidoCalculado);
+  if (necessidadeAoVivo === 0) return 0;
+  const adicionaisAoVivo = necessidadeAoVivo < an.loteMinimo ? 0 : Math.ceil((necessidadeAoVivo - an.loteMinimo) / an.loteEconomico) * an.loteEconomico;
+  return ajustarParaLoteDoNome(an.loteMinimo + adicionaisAoVivo, produto);
+}
+
+async function abrirDetalheProduto(produto) {
+  const painel = document.getElementById('modal-panel');
+
+  // Mostra o modal já, com uma tela de carregamento — a busca na Sysemp
+  // passa pelo Google e pode levar um segundo ou dois.
+  painel.innerHTML =
+    '<div class="modal-header">' +
+      '<div><div class="modal-title">' + produto.produto + '</div>' +
+      '<div class="modal-sub">' + produto.marca + ' · ' + produto.grupo + '</div></div>' +
+      '<button class="modal-close" id="modal-close-btn">✕</button>' +
+    '</div>' +
+    '<div class="loading" style="padding:40px 20px;"><div class="spinner"></div>Buscando compras e vendas na Sysemp...</div>';
+  document.getElementById('modal-close-btn').addEventListener('click', fecharDetalheProduto);
+  document.getElementById('modal-backdrop').classList.add('open');
+
+  const dadosReais = await buscarComprasVendasReais(produto.codigoBarras);
+
+  montarConteudoModal(produto, dadosReais);
+}
+
+function montarConteudoModal(produto, dadosReais) {
+  const painel = document.getElementById('modal-panel');
+  const an = produto.analise; // dados reais da planilha de análise (Média, Desvio, Ponto de Pedido, Pedido Sugerido), quando disponível
+
+  // ---- Últimas compras: real (Sysemp) quando disponível, senão exemplo ----
+  let blocoCompras;
+  if (dadosReais.compras && dadosReais.compras.length > 0) {
+    blocoCompras =
+      '<div class="modal-section">' +
+        '<div class="modal-section-title">Últimas compras <span style="color:var(--green-a);font-size:11px;font-weight:600;">● AO VIVO — SYSEMP</span></div>' +
+        '<table class="modal-table"><thead><tr><th>Data</th><th>NF</th><th>Fornecedor</th><th class="num">Qtd</th><th class="num">Custo</th></tr></thead><tbody>' +
+          dadosReais.compras.map(c =>
+            '<tr><td>' + c.data + '</td><td>Nº ' + c.numeroNf + '</td><td>' + c.fornecedor + '</td><td class="num">' + fmtNum(c.quantidade) + '</td><td class="num">' + fmtMoeda(c.custo) + '</td></tr>'
+          ).join('') +
+        '</tbody></table>' +
+      '</div>';
+  } else if (dadosReais.compras && dadosReais.compras.length === 0) {
+    blocoCompras =
+      '<div class="modal-section">' +
+        '<div class="modal-section-title">Últimas compras <span style="color:var(--green-a);font-size:11px;font-weight:600;">● AO VIVO — SYSEMP</span></div>' +
+        '<p class="hint" style="margin:0;">Nenhuma compra registrada para este produto na Sysemp.</p>' +
+      '</div>';
+  } else {
+    const comprasExemplo = gerarComprasExemplo(produto);
+    blocoCompras =
+      '<div class="modal-section">' +
+        '<div class="modal-section-title">Últimas 5 compras</div>' +
+        '<div class="mock-warning" style="margin-bottom:10px;">⚠️ ' + (dadosReais.erro || 'Não consegui buscar os dados reais agora') + ' — mostrando dados de exemplo.</div>' +
+        '<table class="modal-table"><thead><tr><th>Data</th><th>NF</th><th>Fornecedor</th><th class="num">Qtd</th></tr></thead><tbody>' +
+          comprasExemplo.map(c =>
+            '<tr><td>' + c.data + '</td><td>Nº ' + c.numeroNf + '</td><td>' + c.fornecedor + '</td><td class="num">' + fmtNum(c.quantidade) + '</td></tr>'
+          ).join('') +
+        '</tbody></table>' +
+      '</div>';
+  }
+
+  // ---- Vendas ao vivo (Sysemp), quando disponível ----
+  let blocoVendasAoVivo = '';
+  if (dadosReais.vendas) {
+    const v = dadosReais.vendas;
+    blocoVendasAoVivo =
+      '<div class="modal-section">' +
+        '<div class="modal-section-title">Vendas <span style="color:var(--green-a);font-size:11px;font-weight:600;">● AO VIVO — SYSEMP (12 meses)</span></div>' +
+        '<div class="modal-grid">' +
+          '<div class="modal-stat"><div class="k">Média mensal (12M)</div><div class="v">' + v.mediaMensal12M.toFixed(1) + ' un/mês</div></div>' +
+          '<div class="modal-stat"><div class="k">Total vendido (12M)</div><div class="v">' + fmtNum(Math.round(v.totalVendido12M)) + ' un</div></div>' +
+          '<div class="modal-stat"><div class="k">Última venda</div><div class="v">' + v.dataUltimaVenda + '</div></div>' +
+          '<div class="modal-stat"><div class="k">Qtd. última venda</div><div class="v">' + fmtNum(Math.round(v.qtdUltimaVenda)) + ' un</div></div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  let blocoVendas, blocoSugestao, blocoDetalhes = '';
+
+  if (an && !an.descontinuada) {
+    // Recalcula o Pedido Sugerido com o estoque ATUAL (ao vivo), em vez de
+    // usar o valor fixo que veio da planilha (calculado com o estoque de
+    // quando a planilha foi processada) — evita ficar desatualizado se o
+    // estoque mudou desde então. Mesma função usada no botão "Gerar
+    // pedido", pra nunca mostrar números diferentes em lugares diferentes.
+    const pedidoSugeridoAoVivo = calcularPedidoSugeridoAoVivo(produto);
+
+    blocoVendas =
+      '<div class="modal-section">' +
+        '<div class="modal-section-title">Vendas (calculado — 14 meses de histórico)</div>' +
+        '<div class="modal-grid">' +
+          '<div class="modal-stat"><div class="k">Média mensal</div><div class="v">' + fmtNum(Math.round(an.mediaMensal)) + ' un/mês</div></div>' +
+          '<div class="modal-stat"><div class="k">Desvio padrão</div><div class="v">' + fmtNum(Math.round(an.desvioPadrao)) + '</div></div>' +
+          '<div class="modal-stat"><div class="k">Curva ABC</div><div class="v">' + an.curva + '</div></div>' +
+          '<div class="modal-stat"><div class="k">Lead time total</div><div class="v">' + fmtNum(an.leadTimeTotal) + ' dias</div></div>' +
+        '</div>' +
+      '</div>';
+    blocoSugestao =
+      '<div class="suggestion-box">' +
+        '<span class="k">PEDIDO SUGERIDO<br>(ponto de pedido: ' + fmtNum(Math.round(an.pontoPedido)) + ' · recalculado com estoque ao vivo)</span>' +
+        '<span class="v">' + fmtNum(pedidoSugeridoAoVivo) + ' un</span>' +
+      '</div>';
+
+    // ---- Detalhes do cálculo (todos os campos da planilha de análise) ----
+    const diasEstoque = an.vendaMediaDia3M > 0 ? produto.estoque / an.vendaMediaDia3M : null;
+    const coberturaLoteMinimoMeses = an.mediaMensal > 0 ? an.loteMinimo / an.mediaMensal : null;
+    const diasAlemLT = diasEstoque !== null ? diasEstoque - an.leadTimeTotal : null;
+    blocoDetalhes =
+      '<div class="modal-section">' +
+        '<div class="modal-section-title">Detalhes do cálculo</div>' +
+        '<div class="modal-grid">' +
+          '<div class="modal-stat"><div class="k">Nível de atendimento</div><div class="v">' + fmtNum(Math.round(an.nivelAtendimento * 100)) + '%</div></div>' +
+          '<div class="modal-stat"><div class="k">Constante (Z)</div><div class="v">' + an.constanteZ.toFixed(2) + '</div></div>' +
+          '<div class="modal-stat"><div class="k">Estoque de segurança</div><div class="v">' + fmtNum(an.estoqueSeguranca) + ' un</div></div>' +
+          '<div class="modal-stat"><div class="k">Tempo de reposição</div><div class="v">' + an.tempoReposicaoMeses.toFixed(2) + ' meses</div></div>' +
+          '<div class="modal-stat"><div class="k">Lote mínimo</div><div class="v">' + fmtNum(an.loteMinimo) + ' un</div></div>' +
+          '<div class="modal-stat"><div class="k">Cobertura do lote mínimo</div><div class="v">' + (coberturaLoteMinimoMeses !== null ? coberturaLoteMinimoMeses.toFixed(1) + ' meses' : '—') + '</div></div>' +
+          '<div class="modal-stat"><div class="k">Lote econômico</div><div class="v">' + fmtNum(an.loteEconomico) + ' un</div></div>' +
+          '<div class="modal-stat"><div class="k">Venda média/dia (3M)</div><div class="v">' + an.vendaMediaDia3M.toFixed(2) + ' un</div></div>' +
+          '<div class="modal-stat"><div class="k">Dias de estoque</div><div class="v">' + (diasEstoque !== null ? fmtNum(Math.round(diasEstoque)) + ' dias' : '—') + '</div></div>' +
+          '<div class="modal-stat"><div class="k">Dias além do LT</div><div class="v" style="color:' + (diasAlemLT !== null && diasAlemLT < 0 ? 'var(--red-a)' : 'var(--text)') + ';">' + (diasAlemLT !== null ? fmtNum(Math.round(diasAlemLT)) + ' dias' : '—') + '</div></div>' +
+        '</div>' +
+        '<p class="hint" style="margin-top:8px;margin-bottom:0;">Dias de estoque e Dias além do LT usam o estoque atual AO VIVO — os demais valores vêm da última planilha de análise carregada.</p>' +
+      '</div>';
+  } else if (an && an.descontinuada) {
+    blocoVendas =
+      '<div class="modal-section">' +
+        '<div class="modal-section-title">Vendas (calculado — 14 meses de histórico)</div>' +
+        '<div class="modal-grid">' +
+          '<div class="modal-stat"><div class="k">Média mensal</div><div class="v">' + fmtNum(Math.round(an.mediaMensal)) + ' un/mês</div></div>' +
+          '<div class="modal-stat"><div class="k">Desvio padrão</div><div class="v">' + fmtNum(Math.round(an.desvioPadrao)) + '</div></div>' +
+        '</div>' +
+      '</div>';
+    blocoSugestao =
+      '<div class="mock-warning" style="margin-top:18px;">🚫 Marca descontinuada — não é feita reposição automática deste item.</div>';
+  } else if (dadosReais.vendas) {
+    // Não bateu com a planilha Excel, MAS temos dados reais de vendas ao
+    // vivo da Sysemp — usa o Lead Time da MARCA (independe do produto ter
+    // batido) pra calcular quanto cobrir, em vez de assumir 1 mês fixo.
+    // Mesma função usada na geração do pedido pro Sysemp.
+    const v = dadosReais.vendas;
+    const marcaNormalizada = normalizarFornecedor(produto.marca);
+    const leadTimeMarca = LEAD_TIME_POR_MARCA[marcaNormalizada];
+    const temLeadTime = leadTimeMarca !== undefined && leadTimeMarca !== null;
+    const sugestaoReal = calcularSugestaoSemPlanilha(produto, v.mediaMensal12M);
+    const loteDoNome = extrairLoteDoNome(produto.produto);
+    const coberturaLoteNome = (loteDoNome && v.mediaMensal12M > 0) ? loteDoNome / v.mediaMensal12M : null;
+    blocoVendas = coberturaLoteNome !== null ?
+      '<div class="modal-section">' +
+        '<div class="modal-grid">' +
+          '<div class="modal-stat"><div class="k">Lote (do nome do produto)</div><div class="v">' + fmtNum(loteDoNome) + ' un</div></div>' +
+          '<div class="modal-stat"><div class="k">Cobertura desse lote</div><div class="v">' + coberturaLoteNome.toFixed(1) + ' meses</div></div>' +
+        '</div>' +
+      '</div>' : '';
+    blocoSugestao =
+      '<div class="suggestion-box">' +
+        '<span class="k">SUGESTÃO DE COMPRA<br>(' + (temLeadTime ? 'média real × lead time da marca (' + fmtNum(leadTimeMarca) + ' dias), sem estoque de segurança' : 'média real, lead time da marca desconhecido — assumindo 1 mês') + ')</span>' +
+        '<span class="v">' + fmtNum(sugestaoReal) + ' un</span>' +
+      '</div>';
+  } else {
+    // Sem match na planilha E sem venda real da Sysemp nos últimos 12
+    // meses — ou seja, sem histórico de venda nenhum. Sem venda recente,
+    // não há necessidade de sugerir compra (mesmo que o Mínimo Parametrizado
+    // diga o contrário) — não sugere nada nesse caso.
+    blocoVendas =
+      '<div class="modal-section">' +
+        '<div class="mock-warning">⚠️ Sem vendas recentes registradas para este produto — sem necessidade de reposição.</div>' +
+      '</div>';
+    blocoSugestao = '';
+  }
+
+  painel.innerHTML =
+    '<div class="modal-header">' +
+      '<div><div class="modal-title">' + produto.produto + '</div>' +
+      '<div class="modal-sub">' + produto.marca + ' · ' + produto.grupo + '</div></div>' +
+      '<button class="modal-close" id="modal-close-btn">✕</button>' +
+    '</div>' +
+
+    blocoCompras +
+
+    blocoVendasAoVivo +
+
+    blocoVendas +
+
+    '<div class="modal-section">' +
+      '<div class="modal-section-title">Estoque atual</div>' +
+      '<div class="modal-grid">' +
+        '<div class="modal-stat"><div class="k">Em estoque</div><div class="v">' + fmtNum(produto.estoque) + '</div></div>' +
+        '<div class="modal-stat"><div class="k">Mínimo parametrizado</div><div class="v">' + fmtNum(produto.minimo) + '</div></div>' +
+      '</div>' +
+    '</div>' +
+
+    blocoDetalhes +
+
+    blocoSugestao;
+
+  document.getElementById('modal-close-btn').addEventListener('click', fecharDetalheProduto);
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+
+function fecharDetalheProduto() {
+  document.getElementById('modal-backdrop').classList.remove('open');
+}
+
+document.getElementById('modal-backdrop').addEventListener('click', e => {
+  if (e.target.id === 'modal-backdrop') fecharDetalheProduto();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharDetalheProduto(); });
+
+// Fecha a lista de sugestões de marca ao clicar fora dela.
+document.addEventListener('click', e => {
+  if (mostrarSugestoesMarca && !e.target.closest('.autocomplete-wrap')) {
+    mostrarSugestoesMarca = false;
+    renderizar();
+  }
+});
+
+// ----------------------------------------------------------------------
+// Exportação no formato de importação de pedido do Sysemp
+// (tela "Pedido Importar Texto": separador ; , decimal com vírgula,
+// sem cabeçalho, layout "Codigo, Quantidade, Preço (Custo)", usando
+// Código de Barras).
+// ----------------------------------------------------------------------
+// Sugestão de compra pra quando NÃO tem match na planilha de análise, mas
+// temos venda real (ao vivo) da Sysemp — Média × Lead Time da marca menos
+// o estoque atual. Mesma função usada no modal e na geração do pedido.
+function calcularSugestaoSemPlanilha(produto, mediaMensal12M) {
+  const marcaNormalizada = normalizarFornecedor(produto.marca);
+  const leadTimeMarca = LEAD_TIME_POR_MARCA[marcaNormalizada];
+  const temLeadTime = leadTimeMarca !== undefined && leadTimeMarca !== null;
+  const tempoReposicaoMeses = temLeadTime ? leadTimeMarca / 30 : 1;
+  const emAberto = pedidosEmAberto.get(normalizarProduto(produto.produto)) || 0;
+  const bruto = Math.max(0, Math.round(mediaMensal12M * tempoReposicaoMeses - produto.estoque - emAberto));
+  return ajustarParaLoteDoNome(bruto, produto);
+}
+
+async function gerarPedidoSysemp(marca, itens) {
+  const btn = document.getElementById('gerar-pedido-btn');
+  const textoOriginalBtn = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Calculando...'; }
+
+  const linhasCalculadas = await Promise.all(itens.map(async d => {
+    let qtd;
+    if (d.analise && !d.analise.descontinuada && d.analise.pontoPedido != null) {
+      // calcularPedidoSugeridoAoVivo já desconta os pedidos em aberto
+      // internamente — mesma função usada no painel de detalhe, garante
+      // que o número aqui é sempre igual ao que aparece lá.
+      qtd = calcularPedidoSugeridoAoVivo(d) || 0;
+    } else {
+      // Sem match na planilha — busca a venda real (ao vivo) pra usar a
+      // MESMA fórmula do modal (média × lead time da marca).
+      const dadosVendas = await buscarComprasVendasReais(d.codigoBarras);
+      if (dadosVendas.vendas) {
+        qtd = calcularSugestaoSemPlanilha(d, dadosVendas.vendas.mediaMensal12M);
+      } else {
+        // Sem histórico de venda nenhum (nem Excel, nem Sysemp) — sem
+        // necessidade de repor, não sugere nada (mesma regra do modal).
+        qtd = 0;
+      }
+    }
+    const custoFormatado = (d.custo || 0).toFixed(2).replace('.', ',');
+    return { codigo: d.codigoBarras, qtd, custoFormatado };
+  }));
+
+  if (btn && textoOriginalBtn !== null) { btn.disabled = false; btn.textContent = textoOriginalBtn; }
+
+  const linhas = linhasCalculadas.filter(l => l.codigo && l.qtd > 0);
+
+  if (linhas.length === 0) {
+    alert('Nenhum item de ' + marca + ' tem quantidade sugerida maior que zero — nada para exportar.');
+    return;
+  }
+
+  const conteudo = linhas.map(l => l.codigo + ';' + l.qtd + ';' + l.custoFormatado).join('\n');
+  const blob = new Blob([conteudo], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dataHoje = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = 'pedido_' + marca.replace(/[^a-zA-Z0-9]+/g, '_') + '_' + dataHoje + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ----------------------------------------------------------------------
+// Importação de Pedidos em Aberto (CSV exportado do Sysemp) — o
+// arquivo vem com um cabeçalho de 2 linhas meio bagunçado (seção +
+// nomes de coluna), então procuramos a linha real de cabeçalho em vez
+// de assumir que é sempre a primeira.
+// ----------------------------------------------------------------------
+// Divide um texto de largura fixa (colunas alinhadas com espaços, como
+// o TXT exportado pelo Sysemp) em linhas de campos — corta em qualquer
+// sequência de 2+ espaços, preservando espaços simples dentro do texto
+// de cada campo (ex.: nomes de produto com espaço entre palavras).
+function parseLarguraFixa(texto) {
+  return texto.split(/\r\n|\r|\n/)
+    .map(l => l.trim())
+    .filter(l => l !== '')
+    .map(l => l.split(/\s{2,}/).map(c => c.trim()));
+}
+
+function acharCabecalho(linhas) {
+  for (let i = 0; i < Math.min(linhas.length, 5); i++) {
+    const linha = linhas[i].map(c => String(c).trim().toLowerCase());
+    const idxProduto = linha.findIndex(c => c === 'produto');
+    const idxQtde = linha.findIndex(c => c === 'qtde' || c === 'quantidade');
+    if (idxProduto !== -1 && idxQtde !== -1) {
+      return { linhaHeaderIdx: i, colProduto: idxProduto, colQtde: idxQtde };
+    }
+  }
+  return null;
+}
+
+function processarArquivoPedidosAberto(texto) {
+  // Tenta primeiro como CSV (vírgula/ponto e vírgula); se não achar as
+  // colunas certas, tenta como texto de largura fixa (colunas alinhadas
+  // com espaços — formato do botão "TXT" do Sysemp).
+  let linhas = parseCSV_bruto(texto);
+  let cabecalho = acharCabecalho(linhas);
+  if (!cabecalho) {
+    linhas = parseLarguraFixa(texto);
+    cabecalho = acharCabecalho(linhas);
+  }
+
+  if (!cabecalho) {
+    return { ok: false, erro: 'Não encontrei as colunas "Produto" e "Qtde" nas primeiras linhas do arquivo.' };
+  }
+  const { linhaHeaderIdx, colProduto, colQtde } = cabecalho;
+
+  let importados = 0;
+  for (let i = linhaHeaderIdx + 1; i < linhas.length; i++) {
+    const linha = linhas[i];
+    const produto = linha[colProduto];
+    // ignora a linha de rodapé "Itens: N" e afins
+    if (!produto || /^itens\s*:/i.test(String(produto).trim())) continue;
+    const qtde = parseNumeroBR(linha[colQtde]);
+    if (produto && String(produto).trim() && qtde > 0) {
+      const chave = normalizarProduto(produto);
+      pedidosEmAberto.set(chave, (pedidosEmAberto.get(chave) || 0) + qtde);
+      importados++;
+    }
+  }
+
+  return { ok: true, importados };
+}
+
+// Parser CSV que devolve linhas cruas (array de arrays). Detecta
+// sozinho se o separador é vírgula ou ponto e vírgula — o Excel em
+// português normalmente usa ; mesmo quando o menu diz "separado por
+// vírgulas", porque a vírgula já é o separador decimal no Brasil.
+function parseCSV_bruto(texto) {
+  const primeiraLinha = texto.split(/\r?\n/, 1)[0] || '';
+  const qtdVirgulas = (primeiraLinha.match(/,/g) || []).length;
+  const qtdPontoVirgula = (primeiraLinha.match(/;/g) || []).length;
+  const separador = qtdPontoVirgula > qtdVirgulas ? ';' : ',';
+
+  const linhas = [];
+  let campo = '', linhaAtual = [], dentroAspas = false;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i], prox = texto[i + 1];
+    if (dentroAspas) {
+      if (c === '"' && prox === '"') { campo += '"'; i++; }
+      else if (c === '"') { dentroAspas = false; }
+      else { campo += c; }
+    } else {
+      if (c === '"') { dentroAspas = true; }
+      else if (c === separador) { linhaAtual.push(campo); campo = ''; }
+      else if (c === '\r') { /* ignora */ }
+      else if (c === '\n') { linhaAtual.push(campo); campo = ''; linhas.push(linhaAtual); linhaAtual = []; }
+      else { campo += c; }
+    }
+  }
+  if (campo !== '' || linhaAtual.length > 0) { linhaAtual.push(campo); linhas.push(linhaAtual); }
+  return linhas.filter(l => l.some(v => v !== ''));
+}
+
+// Remove o texto entre parênteses (nome do distribuidor/observação) pra
+// comparar só o nome da marca — ex.: "AGUIA FORCE (PYRAMID)" -> "AGUIA FORCE"
+function normalizarFornecedor(texto) {
+  return String(texto || '').split('(')[0].trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+function diaSemanaAtual() {
+  const dias = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'];
+  return dias[new Date().getDay()];
+}
+
+// Semana do mês: dias 1-7 = semana 1, 8-14 = semana 2, 15-21 = semana 3,
+// 22 em diante = semana 4 (regra simples por faixa de data).
+function semanaDoMesAtual() {
+  return Math.min(4, Math.ceil(new Date().getDate() / 7));
+}
+
+function calcularFornecedoresPorDia(diaAlvo) {
+  const semanaHoje = semanaDoMesAtual();
+  return ROTINA_COMPRAS.filter(r => {
+    if (r.d !== diaAlvo) return false;
+    if (r.t === 'SEMANAL') return true;
+    if (r.t === 'QUINZENAL') {
+      if (r.s === 'S1+S3') return semanaHoje === 1 || semanaHoje === 3;
+      if (r.s === 'S2+S4') return semanaHoje === 2 || semanaHoje === 4;
+      return false;
+    }
+    if (r.t === 'MENSAL') return r.s === semanaHoje;
+    return false;
+  });
+}
+
+function renderizarAbaVendas() {
+  // Só considera produtos com Média Mensal disponível (batem com a
+  // planilha de análise) — os ~10% sem match ficam de fora, mesma
+  // limitação de sempre (aceita, conforme combinado).
+  const comVenda = dadosCompletos.filter(d => d.analise && !d.analise.descontinuada && d.analise.mediaMensal > 0);
+  const maisVendidos = [...comVenda].sort((a, b) => b.analise.mediaMensal - a.analise.mediaMensal).slice(0, 15);
+  const menosVendidos = [...comVenda].sort((a, b) => a.analise.mediaMensal - b.analise.mediaMensal).slice(0, 15);
+
+  const porMarca = {};
+  comVenda.forEach(d => {
+    const chave = normalizarFornecedor(d.marca);
+    if (!porMarca[chave]) porMarca[chave] = { marca: d.marca, totalMedia: 0, qtdProdutos: 0 };
+    porMarca[chave].totalMedia += d.analise.mediaMensal;
+    porMarca[chave].qtdProdutos++;
+  });
+  const marcasArray = Object.values(porMarca);
+  const marcasMaisVendidas = [...marcasArray].sort((a, b) => b.totalMedia - a.totalMedia).slice(0, 10);
+  const marcasMenosVendidas = [...marcasArray].sort((a, b) => a.totalMedia - b.totalMedia).slice(0, 10);
+
+  // Sem giro: tem estoque físico, mas média de venda zero (ou sem dado
+  // nenhum de venda) — capital parado. Ordenado pelo valor parado, do
+  // maior pro menor.
+  const semGiro = dadosCompletos
+    .filter(d => d.estoque > 0 && (!d.analise || !d.analise.mediaMensal || d.analise.mediaMensal === 0) && !(d.analise && d.analise.descontinuada))
+    .sort((a, b) => b.valorEstoque - a.valorEstoque)
+    .slice(0, 20);
+  const valorTotalSemGiro = dadosCompletos
+    .filter(d => d.estoque > 0 && (!d.analise || !d.analise.mediaMensal || d.analise.mediaMensal === 0) && !(d.analise && d.analise.descontinuada))
+    .reduce((s, d) => s + d.valorEstoque, 0);
+  const qtdSemGiro = dadosCompletos.filter(d => d.estoque > 0 && (!d.analise || !d.analise.mediaMensal || d.analise.mediaMensal === 0) && !(d.analise && d.analise.descontinuada)).length;
+
+  const tabelaProdutos = (lista, colunaValor, attrNome) =>
+    '<table><thead><tr><th>Produto</th><th>Marca</th><th class="num">' + colunaValor + '</th></tr></thead><tbody>' +
+      (lista.map((d, i) => '<tr class="clickable" data-' + attrNome + '="' + i + '"><td>' + d.produto + '</td><td>' + d.marca + '</td><td class="num">' + d.analise.mediaMensal.toFixed(1) + ' un/mês</td></tr>').join('')
+        || '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);">Sem dados suficientes.</td></tr>') +
+    '</tbody></table>';
+
+  const tabelaMarcas = lista =>
+    '<table><thead><tr><th>Marca</th><th class="num">Produtos c/ venda</th><th class="num">Soma média mensal</th></tr></thead><tbody>' +
+      (lista.map(m => '<tr><td>' + m.marca + '</td><td class="num">' + fmtNum(m.qtdProdutos) + '</td><td class="num">' + m.totalMedia.toFixed(1) + ' un/mês</td></tr>').join('')
+        || '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);">Sem dados suficientes.</td></tr>') +
+    '</tbody></table>';
+
+  document.getElementById('app').innerHTML =
+    barraAbas() +
+    '<p class="hint" style="margin-bottom:16px;">Baseado em ' + fmtNum(comVenda.length) + ' produtos com Média Mensal disponível (batem com a planilha de análise) — de ' + fmtNum(dadosCompletos.length) + ' produtos no total.</p>' +
+
+    '<div class="panels">' +
+      '<div class="panel"><h2>Produtos mais vendidos</h2><p class="hint">Top 15 por média mensal</p>' + tabelaProdutos(maisVendidos, 'Média mensal', 'idx-mais') + '</div>' +
+      '<div class="panel"><h2>Produtos menos vendidos</h2><p class="hint">Top 15 com menor média (excluindo zero)</p>' + tabelaProdutos(menosVendidos, 'Média mensal', 'idx-menos') + '</div>' +
+    '</div>' +
+
+    '<div class="panels">' +
+      '<div class="panel"><h2>Marcas mais vendidas</h2><p class="hint">Soma da média mensal de todos os produtos da marca</p>' + tabelaMarcas(marcasMaisVendidas) + '</div>' +
+      '<div class="panel"><h2>Marcas menos vendidas</h2><p class="hint">Entre as que têm alguma venda registrada</p>' + tabelaMarcas(marcasMenosVendidas) + '</div>' +
+    '</div>' +
+
+    '<div class="panel">' +
+      '<h2>🐌 Produtos sem giro de estoque (' + fmtNum(qtdSemGiro) + ')</h2>' +
+      '<p class="hint">Têm estoque físico mas média de venda zero — ' + fmtMoeda(valorTotalSemGiro) + ' de capital parado no total. Mostrando os 20 de maior valor.</p>' +
+      '<table><thead><tr><th>Produto</th><th>Marca</th><th class="num">Estoque</th><th class="num">Valor parado</th></tr></thead><tbody>' +
+        (semGiro.map((d, i) => '<tr class="clickable" data-idx-semgiro="' + i + '"><td>' + d.produto + '</td><td>' + d.marca + '</td><td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtMoeda(d.valorEstoque) + '</td></tr>').join('')
+          || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">Nenhum produto parado encontrado.</td></tr>') +
+      '</tbody></table>' +
+    '</div>' +
+
+    '<footer>SYSEMP → GOOGLE SHEETS → PAINEL · atualização automática a cada ' + Math.round(AUTO_REFRESH_MS / 60000) + ' min</footer>';
+
+  const abaEstoqueEl2 = document.getElementById('aba-estoque');
+  if (abaEstoqueEl2) abaEstoqueEl2.addEventListener('click', () => { abaSelecionada = 'estoque'; renderizar(); });
+  const abaVendasEl2 = document.getElementById('aba-vendas');
+  if (abaVendasEl2) abaVendasEl2.addEventListener('click', () => { abaSelecionada = 'vendas'; renderizar(); });
+
+  document.querySelectorAll('tbody tr.clickable[data-idx-mais]').forEach(tr => tr.addEventListener('click', () => {
+    const item = maisVendidos[parseInt(tr.dataset.idxMais, 10)];
+    if (item) abrirDetalheProduto(item);
+  }));
+  document.querySelectorAll('tbody tr.clickable[data-idx-menos]').forEach(tr => tr.addEventListener('click', () => {
+    const item = menosVendidos[parseInt(tr.dataset.idxMenos, 10)];
+    if (item) abrirDetalheProduto(item);
+  }));
+  document.querySelectorAll('tbody tr.clickable[data-idx-semgiro]').forEach(tr => tr.addEventListener('click', () => {
+    const item = semGiro[parseInt(tr.dataset.idxSemgiro, 10)];
+    if (item) abrirDetalheProduto(item);
+  }));
+}
+
+function barraAbas() {
+  return '<div class="filters" style="margin-bottom:16px;">' +
+    '<button class="chip' + (abaSelecionada === 'estoque' ? ' active' : '') + '" id="aba-estoque" style="padding:8px 18px;">📦 Estoque</button>' +
+    '<button class="chip' + (abaSelecionada === 'vendas' ? ' active' : '') + '" id="aba-vendas" style="padding:8px 18px;">📊 Vendas</button>' +
+  '</div>';
+}
+
+function renderizar() {
+  if (abaSelecionada === 'vendas') { renderizarAbaVendas(); return; }
+  if (diaRotinaSelecionado === null) diaRotinaSelecionado = diaSemanaAtual() || 'SEG';
+
+  let dados = dadosCompletos.filter(d =>
+    (!filtroGrupo || d.grupo === filtroGrupo) &&
+    (!filtroSituacao || d.situacao === filtroSituacao) &&
+    (!buscaTexto || d.produto.toLowerCase().includes(buscaTexto.toLowerCase())) &&
+    (!filtroMarca || d.marca.trim().toLowerCase() === filtroMarca.trim().toLowerCase())
+  );
+
+  const totalSkus = dados.length;
+  const valorTotal = dados.reduce((s, d) => s + d.valorEstoque, 0);
+  const ruptura = dados.filter(d => d.situacao === 'RUPTURA').length;
+  const baixo = dados.filter(d => d.situacao === 'BAIXO').length;
+  const excesso = dados.filter(d => d.situacao === 'EXCESSO').length;
+  const valorRepor = dados.reduce((s, d) => s + d.valorRepor, 0);
+
+  const porMarca = {};
+  // Para o gráfico de barras, aplicamos todos os filtros MENOS o de marca —
+  // assim as outras marcas continuam aparecendo como opção, mesmo com uma já selecionada.
+  const dadosParaBarra = dadosCompletos.filter(d =>
+    (!filtroGrupo || d.grupo === filtroGrupo) &&
+    (!filtroSituacao || d.situacao === filtroSituacao) &&
+    (!buscaTexto || d.produto.toLowerCase().includes(buscaTexto.toLowerCase()))
+  );
+  dadosParaBarra.forEach(d => { porMarca[d.marca] = (porMarca[d.marca] || 0) + d.valorEstoque; });
+  const marcasOrdenadas = Object.entries(porMarca).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+  // Mesma lógica para o donut de situação: ignora o próprio filtroSituacao,
+  // pra continuar mostrando todas as fatias mesmo com uma selecionada.
+  const dadosParaDonut = dadosCompletos.filter(d =>
+    (!filtroGrupo || d.grupo === filtroGrupo) &&
+    (!buscaTexto || d.produto.toLowerCase().includes(buscaTexto.toLowerCase())) &&
+    (!filtroMarca || d.marca.trim().toLowerCase() === filtroMarca.trim().toLowerCase())
+  );
+  const situacaoCount = {
+    RUPTURA: dadosParaDonut.filter(d => d.situacao === 'RUPTURA').length,
+    BAIXO: dadosParaDonut.filter(d => d.situacao === 'BAIXO').length,
+    EXCESSO: dadosParaDonut.filter(d => d.situacao === 'EXCESSO').length,
+    OK: dadosParaDonut.filter(d => d.situacao === 'OK').length,
+  };
+
+  const todosGrupos = [...new Set(dadosCompletos.map(d => d.grupo))].sort();
+
+  // Quando o usuário está buscando ou filtrando ativamente, mostramos
+  // QUALQUER item que bata (inclusive OK/Excesso) e com limite maior.
+  // Na visão padrão (sem busca/filtro), continua mostrando só os
+  // itens críticos (que precisam de reposição), como uma lista curada.
+  const buscaAtiva = !!(buscaTexto || filtroGrupo || filtroSituacao || filtroMarca);
+  let listaTabela = [...dados].filter(d => buscaAtiva || d.valorRepor > 0 || ordemCol !== 'valorRepor');
+  listaTabela.sort((a, b) => {
+    const va = a[ordemCol], vb = b[ordemCol];
+    if (typeof va === 'string') return va.localeCompare(vb) * ordemDir;
+    return (va - vb) * ordemDir;
+  });
+  const limiteTabela = buscaAtiva ? 200 : 20;
+  const totalEncontrado = listaTabela.length;
+  listaTabela = listaTabela.slice(0, limiteTabela);
+
+  // ---- Agregação por marca (visão padrão, sem busca ativa) ----
+  const porMarcaCritica = {};
+  dados.forEach(d => {
+    if (!porMarcaCritica[d.marca]) porMarcaCritica[d.marca] = { marca: d.marca, qtdRuptura: 0, qtdBaixo: 0, qtdTotalItens: 0, valorRepor: 0 };
+    const m = porMarcaCritica[d.marca];
+    m.qtdTotalItens++;
+    if (d.situacao === 'RUPTURA') m.qtdRuptura++;
+    if (d.situacao === 'BAIXO') m.qtdBaixo++;
+    m.valorRepor += d.valorRepor;
+  });
+  let marcasCriticas = Object.values(porMarcaCritica).filter(m => m.qtdRuptura > 0 || m.qtdBaixo > 0);
+  marcasCriticas.sort((a, b) => {
+    if (ordemColMarca === 'urgencia') {
+      // zerado primeiro, depois abaixo do mínimo, depois valor a repor — sempre nessa ordem de prioridade
+      if (b.qtdRuptura !== a.qtdRuptura) return b.qtdRuptura - a.qtdRuptura;
+      if (b.qtdBaixo !== a.qtdBaixo) return b.qtdBaixo - a.qtdBaixo;
+      return b.valorRepor - a.valorRepor;
+    }
+    const va = a[ordemColMarca], vb = b[ordemColMarca];
+    if (typeof va === 'string') return va.localeCompare(vb) * ordemDirMarca;
+    return (va - vb) * ordemDirMarca;
+  });
+  const totalMarcasCriticas = marcasCriticas.length;
+
+  // Troca o critério de "valor a repor > 0" por "situação é zerado ou
+  // baixo" — um item com Mínimo cadastrado como 0 no Sysemp fica com
+  // valor a repor R$0 mesmo estando zerado de verdade, e antes ficava
+  // invisível aqui mesmo contando no card da Rotina.
+  // Lista COMPLETA (sem filtro de busca) — usada pro botão "Gerar pedido"
+  // e pro total de "em pedido aberto", que precisam considerar tudo.
+  const itensDaMarcaExpandida = marcaExpandidaTabela
+    ? dados.filter(d => d.marca === marcaExpandidaTabela && (d.situacao === 'RUPTURA' || d.situacao === 'BAIXO')).sort((a, b) => b.valorRepor - a.valorRepor)
+    : [];
+  // Lista filtrada pela busca da seção — só pra EXIBIÇÃO na tabela.
+  const itensDaMarcaExibidos = buscaItensCriticosTexto
+    ? itensDaMarcaExpandida.filter(d => d.produto.toLowerCase().includes(buscaItensCriticosTexto.toLowerCase()))
+    : itensDaMarcaExpandida;
+  // sem limite — mostra todas as marcas que precisam de reposição
+
+  // Segunda seção: itens da mesma marca que NÃO precisam de compra
+  // (estoque normal ou em excesso) — só informativo, sem ação sugerida.
+  const itensNormaisDaMarcaCompleto = marcaExpandidaTabela
+    ? dados.filter(d => d.marca === marcaExpandidaTabela && (d.situacao === 'OK' || d.situacao === 'EXCESSO')).sort((a, b) => b.valorEstoque - a.valorEstoque)
+    : [];
+  const itensNormaisDaMarca = buscaItensNormaisTexto
+    ? itensNormaisDaMarcaCompleto.filter(d => d.produto.toLowerCase().includes(buscaItensNormaisTexto.toLowerCase()))
+    : itensNormaisDaMarcaCompleto;
+
+  // ---- Rotina de Compras: quem revisar no dia selecionado ----
+  const NOMES_DIA = { SEG: 'Segunda-feira', TER: 'Terça-feira', QUA: 'Quarta-feira', QUI: 'Quinta-feira', SEX: 'Sexta-feira' };
+  const diaHojeReal = diaSemanaAtual();
+  const diaSelecionadoLabel = NOMES_DIA[diaRotinaSelecionado];
+  const porMarcaCompleto = {};
+  dadosCompletos.forEach(d => {
+    const chave = normalizarFornecedor(d.marca);
+    if (!porMarcaCompleto[chave]) porMarcaCompleto[chave] = { marcaOriginal: d.marca, qtdRuptura: 0, qtdBaixo: 0, valorRepor: 0 };
+    const m = porMarcaCompleto[chave];
+    if (d.situacao === 'RUPTURA') m.qtdRuptura++;
+    if (d.situacao === 'BAIXO') m.qtdBaixo++;
+    m.valorRepor += d.valorRepor;
+  });
+  let rotinaHoje = calcularFornecedoresPorDia(diaRotinaSelecionado).map(r => {
+    const chave = normalizarFornecedor(r.f);
+    const encontrado = porMarcaCompleto[chave];
+    return {
+      fornecedor: r.f, tipo: r.t,
+      marcaOriginal: encontrado ? encontrado.marcaOriginal : null,
+      qtdRuptura: encontrado ? encontrado.qtdRuptura : 0,
+      qtdBaixo: encontrado ? encontrado.qtdBaixo : 0,
+      valorRepor: encontrado ? encontrado.valorRepor : 0,
+      encontrado: !!encontrado,
+    };
+  });
+  rotinaHoje.sort((a, b) => (b.qtdRuptura - a.qtdRuptura) || (b.qtdBaixo - a.qtdBaixo) || (b.valorRepor - a.valorRepor));
+
+  // ---- Marcas com compra urgente: estoque vai acabar ANTES do lead
+  // time — ou seja, mesmo comprando hoje, vai faltar produto no meio do
+  // caminho. Só considera produtos que batem com a planilha de análise
+  // (é o único lugar com Venda Média Dia e Lead Time disponíveis pra
+  // TODOS os produtos de uma vez, sem precisar consultar a Sysemp item
+  // por item).
+  const porMarcaUrgencia = {};
+  dadosCompletos.forEach(d => {
+    const an = d.analise;
+    if (!an || an.descontinuada || !(an.vendaMediaDia3M > 0) || !(an.leadTimeTotal > 0)) return;
+    const diasEstoque = d.estoque / an.vendaMediaDia3M;
+    const diasAlemLT = diasEstoque - an.leadTimeTotal;
+    if (diasAlemLT >= 0) return; // não é urgente: o estoque cobre até o pedido novo chegar
+    const chave = normalizarFornecedor(d.marca);
+    if (!porMarcaUrgencia[chave]) porMarcaUrgencia[chave] = { marcaOriginal: d.marca, qtdUrgente: 0, valorRepor: 0, piorCaso: 0 };
+    const m = porMarcaUrgencia[chave];
+    m.qtdUrgente++;
+    m.valorRepor += d.valorRepor;
+    if (diasAlemLT < m.piorCaso) m.piorCaso = diasAlemLT;
+  });
+  const marcasUrgentes = Object.values(porMarcaUrgencia).sort((a, b) => a.piorCaso - b.piorCaso);
+
+
+  const todasMarcas = [...new Set(dadosCompletos.map(d => d.marca).filter(Boolean))].sort();
+  const sugestoesMarca = buscaMarcaTexto
+    ? todasMarcas.filter(m => m.toLowerCase().includes(buscaMarcaTexto.toLowerCase())).slice(0, 8)
+    : todasMarcas.slice(0, 8);
+
+  document.getElementById('app').innerHTML =
+    barraAbas() +
+    '<div class="filters">' +
+      '<select id="filtro-grupo"><option value="">Todos os grupos</option>' +
+        todosGrupos.map(g => '<option value="' + g + '" ' + (g === filtroGrupo ? 'selected' : '') + '>' + g + '</option>').join('') +
+      '</select>' +
+      '<div class="autocomplete-wrap">' +
+        '<input type="text" id="busca-marca" placeholder="Marca..." autocomplete="off" value="' + (filtroMarca || buscaMarcaTexto).replace(/"/g, '&quot;') + '">' +
+        (mostrarSugestoesMarca ? (
+          '<div class="autocomplete-list" id="lista-sugestoes-marca">' +
+            (sugestoesMarca.length
+              ? sugestoesMarca.map(m => '<div class="autocomplete-item" data-marca="' + m.replace(/"/g, '&quot;') + '">' + m + '</div>').join('')
+              : '<div class="autocomplete-empty">Nenhuma marca encontrada</div>') +
+          '</div>'
+        ) : '') +
+      '</div>' +
+      '<input type="search" id="busca" placeholder="Buscar produto..." value="' + buscaTexto.replace(/"/g, '&quot;') + '">' +
+      ['RUPTURA', 'BAIXO', 'EXCESSO', 'OK'].map(s => '<span class="chip ' + (filtroSituacao === s ? 'active' : '') + '" data-sit="' + s + '">' + situacaoLabel(s) + '</span>').join('') +
+      ((filtroGrupo || filtroSituacao || buscaTexto || filtroMarca) ? '<span class="clear-link" id="clear-filters">limpar filtros</span>' : '') +
+    '</div>' +
+
+    '<div class="kpi-grid">' +
+      '<div class="kpi-card hero"><div class="label">Total de SKUs</div><div class="value" id="kpi-total">0</div></div>' +
+      '<div class="kpi-card accent-gold"><div class="label">Valor em estoque</div><div class="value" id="kpi-valor" title="' + fmtMoeda(valorTotal) + '">R$ 0</div></div>' +
+      '<div class="kpi-card accent-red clickable' + (filtroSituacao === 'RUPTURA' ? ' active' : '') + '" data-sit="RUPTURA"><div class="label">Estoque zerado</div><div class="value" id="kpi-ruptura">0</div></div>' +
+      '<div class="kpi-card accent-amber clickable' + (filtroSituacao === 'BAIXO' ? ' active' : '') + '" data-sit="BAIXO"><div class="label">Abaixo do mínimo</div><div class="value" id="kpi-baixo">0</div></div>' +
+      '<div class="kpi-card accent-blue clickable' + (filtroSituacao === 'EXCESSO' ? ' active' : '') + '" data-sit="EXCESSO"><div class="label">Excesso</div><div class="value" id="kpi-excesso">0</div></div>' +
+      '<div class="kpi-card hero"><div class="label">Valor p/ repor mínimos</div><div class="value" id="kpi-repor" title="' + fmtMoeda(valorRepor) + '">R$ 0</div></div>' +
+    '</div>' +
+
+    '<div class="panel" style="margin-bottom:16px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
+        '<h2 style="margin:0;">🗓️ Rotina de Compras — ' + diaSelecionadoLabel + (diaRotinaSelecionado === diaHojeReal ? ' (hoje)' : '') + '</h2>' +
+        '<div style="display:flex;gap:6px;">' +
+          ['SEG', 'TER', 'QUA', 'QUI', 'SEX'].map(d =>
+            '<span class="chip' + (d === diaRotinaSelecionado ? ' active' : '') + '" data-dia-rotina="' + d + '" style="position:relative;">' + d +
+              (d === diaHojeReal ? '<span style="position:absolute;top:-3px;right:-3px;width:6px;height:6px;border-radius:50%;background:' + donutColors.OK + ';"></span>' : '') +
+            '</span>'
+          ).join('') +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-top:12px;">' +
+        '<button class="refresh-btn" id="toggle-marcas-urgentes"' + (marcasUrgentes.length === 0 ? ' disabled' : '') + '>' +
+          '🚨 ' + (mostrarMarcasUrgentes ? 'Ocultar' : 'Ver') + ' marcas com compra urgente' +
+          (marcasUrgentes.length > 0 ? ' (' + fmtNum(marcasUrgentes.length) + ')' : ' (nenhuma agora)') +
+        '</button>' +
+      '</div>' +
+      (mostrarMarcasUrgentes && marcasUrgentes.length > 0 ? (
+        '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">' +
+          '<p class="hint">Estoque vai acabar ANTES do próximo pedido conseguir chegar — mesmo comprando hoje, vai faltar produto. Calculado com Venda Média Diária × Lead Time da marca (só produtos que batem com a planilha de análise).</p>' +
+          '<table><thead><tr><th>Marca</th><th class="num">Itens urgentes</th><th class="num">Pior caso</th><th class="num">Valor a repor</th></tr></thead><tbody>' +
+            marcasUrgentes.map(m =>
+              '<tr class="clickable" data-marca-urgente="' + m.marcaOriginal.replace(/"/g, '&quot;') + '">' +
+                '<td>' + m.marcaOriginal + '</td>' +
+                '<td class="num">' + fmtNum(m.qtdUrgente) + '</td>' +
+                '<td class="num" style="color:var(--red-a);font-weight:600;">vai faltar em ' + fmtNum(Math.round(-m.piorCaso)) + ' dias</td>' +
+                '<td class="num">' + fmtMoeda(m.valorRepor) + '</td>' +
+              '</tr>'
+            ).join('') +
+          '</tbody></table>' +
+        '</div>'
+      ) : '') +
+      '<p class="hint" style="margin-top:10px;">' + (rotinaHoje.length ? fmtNum(rotinaHoje.length) + ' fornecedor(es) programado(s) · clique num cartão pra ver os itens' : 'Nenhum fornecedor programado pra ' + diaSelecionadoLabel.toLowerCase() + ' na rotina.') + '</p>' +
+      (rotinaHoje.length ? (
+        '<div class="rotina-grid">' +
+          rotinaHoje.map(r => {
+            const temPendencia = r.encontrado && (r.qtdRuptura > 0 || r.qtdBaixo > 0);
+            const cor = r.qtdRuptura > 0 ? donutColors.RUPTURA : (r.qtdBaixo > 0 ? donutColors.BAIXO : 'transparent');
+            const tipoLabel = { SEMANAL: 'Semanal', QUINZENAL: 'Quinzenal', MENSAL: 'Mensal' }[r.tipo];
+            let statusHtml;
+            if (!r.encontrado) {
+              statusHtml = '<span class="rotina-status-nao-encontrado">não encontrado</span>';
+            } else if (r.qtdRuptura > 0) {
+              statusHtml = '<span class="badge badge-ruptura">' + fmtNum(r.qtdRuptura) + ' zerado' + (r.qtdRuptura > 1 ? 's' : '') + '</span>';
+            } else if (r.qtdBaixo > 0) {
+              statusHtml = '<span class="badge badge-baixo">' + fmtNum(r.qtdBaixo) + ' baixo' + (r.qtdBaixo > 1 ? 's' : '') + '</span>';
+            } else {
+              statusHtml = '<span class="badge badge-ok">em dia</span>';
+            }
+            return '<div class="rotina-card' + (temPendencia ? ' clickable' : '') + '" ' +
+              (temPendencia ? 'data-rotina-marca="' + r.marcaOriginal.replace(/"/g, '&quot;') + '"' : '') +
+              ' style="border-left-color:' + cor + ';">' +
+                '<div class="rc-nome">' + r.fornecedor + '</div>' +
+                '<div class="rc-rodape"><span class="rotina-tipo">' + tipoLabel + '</span>' + statusHtml + '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>'
+      ) : '') +
+    '</div>' +
+
+    '<div class="panels">' +
+      '<div class="panel"><h2>Valor em estoque por marca</h2><p class="hint">Clique numa barra para filtrar a tabela abaixo</p>' +
+        '<div id="bar-chart"></div></div>' +
+      '<div class="panel"><h2>SKUs por situação</h2><p class="hint">Clique numa fatia ou na legenda para filtrar</p>' +
+        '<div class="donut-wrap"><div class="donut-ring-wrap"><svg class="donut-svg" viewBox="0 0 100 100" width="160" height="160" id="donut-svg"></svg>' +
+        '<div class="donut-center"><div class="n" id="donut-center-n">0</div><div class="l">SKUs</div></div></div>' +
+        '<div class="legend" id="donut-legend"></div></div></div>' +
+    '</div>' +
+
+    (buscaAtiva && !marcaExpandidaTabela ?
+      '<div class="panel">' +
+        '<h2>Resultados (' + fmtNum(totalEncontrado) + (totalEncontrado > limiteTabela ? ', mostrando ' + limiteTabela : '') + ')</h2>' +
+        '<p class="hint">Clique no cabeçalho de uma coluna para ordenar</p>' +
+        '<table><thead><tr>' +
+          '<th data-col="produto">Produto<span class="arrow">' + (ordemCol === 'produto' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th data-col="marca">Marca<span class="arrow">' + (ordemCol === 'marca' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th data-col="situacao">Situação<span class="arrow">' + (ordemCol === 'situacao' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th class="num" data-col="estoque">Estoque<span class="arrow">' + (ordemCol === 'estoque' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th class="num" data-col="minimo">Mínimo<span class="arrow">' + (ordemCol === 'minimo' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th class="num" data-col="valorEstoque">Valor em estoque<span class="arrow">' + (ordemCol === 'valorEstoque' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th class="num" data-col="valorRepor">Valor a repor<span class="arrow">' + (ordemCol === 'valorRepor' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
+        '</tr></thead><tbody>' +
+          (listaTabela.map((d, i) =>
+            '<tr class="clickable" data-idx="' + i + '"><td>' + d.produto + '</td><td>' + d.marca + '</td>' +
+            '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
+            '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
+            '<td class="num">' + (d.valorEstoque > 0 ? fmtMoeda(d.valorEstoque) : '—') + '</td>' +
+            '<td class="num">' + (d.valorRepor > 0 ? fmtMoeda(d.valorRepor) : '—') + '</td></tr>'
+          ).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Nenhum item para os filtros escolhidos.</td></tr>') +
+        '</tbody></table>' +
+      '</div>'
+    :
+      (marcaExpandidaTabela ?
+        (() => {
+          const itensDaMarca = itensDaMarcaExibidos;
+          const totalEmAberto = itensDaMarcaExpandida.reduce((s, d) => s + (pedidosEmAberto.get(normalizarProduto(d.produto)) || 0), 0);
+          return '<div class="panel">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
+              '<h2 style="margin:0;">Itens de ' + marcaExpandidaTabela + '</h2>' +
+              '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+                '<button class="refresh-btn" id="importar-pedidos-btn">📥 Importar pedidos em aberto</button>' +
+                '<input type="file" id="input-pedidos-aberto" accept=".csv,.txt" style="display:none;">' +
+                '<button class="refresh-btn" id="gerar-pedido-btn" style="background:var(--gold);border:1px solid var(--gold);color:#000;font-weight:700;">⬇ Gerar pedido (Sysemp)</button>' +
+              '</div>' +
+            '</div>' +
+            '<p class="hint"><span class="clear-link" id="fechar-marca-expandida">‹ voltar para todas as marcas</span>' +
+              (totalEmAberto > 0 ? ' · ' + fmtNum(totalEmAberto) + ' un já em pedido aberto (descontadas da sugestão)' : '') +
+            '</p>' +
+            '<input type="text" id="busca-itens-criticos" placeholder="Buscar item nesta lista..." autocomplete="off" value="' + buscaItensCriticosTexto.replace(/"/g, '&quot;') + '" style="margin-bottom:12px;width:280px;">' +
+            '<table><thead><tr><th>Produto</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mín.</th><th class="num">Pedido</th><th class="num">A repor</th></tr></thead><tbody>' +
+              (itensDaMarca.map((d, i) => {
+                const emAberto = pedidosEmAberto.get(normalizarProduto(d.produto)) || 0;
+                return '<tr class="clickable" data-idx-marca="' + i + '"><td>' + d.produto + '</td>' +
+                '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
+                '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
+                '<td class="num">' + (emAberto > 0 ? fmtNum(emAberto) : '—') + '</td>' +
+                '<td class="num">' + fmtMoeda(d.valorRepor) + '</td></tr>';
+              }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Nenhum item encontrado.</td></tr>') +
+            '</tbody></table>' +
+          '</div>' +
+          '<div class="panel" style="margin-top:16px;">' +
+            '<h2 class="clickable" id="toggle-itens-normais" style="cursor:pointer;user-select:none;">' +
+              (mostrarItensNormaisMarca ? '▾' : '▸') + ' Demais itens de ' + marcaExpandidaTabela + ' (' + fmtNum(itensNormaisDaMarcaCompleto.length) + ')' +
+            '</h2>' +
+            (mostrarItensNormaisMarca ? (
+              '<p class="hint">Estoque normal ou em excesso — sem necessidade de compra no momento</p>' +
+              '<input type="text" id="busca-itens-normais" placeholder="Buscar item nesta lista..." autocomplete="off" value="' + buscaItensNormaisTexto.replace(/"/g, '&quot;') + '" style="margin-bottom:12px;width:280px;">' +
+              '<table><thead><tr><th>Produto</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mínimo</th><th class="num">Valor em estoque</th></tr></thead><tbody>' +
+                (itensNormaisDaMarca.map((d, i) =>
+                  '<tr class="clickable" data-idx-normal="' + i + '"><td>' + d.produto + '</td>' +
+                  '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
+                  '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
+                  '<td class="num">' + (d.valorEstoque > 0 ? fmtMoeda(d.valorEstoque) : '—') + '</td></tr>'
+                ).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Nenhum item encontrado.</td></tr>') +
+              '</tbody></table>'
+            ) : '<p class="hint">Clique para expandir</p>') +
+          '</div>';
+        })()
+      :
+      '<div class="panel">' +
+        '<h2>Marcas que precisam de compra (' + fmtNum(totalMarcasCriticas) + ')</h2>' +
+        '<p class="hint">Clique numa marca para ver os itens dela · clique no cabeçalho para ordenar' +
+          (ordemColMarca === 'urgencia' ? ' · <strong>ordenado por urgência</strong> (zerado primeiro)' : ' · <span class="clear-link" id="ordenar-urgencia">ordenar por urgência</span>') +
+        '</p>' +
+        '<table class="marcas-criticas-table"><thead><tr>' +
+          '<th data-col="marca">Marca<span class="arrow">' + (ordemColMarca === 'marca' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th class="num" data-col="qtdRuptura">Zerados<span class="arrow">' + (ordemColMarca === 'qtdRuptura' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th class="num" data-col="qtdBaixo">Baixo<span class="arrow">' + (ordemColMarca === 'qtdBaixo' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th class="num" data-col="qtdTotalItens">Total<span class="arrow">' + (ordemColMarca === 'qtdTotalItens' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th class="num" data-col="valorRepor">A repor<span class="arrow">' + (ordemColMarca === 'valorRepor' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
+        '</tr></thead><tbody>' +
+          (marcasCriticas.map(m => {
+            const corDominante = m.qtdRuptura >= m.qtdBaixo ? donutColors.RUPTURA : donutColors.BAIXO;
+            return '<tr class="clickable" data-marca-row="' + m.marca.replace(/"/g, '&quot;') + '" style="border-left:3px solid ' + corDominante + ';">' +
+            '<td data-label="Marca">' + m.marca + '</td>' +
+            '<td class="num" data-label="Zerados" style="color:' + donutColors.RUPTURA + ';font-weight:600;">' + fmtNum(m.qtdRuptura) + '</td>' +
+            '<td class="num" data-label="Baixo" style="color:' + donutColors.BAIXO + ';font-weight:600;">' + fmtNum(m.qtdBaixo) + '</td>' +
+            '<td class="num" data-label="Total">' + fmtNum(m.qtdTotalItens) + '</td>' +
+            '<td class="num" data-label="A repor">' + fmtMoeda(m.valorRepor) + '</td></tr>';
+          }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Nenhuma marca precisa de reposição no momento.</td></tr>') +
+        '</tbody></table>' +
+      '</div>'
+      )
+    );
+
+  animarNumero(document.getElementById('kpi-total'), totalSkus, v => fmtNum(Math.round(v)), 600);
+  animarNumero(document.getElementById('kpi-valor'), valorTotal, v => fmtMoedaCompacta(Math.round(v)), 700);
+  animarNumero(document.getElementById('kpi-ruptura'), ruptura, v => fmtNum(Math.round(v)), 600);
+  animarNumero(document.getElementById('kpi-baixo'), baixo, v => fmtNum(Math.round(v)), 600);
+  animarNumero(document.getElementById('kpi-excesso'), excesso, v => fmtNum(Math.round(v)), 600);
+  animarNumero(document.getElementById('kpi-repor'), valorRepor, v => fmtMoedaCompacta(Math.round(v)), 700);
+
+  const abaEstoqueEl = document.getElementById('aba-estoque');
+  if (abaEstoqueEl) abaEstoqueEl.addEventListener('click', () => { abaSelecionada = 'estoque'; renderizar(); });
+  const abaVendasEl = document.getElementById('aba-vendas');
+  if (abaVendasEl) abaVendasEl.addEventListener('click', () => { abaSelecionada = 'vendas'; renderizar(); });
+  document.getElementById('filtro-grupo').addEventListener('change', e => { filtroGrupo = e.target.value; renderizar(); });
+  const aplicarBuscaProduto = debounce(e => {
+    const cursorPos = e.target.selectionStart;
+    buscaTexto = e.target.value;
+    renderizar();
+    const novoInput = document.getElementById('busca');
+    if (novoInput) {
+      novoInput.focus();
+      novoInput.setSelectionRange(cursorPos, cursorPos);
+    }
+  }, 250);
+  document.getElementById('busca').addEventListener('input', aplicarBuscaProduto);
+  document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+    filtroSituacao = filtroSituacao === c.dataset.sit ? '' : c.dataset.sit;
+    renderizar();
+  }));
+  document.querySelectorAll('.kpi-card[data-sit]').forEach(c => c.addEventListener('click', () => {
+    filtroSituacao = filtroSituacao === c.dataset.sit ? '' : c.dataset.sit;
+    renderizar();
+  }));
+  const clearEl = document.getElementById('clear-filters');
+  if (clearEl) clearEl.addEventListener('click', () => {
+    filtroGrupo = ''; filtroSituacao = ''; buscaTexto = ''; filtroMarca = ''; buscaMarcaTexto = ''; mostrarSugestoesMarca = false; marcaExpandidaTabela = '';
+    renderizar();
+  });
+
+  // ---- autocomplete de marca ----
+  const inputMarca = document.getElementById('busca-marca');
+  const aplicarBuscaMarca = debounce(e => {
+    const cursorPos = e.target.selectionStart;
+    buscaMarcaTexto = e.target.value;
+    filtroMarca = ''; // digitar de novo invalida a marca já selecionada
+    marcaExpandidaTabela = '';
+    mostrarSugestoesMarca = true;
+    renderizar();
+    const novoInput = document.getElementById('busca-marca');
+    if (novoInput) { novoInput.focus(); novoInput.setSelectionRange(cursorPos, cursorPos); }
+  }, 250);
+  inputMarca.addEventListener('input', aplicarBuscaMarca);
+  inputMarca.addEventListener('focus', () => {
+    if (!mostrarSugestoesMarca) {
+      mostrarSugestoesMarca = true;
+      renderizar();
+      const novoInput = document.getElementById('busca-marca');
+      if (novoInput) novoInput.focus();
+    }
+  });
+
+  document.querySelectorAll('.autocomplete-item').forEach(item => item.addEventListener('click', () => {
+    filtroMarca = item.dataset.marca;
+    marcaExpandidaTabela = item.dataset.marca; // mesma visão de 2 abas + botões de pedido
+    mostrarItensNormaisMarca = false;
+    buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
+    buscaMarcaTexto = '';
+    mostrarSugestoesMarca = false;
+    renderizar();
+  }));
+
+  document.querySelectorAll('thead th').forEach(th => th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    if (buscaAtiva) {
+      if (ordemCol === col) ordemDir *= -1; else { ordemCol = col; ordemDir = -1; }
+    } else {
+      if (ordemColMarca === col) ordemDirMarca *= -1; else { ordemColMarca = col; ordemDirMarca = -1; }
+    }
+    renderizar();
+  }));
+  document.querySelectorAll('tbody tr.clickable[data-idx]').forEach(tr => tr.addEventListener('click', () => {
+    const item = listaTabela[parseInt(tr.dataset.idx, 10)];
+    if (item) abrirDetalheProduto(item);
+  }));
+  document.querySelectorAll('tbody tr.clickable[data-marca-row]').forEach(tr => tr.addEventListener('click', () => {
+    marcaExpandidaTabela = tr.dataset.marcaRow;
+    mostrarItensNormaisMarca = false;
+    buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
+    renderizar();
+  }));
+  document.querySelectorAll('tbody tr.clickable[data-idx-marca]').forEach(tr => tr.addEventListener('click', () => {
+    const item = itensDaMarcaExibidos[parseInt(tr.dataset.idxMarca, 10)];
+    if (item) abrirDetalheProduto(item);
+  }));
+  document.querySelectorAll('tbody tr.clickable[data-idx-normal]').forEach(tr => tr.addEventListener('click', () => {
+    const item = itensNormaisDaMarca[parseInt(tr.dataset.idxNormal, 10)];
+    if (item) abrirDetalheProduto(item);
+  }));
+  const toggleNormaisEl = document.getElementById('toggle-itens-normais');
+  if (toggleNormaisEl) toggleNormaisEl.addEventListener('click', () => {
+    mostrarItensNormaisMarca = !mostrarItensNormaisMarca;
+    renderizar();
+  });
+  const buscaCriticosEl = document.getElementById('busca-itens-criticos');
+  if (buscaCriticosEl) buscaCriticosEl.addEventListener('input', debounce(e => {
+    const cursorPos = e.target.selectionStart;
+    buscaItensCriticosTexto = e.target.value;
+    renderizar();
+    const novoInput = document.getElementById('busca-itens-criticos');
+    if (novoInput) { novoInput.focus(); novoInput.setSelectionRange(cursorPos, cursorPos); }
+  }, 250));
+  const buscaNormaisEl = document.getElementById('busca-itens-normais');
+  if (buscaNormaisEl) buscaNormaisEl.addEventListener('input', debounce(e => {
+    const cursorPos = e.target.selectionStart;
+    buscaItensNormaisTexto = e.target.value;
+    renderizar();
+    const novoInput = document.getElementById('busca-itens-normais');
+    if (novoInput) { novoInput.focus(); novoInput.setSelectionRange(cursorPos, cursorPos); }
+  }, 250));
+  const toggleUrgentesEl = document.getElementById('toggle-marcas-urgentes');
+  if (toggleUrgentesEl) toggleUrgentesEl.addEventListener('click', () => {
+    mostrarMarcasUrgentes = !mostrarMarcasUrgentes;
+    renderizar();
+  });
+  document.querySelectorAll('[data-marca-urgente]').forEach(tr => tr.addEventListener('click', () => {
+    filtroMarca = tr.dataset.marcaUrgente;
+    marcaExpandidaTabela = tr.dataset.marcaUrgente;
+    mostrarItensNormaisMarca = false;
+    buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
+    renderizar();
+    document.querySelector('.container').scrollIntoView({ behavior: 'smooth' });
+  }));
+  document.querySelectorAll('[data-rotina-marca]').forEach(el => el.addEventListener('click', () => {
+    // Limpa outros filtros antes de expandir, pra garantir que os itens
+    // mostrados batam com o que o card da Rotina contou (que sempre olha
+    // o painel inteiro, sem filtro nenhum).
+    filtroGrupo = ''; filtroSituacao = ''; buscaTexto = '';
+    marcaExpandidaTabela = el.dataset.rotinaMarca;
+    mostrarItensNormaisMarca = false;
+    buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
+    renderizar();
+    document.querySelector('.container').scrollIntoView({ behavior: 'smooth' });
+  }));
+  document.querySelectorAll('[data-dia-rotina]').forEach(el => el.addEventListener('click', () => {
+    diaRotinaSelecionado = el.dataset.diaRotina;
+    renderizar();
+  }));
+  const fecharMarcaEl = document.getElementById('fechar-marca-expandida');
+  if (fecharMarcaEl) fecharMarcaEl.addEventListener('click', () => {
+    marcaExpandidaTabela = '';
+    filtroMarca = '';
+    mostrarItensNormaisMarca = false;
+    buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
+    renderizar();
+  });
+  const ordenarUrgenciaEl = document.getElementById('ordenar-urgencia');
+  if (ordenarUrgenciaEl) ordenarUrgenciaEl.addEventListener('click', () => {
+    ordemColMarca = 'urgencia';
+    renderizar();
+  });
+  const gerarPedidoBtn = document.getElementById('gerar-pedido-btn');
+  if (gerarPedidoBtn) gerarPedidoBtn.addEventListener('click', () => {
+    gerarPedidoSysemp(marcaExpandidaTabela, itensDaMarcaExpandida);
+  });
+  const importarBtn = document.getElementById('importar-pedidos-btn');
+  const inputArquivo = document.getElementById('input-pedidos-aberto');
+  if (importarBtn && inputArquivo) {
+    importarBtn.addEventListener('click', () => inputArquivo.click());
+    inputArquivo.addEventListener('change', e => {
+      const arquivo = e.target.files[0];
+      if (!arquivo) return;
+      const leitor = new FileReader();
+      leitor.onload = evt => {
+        // Detecta a codificação automaticamente:
+        // - UTF-16 (BOM FF FE ou FE FF) — formato do botão "TXT" do Sysemp
+        // - Senão, tenta UTF-8; se aparecer o caractere de erro (�),
+        //   refaz como Windows-1252 (formato do "Salvar Como CSV" do Excel-BR)
+        const bytes = new Uint8Array(evt.target.result);
+        let texto;
+        if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
+          texto = new TextDecoder('utf-16le').decode(bytes.subarray(2));
+        } else if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+          texto = new TextDecoder('utf-16be').decode(bytes.subarray(2));
+        } else {
+          texto = new TextDecoder('utf-8').decode(bytes);
+          if (texto.includes('\ufffd')) {
+            texto = new TextDecoder('windows-1252').decode(bytes);
+          }
+        }
+        const resultado = processarArquivoPedidosAberto(texto);
+        if (resultado.ok) {
+          alert(resultado.importados + ' produto(s) com pedido em aberto importado(s). A sugestão de compra já foi ajustada.');
+        } else {
+          alert('Não consegui ler o arquivo: ' + resultado.erro);
+        }
+        renderizar();
+      };
+      leitor.readAsArrayBuffer(arquivo);
+    });
+  }
+
+  // ---- gráfico de barras (por marca) — HTML/CSS puro, sem lib externa ----
+  const maxMarcaValor = marcasOrdenadas.length ? marcasOrdenadas[0][1] : 1;
+  document.getElementById('bar-chart').innerHTML = marcasOrdenadas.map(([m, v]) =>
+    '<div class="bar-row ' + (m === filtroMarca ? 'active' : '') + '" data-marca="' + m.replace(/"/g, '&quot;') + '" title="' + m + ': ' + fmtMoeda(v) + '">' +
+      '<span class="glabel">' + m + '</span>' +
+      '<div class="bar-track"><div class="bar-fill" style="width:' + (v / maxMarcaValor * 100).toFixed(1) + '%"></div></div>' +
+      '<span class="bar-value">' + fmtMoeda(v) + '</span>' +
+    '</div>'
+  ).join('') || '<p style="color:var(--text-muted);font-size:13px;">Sem dados para os filtros escolhidos.</p>';
+
+  document.querySelectorAll('.bar-row').forEach(row => row.addEventListener('click', () => {
+    const marca = row.dataset.marca;
+    filtroMarca = filtroMarca === marca ? '' : marca;
+    marcaExpandidaTabela = filtroMarca; // '' se desmarcou, ou a marca se marcou
+    mostrarItensNormaisMarca = false;
+    buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
+    buscaMarcaTexto = '';
+    renderizar();
+  }));
+
+  // ---- donut (por situação) — SVG puro ----
+  const situKeys = Object.keys(situacaoCount);
+  const situTotalReal = Object.values(situacaoCount).reduce((a, b) => a + b, 0);
+  const situTotal = situTotalReal || 1;
+  const raio = 35, circunferencia = 2 * Math.PI * raio;
+  let acumulado = 0;
+  const segmentosSvg = situKeys.map(k => {
+    const valor = situacaoCount[k];
+    const frac = valor / situTotal;
+    const comprimento = frac * circunferencia;
+    const isAtiva = filtroSituacao === k;
+    const svg = '<circle cx="50" cy="50" r="' + raio + '" fill="none" stroke="' + donutColors[k] + '" ' +
+      'stroke-width="' + (isAtiva ? 18 : 15) + '" stroke-dasharray="' + comprimento + ' ' + circunferencia + '" ' +
+      'stroke-dashoffset="' + (-acumulado) + '" data-sit="' + k + '" transform="rotate(-90 50 50)" ' +
+      'opacity="' + (filtroSituacao && !isAtiva ? 0.35 : 1) + '"><title>' + k + ': ' + valor + '</title></circle>';
+    acumulado += comprimento;
+    return svg;
+  }).join('');
+  document.getElementById('donut-svg').innerHTML =
+    '<circle cx="50" cy="50" r="' + raio + '" fill="none" stroke="var(--bg)" stroke-width="15"/>' + segmentosSvg;
+  const donutCenterEl = document.getElementById('donut-center-n');
+  if (donutCenterEl) donutCenterEl.textContent = fmtNum(situTotalReal);
+
+  document.querySelectorAll('#donut-svg circle[data-sit]').forEach(c => c.addEventListener('click', () => {
+    const s = c.dataset.sit;
+    filtroSituacao = filtroSituacao === s ? '' : s;
+    renderizar();
+  }));
+
+  document.getElementById('donut-legend').innerHTML = situKeys.map(k =>
+    '<div class="legend-item ' + (filtroSituacao === k ? 'active' : '') + '" data-sit="' + k + '">' +
+      '<span><span class="legend-dot" style="background:' + donutColors[k] + '"></span>' + situacaoLabel(k) + '</span>' +
+      '<span>' + fmtNum(situacaoCount[k]) + '</span>' +
+    '</div>'
+  ).join('');
+  document.querySelectorAll('.legend-item').forEach(li => li.addEventListener('click', () => {
+    const s = li.dataset.sit;
+    filtroSituacao = filtroSituacao === s ? '' : s;
+    renderizar();
+  }));
+}
+
+carregarDados();
+setInterval(carregarDados, AUTO_REFRESH_MS);
+</script>
+
+</body>
+</html>
