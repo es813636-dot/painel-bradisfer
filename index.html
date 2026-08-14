@@ -839,7 +839,7 @@ async function carregarDados() {
       }
 
       const situacao = estoque <= 0 ? 'RUPTURA' : (estoque < minimo ? 'BAIXO' : (estoque > maximo ? 'EXCESSO' : 'OK'));
-      const valorEstoque = estoque * custo;
+      const valorEstoque = Math.max(0, estoque) * custo; // estoque negativo (venda além do saldo) não vira valor negativo
       const valorRepor = (situacao === 'RUPTURA' || situacao === 'BAIXO') ? Math.max(0, (minimo - estoque) * custo) : 0;
       return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras: String(r['Código Barras'] || '').trim(), estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null };
     });
