@@ -119,19 +119,11 @@
   .panel h2 { font-family: var(--font-display); font-size: 12px; font-weight: 600; color: var(--gold); margin: 0 0 4px; letter-spacing: 0.8px; text-transform: uppercase; }
   .panel .hint { font-size: 11px; color: var(--text-faint); margin: 0 0 14px; }
 
-  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; cursor: pointer; }
-  .bar-row .glabel { width: 130px; flex-shrink: 0; font-size: 11px; color: var(--text-muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bar-row.active .glabel { color: var(--gold-bright); font-weight: 600; }
-  .bar-track { flex: 1; height: 10px; background: #1a1a1e; overflow: hidden; border-radius: 5px; }
-  .bar-fill { height: 100%; background: var(--gold); border-radius: 5px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1), background 0.2s; }
-  .bar-row.active .bar-fill { background: var(--gold-bright); }
-  .bar-row:hover .bar-fill { filter: brightness(1.2); }
-  .bar-value { width: 92px; flex-shrink: 0; font-family: var(--font-mono); font-weight: 600; font-size: 12px; text-align: right; color: var(--text); }
+  .chart-box { position: relative; width: 100%; }
+  .chart-box-bar { height: 300px; }
 
   .donut-wrap { display: flex; flex-direction: column; align-items: center; }
-  .donut-ring-wrap { position: relative; width: 160px; height: 160px; }
-  .donut-svg circle { transition: stroke-dasharray 0.6s cubic-bezier(0.22,1,0.36,1), opacity 0.2s, filter 0.2s; cursor: pointer; }
-  .donut-svg circle:hover { filter: brightness(1.3); }
+  .donut-ring-wrap { position: relative; width: 160px; height: 160px; cursor: pointer; }
   .donut-center {
     position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     pointer-events: none; text-align: center;
@@ -329,11 +321,9 @@
     .rotina-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
     .rotina-card { padding: 10px 12px; }
 
-    .bar-row .glabel { width: 78px; font-size: 11px; }
-    .bar-value { width: 68px; font-size: 11px; }
+    .chart-box-bar { height: 260px; }
 
     .donut-ring-wrap { width: 130px; height: 130px; }
-    .donut-svg { width: 130px !important; height: 130px !important; }
 
     .suggestion-box { flex-direction: column; align-items: flex-start; gap: 6px; }
     .suggestion-box .v { font-size: 21px; }
@@ -382,6 +372,7 @@
 
 <footer>SYSEMP → GOOGLE SHEETS → PAINEL · atualização automática a cada 10 min</footer>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
 const SHEET_ID = '1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A';
 const SHEET_NAME = 'BaseLooker';
@@ -415,6 +406,8 @@ const MARCAS_EXCLUIDAS = [
 ].map(m => m.trim().toUpperCase());
 
 let dadosCompletos = [];
+let donutChartInstance = null;
+let barChartInstance = null;
 let filtroGrupo = '';
 let filtroSituacao = '';
 let filtroMarca = '';
@@ -873,7 +866,17 @@ async function carregarDados() {
   }
 }
 
-const donutColors = { RUPTURA: '#FF3B3B', BAIXO: '#FFB800', EXCESSO: '#4FA3FF', OK: '#3BFF6E' };
+const donutColors = { RUPTURA: '#e66767', BAIXO: '#199e70', EXCESSO: '#3987e5', OK: '#008300' };
+function hexToRgba(hex, alpha) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16), g = parseInt(h.substring(2, 4), 16), b = parseInt(h.substring(4, 6), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+if (window.Chart) { Chart.defaults.font.family = "'Inter', -apple-system, 'Segoe UI', sans-serif"; }
+const CHART_TOOLTIP_STYLE = {
+  backgroundColor: '#1c1c21', borderColor: '#26262c', borderWidth: 1, cornerRadius: 8,
+  titleColor: '#D4D4D4', bodyColor: '#D4D4D4', padding: 10, displayColors: false,
+};
 const badgeClass = s => ({ RUPTURA: 'badge-ruptura', BAIXO: 'badge-baixo', EXCESSO: 'badge-excesso', OK: 'badge-ok' }[s] || 'badge-ok');
 // Texto exibido pro usuário — a chave interna continua "RUPTURA" (usada
 // em comparações e filtros), só o texto na tela muda.
@@ -1770,9 +1773,9 @@ function renderizar() {
 
     '<div class="panels">' +
       '<div class="panel"><h2>Valor em estoque por marca</h2><p class="hint">Clique numa barra para filtrar a tabela abaixo</p>' +
-        '<div id="bar-chart"></div></div>' +
+        '<div class="chart-box chart-box-bar"><canvas id="bar-chart"></canvas></div></div>' +
       '<div class="panel"><h2>SKUs por situação</h2><p class="hint">Clique numa fatia ou na legenda para filtrar</p>' +
-        '<div class="donut-wrap"><div class="donut-ring-wrap"><svg class="donut-svg" viewBox="0 0 100 100" width="160" height="160" id="donut-svg"></svg>' +
+        '<div class="donut-wrap"><div class="donut-ring-wrap"><canvas id="donut-chart"></canvas>' +
         '<div class="donut-center"><div class="n" id="donut-center-n">0</div><div class="l">SKUs</div></div></div>' +
         '<div class="legend" id="donut-legend"></div></div></div>' +
     '</div>' +
@@ -2072,54 +2075,83 @@ function renderizar() {
     });
   }
 
-  // ---- gráfico de barras (por marca) — HTML/CSS puro, sem lib externa ----
-  const maxMarcaValor = marcasOrdenadas.length ? marcasOrdenadas[0][1] : 1;
-  document.getElementById('bar-chart').innerHTML = marcasOrdenadas.map(([m, v]) =>
-    '<div class="bar-row ' + (m === filtroMarca ? 'active' : '') + '" data-marca="' + m.replace(/"/g, '&quot;') + '" title="' + m + ': ' + fmtMoeda(v) + '">' +
-      '<span class="glabel">' + m + '</span>' +
-      '<div class="bar-track"><div class="bar-fill" style="width:' + (v / maxMarcaValor * 100).toFixed(1) + '%"></div></div>' +
-      '<span class="bar-value">' + fmtMoeda(v) + '</span>' +
-    '</div>'
-  ).join('') || '<p style="color:var(--text-muted);font-size:13px;">Sem dados para os filtros escolhidos.</p>';
+  // ---- gráfico de barras (por marca) — Chart.js ----
+  const barLabels = marcasOrdenadas.map(([m]) => m);
+  const barValues = marcasOrdenadas.map(([, v]) => v);
+  const barBg = marcasOrdenadas.map(([m]) => m === filtroMarca ? getComputedStyle(document.documentElement).getPropertyValue('--gold-bright').trim() : getComputedStyle(document.documentElement).getPropertyValue('--gold').trim());
+  const barCtx = document.getElementById('bar-chart');
+  const barChartConfig = {
+    labels: barLabels,
+    datasets: [{ data: barValues, backgroundColor: barBg, borderRadius: 4, maxBarThickness: 20 }],
+  };
+  const barChartOptions = {
+    indexAxis: 'y',
+    responsive: true, maintainAspectRatio: false,
+    animation: false,
+    onClick: (evt, elements) => {
+      if (!elements.length) return;
+      const marca = barChartInstance.data.labels[elements[0].index];
+      filtroMarca = filtroMarca === marca ? '' : marca;
+      marcaExpandidaTabela = filtroMarca; // '' se desmarcou, ou a marca se marcou
+      mostrarItensNormaisMarca = false;
+      buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
+      buscaMarcaTexto = '';
+      renderizar();
+    },
+    onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+    plugins: {
+      legend: { display: false },
+      tooltip: Object.assign({}, CHART_TOOLTIP_STYLE, { callbacks: { label: ctx => fmtMoeda(ctx.parsed.x) } }),
+    },
+    scales: {
+      x: { ticks: { color: '#8A8A8A', callback: v => fmtMoedaCompacta(v) }, grid: { color: '#26262c' } },
+      y: { ticks: { color: '#D4D4D4', font: { size: 11 } }, grid: { display: false } },
+    },
+  };
+  if (barChartInstance) {
+    barChartInstance.data = barChartConfig;
+    barChartInstance.options = Object.assign(barChartInstance.options, barChartOptions);
+    barChartInstance.update();
+  } else {
+    barChartInstance = new Chart(barCtx, { type: 'bar', data: barChartConfig, options: barChartOptions });
+  }
 
-  document.querySelectorAll('.bar-row').forEach(row => row.addEventListener('click', () => {
-    const marca = row.dataset.marca;
-    filtroMarca = filtroMarca === marca ? '' : marca;
-    marcaExpandidaTabela = filtroMarca; // '' se desmarcou, ou a marca se marcou
-    mostrarItensNormaisMarca = false;
-    buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
-    buscaMarcaTexto = '';
-    renderizar();
-  }));
-
-  // ---- donut (por situação) — SVG puro ----
+  // ---- donut (por situação) — Chart.js ----
   const situKeys = Object.keys(situacaoCount);
   const situTotalReal = Object.values(situacaoCount).reduce((a, b) => a + b, 0);
-  const situTotal = situTotalReal || 1;
-  const raio = 35, circunferencia = 2 * Math.PI * raio;
-  let acumulado = 0;
-  const segmentosSvg = situKeys.map(k => {
-    const valor = situacaoCount[k];
-    const frac = valor / situTotal;
-    const comprimento = frac * circunferencia;
-    const isAtiva = filtroSituacao === k;
-    const svg = '<circle cx="50" cy="50" r="' + raio + '" fill="none" stroke="' + donutColors[k] + '" ' +
-      'stroke-width="' + (isAtiva ? 18 : 15) + '" stroke-dasharray="' + comprimento + ' ' + circunferencia + '" ' +
-      'stroke-dashoffset="' + (-acumulado) + '" data-sit="' + k + '" transform="rotate(-90 50 50)" ' +
-      'opacity="' + (filtroSituacao && !isAtiva ? 0.35 : 1) + '"><title>' + k + ': ' + valor + '</title></circle>';
-    acumulado += comprimento;
-    return svg;
-  }).join('');
-  document.getElementById('donut-svg').innerHTML =
-    '<circle cx="50" cy="50" r="' + raio + '" fill="none" stroke="var(--bg)" stroke-width="15"/>' + segmentosSvg;
   const donutCenterEl = document.getElementById('donut-center-n');
   if (donutCenterEl) donutCenterEl.textContent = fmtNum(situTotalReal);
 
-  document.querySelectorAll('#donut-svg circle[data-sit]').forEach(c => c.addEventListener('click', () => {
-    const s = c.dataset.sit;
-    filtroSituacao = filtroSituacao === s ? '' : s;
-    renderizar();
-  }));
+  const donutValues = situKeys.map(k => situacaoCount[k]);
+  const donutBg = situKeys.map(k => filtroSituacao && filtroSituacao !== k ? hexToRgba(donutColors[k], 0.35) : donutColors[k]);
+  const donutOffset = situKeys.map(k => filtroSituacao === k ? 10 : 0);
+  const donutCtx = document.getElementById('donut-chart');
+  const donutChartConfig = {
+    labels: situKeys.map(k => situacaoLabel(k)),
+    datasets: [{ data: donutValues, backgroundColor: donutBg, offset: donutOffset, borderWidth: 0, hoverOffset: 6 }],
+  };
+  const donutChartOptions = {
+    responsive: true, maintainAspectRatio: false, cutout: '68%',
+    animation: false,
+    onClick: (evt, elements) => {
+      if (!elements.length) return;
+      const s = situKeys[elements[0].index];
+      filtroSituacao = filtroSituacao === s ? '' : s;
+      renderizar();
+    },
+    onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+    plugins: {
+      legend: { display: false },
+      tooltip: Object.assign({}, CHART_TOOLTIP_STYLE, { callbacks: { label: ctx => ctx.label + ': ' + fmtNum(ctx.parsed) } }),
+    },
+  };
+  if (donutChartInstance) {
+    donutChartInstance.data = donutChartConfig;
+    donutChartInstance.options = Object.assign(donutChartInstance.options, donutChartOptions);
+    donutChartInstance.update();
+  } else {
+    donutChartInstance = new Chart(donutCtx, { type: 'doughnut', data: donutChartConfig, options: donutChartOptions });
+  }
 
   document.getElementById('donut-legend').innerHTML = situKeys.map(k =>
     '<div class="legend-item ' + (filtroSituacao === k ? 'active' : '') + '" data-sit="' + k + '">' +
