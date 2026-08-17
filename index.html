@@ -146,6 +146,77 @@
     .tabela-animada tbody tr { animation: none; }
   }
 
+  /* ==================== Visão BI — só a aba Vendas ==================== */
+  .vendas-bi-header {
+    background: linear-gradient(120deg, #1e1b4b 0%, #312e81 55%, #1e1b4b 100%);
+    border-radius: 16px; padding: 18px 24px; margin-bottom: 18px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    border: 1px solid #3730a3;
+  }
+  .vendas-bi-header h1 {
+    margin: 0; font-size: 15px; font-weight: 800; letter-spacing: 1px; color: #fff; text-transform: uppercase;
+  }
+  .vendas-bi-header .sub { font-size: 11.5px; color: #a5b4fc; margin-top: 3px; letter-spacing: 0.3px; }
+
+  .vendas-ficticio-aviso {
+    background: rgba(244,63,94,0.1); border: 1px solid #f43f5e; color: #fda4af;
+    border-radius: 10px; padding: 10px 16px; font-size: 12.5px; line-height: 1.5; margin-bottom: 18px;
+  }
+  .vendas-ficticio-aviso b { color: #fecdd3; }
+
+  .vendas-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .vendas-kpi-card {
+    border-radius: 14px; padding: 18px 20px; color: #fff; position: relative; overflow: hidden;
+    box-shadow: 0 8px 20px -8px rgba(0,0,0,0.5);
+  }
+  .vendas-kpi-card.gradiente-roxo { background: linear-gradient(135deg, #6d28d9, #a78bfa); }
+  .vendas-kpi-card.gradiente-rosa { background: linear-gradient(135deg, #be123c, #fb7185); }
+  .vendas-kpi-card.gradiente-verde { background: linear-gradient(135deg, #047857, #34d399); }
+  .vendas-kpi-card.gradiente-azul { background: linear-gradient(135deg, #1d4ed8, #60a5fa); }
+  .vendas-kpi-card .selo-ficticio {
+    position: absolute; top: 10px; right: 12px; font-size: 8.5px; font-weight: 800; letter-spacing: 0.5px;
+    background: rgba(0,0,0,0.28); padding: 2px 7px; border-radius: 999px; text-transform: uppercase;
+  }
+  .vendas-kpi-card .label { font-size: 11px; font-weight: 700; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 10px; }
+  .vendas-kpi-card .valor { font-family: 'IBM Plex Mono', monospace; font-size: 24px; font-weight: 700; line-height: 1; }
+  .vendas-kpi-card .variacao { font-size: 11.5px; margin-top: 8px; opacity: 0.9; }
+
+  .vendas-bi-panel {
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px;
+    padding: 18px 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  }
+  .vendas-bi-panel h2 {
+    font-family: var(--font-display); font-size: 12px; font-weight: 700; margin: 0 0 2px;
+    letter-spacing: 0.6px; text-transform: uppercase; display: flex; align-items: center; gap: 8px;
+  }
+
+  .ranking-linha {
+    display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid var(--glass-border);
+  }
+  .ranking-linha:last-child { border-bottom: none; }
+  .ranking-medalha { width: 22px; text-align: center; font-size: 13px; flex-shrink: 0; }
+  .ranking-avatar {
+    width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff;
+  }
+  .ranking-info { flex: 1; min-width: 0; }
+  .ranking-nome { font-size: 13px; font-weight: 600; color: var(--text); }
+  .ranking-sub { font-size: 11px; color: var(--text-faint); }
+  .ranking-valores { text-align: right; flex-shrink: 0; }
+  .ranking-valores .fat { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; color: var(--text); }
+  .ranking-valores .meta-badge { font-size: 10.5px; font-weight: 700; margin-top: 2px; }
+  .ranking-valores .meta-badge.bateu { color: var(--green-a, #3fb950); }
+  .ranking-valores .meta-badge.nao-bateu { color: var(--red-a); }
+
+  .supervisor-linha {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 6px; border-bottom: 1px solid var(--glass-border); font-size: 12.5px;
+  }
+  .supervisor-linha:last-child { border-bottom: none; }
+  .supervisor-linha .nome { color: var(--text); font-weight: 600; }
+  .supervisor-linha .time { color: var(--text-faint); font-size: 11px; }
+  .supervisor-linha .valor { font-family: 'IBM Plex Mono', monospace; font-weight: 700; padding: 3px 10px; border-radius: 999px; font-size: 12px; }
+
   .donut-wrap { display: flex; flex-direction: column; align-items: center; }
   .donut-ring-wrap { position: relative; width: 160px; height: 160px; cursor: pointer; }
   .donut-center {
@@ -467,6 +538,7 @@ let animarBarraNoProximoRender = false;
 let animarMarcasVendasNoProximoRender = false;
 let marcasMaisVendasChartInstance = null;
 let marcasMenosVendasChartInstance = null;
+let vendasQtdMarcaChartInstance = null; // donut simples, nunca anima — sempre recriado, sem custo extra
 let buscaItensCriticosTexto = ''; // busca dentro da seção de itens críticos
 let buscaItensNormaisTexto = ''; // busca dentro da seção "demais itens"
 let pedidosEmAberto = new Map(); // normalizarProduto(produto) -> quantidade em aberto (soma se repetir)
@@ -966,6 +1038,27 @@ async function carregarDados() {
 }
 
 const donutColors = { RUPTURA: '#e66767', BAIXO: '#199e70', EXCESSO: '#3987e5', OK: '#008300' };
+
+// ----------------------------------------------------------------------
+// DADOS FICTÍCIOS — visão geral de vendas (aba Vendas)
+// Sysemp ainda não expõe vendedor/meta/faturamento por venda individual
+// via API; até pedirmos e recebermos esse endpoint, esses números são
+// só ilustrativos pro layout. Todo lugar que os usa mostra o selo
+// "FICTÍCIO" — nunca aparecem sem esse aviso.
+// ----------------------------------------------------------------------
+const VENDEDORES_FICTICIOS = [
+  { nome: 'Carla Ferreira', iniciais: 'CF', cor: '#a78bfa', faturamento: 238800, qtd: 512, meta: 220000 },
+  { nome: 'Júlio Lima', iniciais: 'JL', cor: '#fb7185', faturamento: 177900, qtd: 445, meta: 175000 },
+  { nome: 'Gustavo Gomes', iniciais: 'GG', cor: '#34d399', faturamento: 125800, qtd: 381, meta: 128000 },
+  { nome: 'Felipe Gonçalves', iniciais: 'FG', cor: '#60a5fa', faturamento: 99600, qtd: 350, meta: 96500 },
+  { nome: 'Sofia Ribeiro', iniciais: 'SR', cor: '#fbbf24', faturamento: 82400, qtd: 298, meta: 89000 },
+];
+const SUPERVISORES_FICTICIOS = [
+  { nome: 'Diogo Araújo', time: 'Gerente', ticketMedio: 461.6 },
+  { nome: 'Fernando Silva', time: 'Supervisor', ticketMedio: 328.4 },
+  { nome: 'Diogo Carvalho', time: 'Supervisor', ticketMedio: 305.1 },
+  { nome: 'Emily Rocha', time: 'Supervisora', ticketMedio: 256.3 },
+];
 const SITUACOES = ['RUPTURA', 'BAIXO', 'EXCESSO', 'OK'];
 function hexToRgba(hex, alpha) {
   const h = hex.replace('#', '');
@@ -1572,6 +1665,17 @@ function renderizarAbaVendas() {
   const marcasMaisVendidas = [...marcasArray].sort((a, b) => b.totalMedia - a.totalMedia).slice(0, 10);
   const marcasMenosVendidas = [...marcasArray].sort((a, b) => a.totalMedia - b.totalMedia).slice(0, 10);
 
+  // ---- Visão geral (cartões do topo) ----
+  // Faturamento é uma ESTIMATIVA real (média mensal vendida × custo unitário
+  // de cada produto) — os demais números dessa seção (meta, vendedor,
+  // ticket médio) são fictícios, ver aviso na tela e comentário na
+  // declaração de VENDEDORES_FICTICIOS lá em cima.
+  const faturamentoEstimado = comVenda.reduce((s, d) => s + d.analise.mediaMensal * d.custo, 0);
+  const metaFicticia = VENDEDORES_FICTICIOS.reduce((s, v) => s + v.meta, 0);
+  const atingimentoMetaFicticio = metaFicticia > 0 ? (VENDEDORES_FICTICIOS.reduce((s, v) => s + v.faturamento, 0) / metaFicticia) * 100 : 0;
+  const qtdVendidaFicticia = VENDEDORES_FICTICIOS.reduce((s, v) => s + v.qtd, 0);
+  const ticketMedioFicticio = qtdVendidaFicticia > 0 ? VENDEDORES_FICTICIOS.reduce((s, v) => s + v.faturamento, 0) / qtdVendidaFicticia : 0;
+
   // ---- Relatório: itens mais vendidos de uma marca escolhida ----
   const todasMarcasComVenda = [...new Set(comVenda.map(d => d.marca))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const itensRelatorioMarca = marcaRelatorioVendas
@@ -1606,7 +1710,68 @@ function renderizarAbaVendas() {
 
   document.getElementById('app').innerHTML =
     barraAbas() +
-    '<p class="hint" style="margin-bottom:16px;">Baseado em ' + fmtNum(comVenda.length) + ' produtos com Média Mensal disponível (batem com a planilha de análise) — de ' + fmtNum(dadosCompletos.length) + ' produtos no total.</p>' +
+
+    '<div class="vendas-bi-header">' +
+      '<div><h1>📊 Visão geral de vendas</h1><div class="sub">Baseado em ' + fmtNum(comVenda.length) + ' produtos com Média Mensal disponível, de ' + fmtNum(dadosCompletos.length) + ' no total</div></div>' +
+    '</div>' +
+
+    '<div class="vendas-ficticio-aviso">⚠️ <b>Meta, vendedor, ticket médio e % de meta são dados FICTÍCIOS</b> — a Sysemp ainda não tem um endpoint de vendas por vendedor. ' +
+      'Assim que pedirmos e recebermos essa API, esses cartões passam a usar dado real. O <b>faturamento</b> abaixo já é real (estimado: média mensal vendida × custo unitário de cada produto).</div>' +
+
+    '<div class="vendas-kpi-grid">' +
+      '<div class="vendas-kpi-card gradiente-roxo">' +
+        '<div class="label">Faturamento estimado</div>' +
+        '<div class="valor">' + fmtMoeda(faturamentoEstimado) + '</div>' +
+        '<div class="variacao">por mês, base custo unitário</div>' +
+      '</div>' +
+      '<div class="vendas-kpi-card gradiente-rosa">' +
+        '<span class="selo-ficticio">fictício</span>' +
+        '<div class="label">Atingimento de meta</div>' +
+        '<div class="valor">' + atingimentoMetaFicticio.toFixed(1).replace('.', ',') + '%</div>' +
+        '<div class="variacao">meta fictícia: ' + fmtMoeda(metaFicticia) + '</div>' +
+      '</div>' +
+      '<div class="vendas-kpi-card gradiente-verde">' +
+        '<span class="selo-ficticio">fictício</span>' +
+        '<div class="label">Ticket médio</div>' +
+        '<div class="valor">' + fmtMoeda(ticketMedioFicticio) + '</div>' +
+        '<div class="variacao">' + fmtNum(qtdVendidaFicticia) + ' vendas fictícias no mês</div>' +
+      '</div>' +
+      '<div class="vendas-kpi-card gradiente-azul">' +
+        '<div class="label">Marca líder</div>' +
+        '<div class="valor" style="font-size:18px;">' + (marcasMaisVendidas[0] ? escapeHtml(marcasMaisVendidas[0].marca) : '—') + '</div>' +
+        '<div class="variacao">' + (marcasMaisVendidas[0] ? marcasMaisVendidas[0].totalMedia.toFixed(0) + ' un/mês (real)' : '') + '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="panels" style="margin-bottom:16px;">' +
+      '<div class="vendas-bi-panel">' +
+        '<h2 style="color:var(--gold-bright);">🏆 Ranking de vendedores <span class="selo-ficticio" style="position:static;background:rgba(244,63,94,0.15);color:#fda4af;">fictício</span></h2>' +
+        '<p class="hint">Dados de exemplo — aguardando API de vendas por vendedor da Sysemp</p>' +
+        VENDEDORES_FICTICIOS.map((v, i) => {
+          const medalha = ['🥇', '🥈', '🥉'][i] || (i + 1) + 'º';
+          const bateu = v.faturamento >= v.meta;
+          return '<div class="ranking-linha">' +
+            '<div class="ranking-medalha">' + medalha + '</div>' +
+            '<div class="ranking-avatar" style="background:' + v.cor + ';">' + v.iniciais + '</div>' +
+            '<div class="ranking-info"><div class="ranking-nome">' + escapeHtml(v.nome) + '</div><div class="ranking-sub">' + fmtNum(v.qtd) + ' vendas</div></div>' +
+            '<div class="ranking-valores"><div class="fat">' + fmtMoeda(v.faturamento) + '</div>' +
+              '<div class="meta-badge ' + (bateu ? 'bateu' : 'nao-bateu') + '">' + (bateu ? '✓ ' : '✕ ') + ((v.faturamento / v.meta) * 100).toFixed(1).replace('.', ',') + '%</div></div>' +
+          '</div>';
+        }).join('') +
+      '</div>' +
+      '<div class="vendas-bi-panel">' +
+        '<h2 style="color:var(--gold-bright);">👥 Ticket médio por supervisor <span class="selo-ficticio" style="position:static;background:rgba(244,63,94,0.15);color:#fda4af;">fictício</span></h2>' +
+        '<p class="hint">Dados de exemplo — aguardando API de vendas da Sysemp</p>' +
+        SUPERVISORES_FICTICIOS.map(s =>
+          '<div class="supervisor-linha">' +
+            '<div><div class="nome">' + escapeHtml(s.nome) + '</div><div class="time">' + escapeHtml(s.time) + '</div></div>' +
+            '<div class="valor" style="background:rgba(96,165,250,0.15);color:#93c5fd;">' + fmtMoeda(s.ticketMedio) + '</div>' +
+          '</div>'
+        ).join('') +
+        '<div style="margin-top:14px;"><div class="panel-hint" style="margin:0 0 6px;font-size:11px;color:var(--text-faint);">Qtd. vendida por marca (real, top 8)</div>' +
+        '<div class="chart-box" style="height:170px;"><canvas id="vendas-qtd-marca-chart"></canvas></div></div>' +
+      '</div>' +
+    '</div>' +
 
     '<div class="panel" style="margin-bottom:16px;">' +
       '<h2>Itens mais vendidos por marca</h2>' +
@@ -1738,6 +1903,31 @@ function renderizarAbaVendas() {
         scales: {
           x: { ticks: { color: '#8A8A8A' }, grid: { color: '#26262c' } },
           y: { ticks: { color: '#D4D4D4', font: { size: 11 } }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  // ---- donut: qtd. vendida por marca (real, top 8) — nunca anima, sem
+  // interação de clique, então destruir e recriar direto é seguro e simples
+  // (não precisa da técnica de preservar canvas usada nos outros gráficos).
+  if (vendasQtdMarcaChartInstance) vendasQtdMarcaChartInstance.destroy();
+  const top8MarcasQtd = marcasMaisVendidas.slice(0, 8);
+  const paletaQtdMarca = ['#a78bfa', '#fb7185', '#34d399', '#60a5fa', '#fbbf24', '#f472b6', '#4ade80', '#38bdf8'];
+  const canvasQtdMarca = document.getElementById('vendas-qtd-marca-chart');
+  if (canvasQtdMarca) {
+    vendasQtdMarcaChartInstance = new Chart(canvasQtdMarca, {
+      type: 'doughnut',
+      data: {
+        labels: top8MarcasQtd.map(m => m.marca),
+        datasets: [{ data: top8MarcasQtd.map(m => m.totalMedia), backgroundColor: paletaQtdMarca, borderWidth: 0 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '58%',
+        animation: false,
+        plugins: {
+          legend: { position: 'right', labels: { color: '#9a9aa2', boxWidth: 10, font: { size: 10 }, padding: 8 } },
+          tooltip: Object.assign({}, CHART_TOOLTIP_STYLE, { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed.toFixed(0) + ' un/mês' } }),
         },
       },
     });
