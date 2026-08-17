@@ -429,6 +429,11 @@ let abaSelecionada = 'estoque'; // 'estoque' ou 'vendas'
 let mostrarItensNormaisMarca = false; // segunda seção (estoque normal/excesso) começa fechada
 let mostrarMarcasUrgentes = false; // lista de marcas com compra urgente começa fechada
 let marcaRelatorioVendas = ''; // marca selecionada no relatório "itens mais vendidos por marca" (aba Vendas)
+// Liga a animação do donut só quando a mudança veio de uma seleção de
+// verdade (fatia, legenda, chip, card) — não em toda renderização (senão o
+// anel "recarregaria" a cada tecla digitada na busca, já que ela também
+// chama renderizar()). É lido e resetado uma única vez dentro de renderizar().
+let animarDonutNoProximoRender = false;
 let buscaItensCriticosTexto = ''; // busca dentro da seção de itens críticos
 let buscaItensNormaisTexto = ''; // busca dentro da seção "demais itens"
 let pedidosEmAberto = new Map(); // normalizarProduto(produto) -> quantidade em aberto (soma se repetir)
@@ -2040,15 +2045,18 @@ function renderizar() {
   document.getElementById('busca').addEventListener('input', aplicarBuscaProduto);
   document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
     filtroSituacao = filtroSituacao === c.dataset.sit ? '' : c.dataset.sit;
+    animarDonutNoProximoRender = true;
     renderizar();
   }));
   document.querySelectorAll('.kpi-card[data-sit]').forEach(c => c.addEventListener('click', () => {
     filtroSituacao = filtroSituacao === c.dataset.sit ? '' : c.dataset.sit;
+    animarDonutNoProximoRender = true;
     renderizar();
   }));
   const clearEl = document.getElementById('clear-filters');
   if (clearEl) clearEl.addEventListener('click', () => {
     filtroGrupo = ''; filtroSituacao = ''; buscaTexto = ''; filtroMarca = ''; buscaMarcaTexto = ''; mostrarSugestoesMarca = false; marcaExpandidaTabela = '';
+    animarDonutNoProximoRender = true;
     renderizar();
   });
 
@@ -2262,6 +2270,10 @@ function renderizar() {
   const donutValues = SITUACOES.map(k => situacaoCount[k]);
   const donutBg = SITUACOES.map(k => filtroSituacao && filtroSituacao !== k ? hexToRgba(donutColors[k], 0.35) : donutColors[k]);
   const donutOffset = SITUACOES.map(k => filtroSituacao === k ? 10 : 0);
+  // Consumo único da flag: só anima se a renderização foi disparada por uma
+  // seleção de verdade (ver comentário na declaração da variável lá em cima).
+  const animarDonutAgora = animarDonutNoProximoRender;
+  animarDonutNoProximoRender = false;
   if (donutChartInstance) donutChartInstance.destroy();
   {
     donutChartInstance = new Chart(document.getElementById('donut-chart'), {
@@ -2272,11 +2284,12 @@ function renderizar() {
       },
       options: {
         responsive: true, maintainAspectRatio: false, cutout: '68%',
-        animation: false,
+        animation: animarDonutAgora ? { duration: 700, easing: 'easeOutQuart' } : false,
         onClick: (evt, elements) => {
           if (!elements.length) return;
           const s = SITUACOES[elements[0].index];
           filtroSituacao = filtroSituacao === s ? '' : s;
+          animarDonutNoProximoRender = true;
           renderizar();
         },
         onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
@@ -2297,6 +2310,7 @@ function renderizar() {
   document.querySelectorAll('.legend-item').forEach(li => li.addEventListener('click', () => {
     const s = li.dataset.sit;
     filtroSituacao = filtroSituacao === s ? '' : s;
+    animarDonutNoProximoRender = true;
     renderizar();
   }));
 
