@@ -1685,15 +1685,22 @@ function renderizar() {
   const valorRepor = dados.reduce((s, d) => s + d.valorRepor, 0);
 
   const porMarca = {};
-  // Para o gráfico de barras, aplicamos todos os filtros MENOS o de marca —
-  // assim as outras marcas continuam aparecendo como opção, mesmo com uma já selecionada.
+  // Não filtramos pela própria marca aqui — calculamos o valor de TODAS as
+  // marcas primeiro (pra achar a posição/valor certo mesmo se a marca
+  // escolhida não estiver no top 10) e só isolamos ela depois, na hora de
+  // montar marcasOrdenadas.
   const dadosParaBarra = dadosCompletos.filter(d =>
     (!filtroGrupo || d.grupo === filtroGrupo) &&
     (!filtroSituacao || d.situacao === filtroSituacao) &&
     (!buscaTexto || d.produto.toLowerCase().includes(buscaTexto.toLowerCase()))
   );
   dadosParaBarra.forEach(d => { porMarca[d.marca] = (porMarca[d.marca] || 0) + d.valorEstoque; });
-  const marcasOrdenadas = Object.entries(porMarca).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const todasMarcasOrdenadas = Object.entries(porMarca).sort((a, b) => b[1] - a[1]);
+  // Com uma marca selecionada (clicou numa barra, ou escolheu na busca),
+  // o gráfico isola só ela — em vez das 10 marcas de sempre.
+  const marcasOrdenadas = filtroMarca
+    ? todasMarcasOrdenadas.filter(([m]) => m === filtroMarca)
+    : todasMarcasOrdenadas.slice(0, 10);
 
   // Mesma lógica para o donut de situação: ignora o próprio filtroSituacao,
   // pra continuar mostrando todas as fatias mesmo com uma selecionada.
@@ -1921,7 +1928,7 @@ function renderizar() {
 
     '<div class="panels">' +
       '<div class="panel"><h2>Valor em estoque por marca</h2><p class="hint">Clique numa barra para filtrar a tabela abaixo</p>' +
-        '<div class="chart-box chart-box-bar"><canvas id="bar-chart"></canvas></div></div>' +
+        '<div class="chart-box chart-box-bar" style="height:' + Math.min(300, Math.max(90, marcasOrdenadas.length * 30 + 50)) + 'px;"><canvas id="bar-chart"></canvas></div></div>' +
       '<div class="panel"><h2>SKUs por situação</h2><p class="hint">Clique numa fatia ou na legenda para filtrar</p>' +
         '<div class="donut-wrap"><div class="donut-ring-wrap"><canvas id="donut-chart"></canvas>' +
         '<div class="donut-center"><div class="n" id="donut-center-n">0</div><div class="l">SKUs</div></div></div>' +
@@ -2302,6 +2309,7 @@ function renderizar() {
           const s = SITUACOES[elements[0].index];
           filtroSituacao = filtroSituacao === s ? '' : s;
           animarDonutNoProximoRender = true;
+          animarBarraNoProximoRender = true;
           renderizar();
         },
         onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
