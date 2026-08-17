@@ -2284,7 +2284,7 @@ function renderizar() {
       },
       options: {
         responsive: true, maintainAspectRatio: false, cutout: '68%',
-        animation: animarDonutAgora ? { duration: 700, easing: 'easeOutQuart' } : false,
+        animation: animarDonutAgora ? { duration: 1400, easing: 'easeOutQuart', animateRotate: true, animateScale: false } : false,
         onClick: (evt, elements) => {
           if (!elements.length) return;
           const s = SITUACOES[elements[0].index];
