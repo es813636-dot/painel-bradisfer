@@ -21,7 +21,7 @@
     --glass-hover: #1c1c21;
     --text: #D4D4D4;
     --text-muted: #8A8A8A;
-    --text-faint: #6B6B6B;
+    --text-faint: #808080;
     /* Status quartet re-derived to clear WCAG/CVD checks against this dark
        surface (validated with the dataviz skill's palette validator) — the
        previous neon set failed the lightness band, and amber collided with
@@ -367,7 +367,7 @@
 </div>
 
 <div class="modal-backdrop" id="modal-backdrop">
-  <div class="modal-panel" id="modal-panel"></div>
+  <div class="modal-panel" id="modal-panel" role="dialog" aria-modal="true" aria-label="Detalhes do produto" tabindex="-1"></div>
 </div>
 
 <footer>SYSEMP → GOOGLE SHEETS → PAINEL · atualização automática a cada 10 min</footer>
@@ -411,6 +411,7 @@ const MARCAS_EXCLUIDAS = [
 ].map(m => m.trim().toUpperCase());
 
 let dadosCompletos = [];
+let elementoFocoAntesDoModal = null; // pra devolver o foco ao fechar o modal
 let donutChartInstance = null;
 let barChartInstance = null;
 let filtroGrupo = '';
@@ -658,6 +659,41 @@ const ROTINA_COMPRAS = [
 
 function fmtMoeda(v) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }); }
 function fmtNum(v) { return v.toLocaleString('pt-BR'); }
+
+// Escapa texto vindo da planilha/API (produto, marca, fornecedor...) antes de
+// jogar em innerHTML — sem isso, um nome de produto com "<" ou "&" quebra o
+// layout, e alguém com acesso de edição na planilha poderia injetar HTML/JS.
+const MAPA_ESCAPE_HTML = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function escapeHtml(texto) {
+  return String(texto == null ? '' : texto).replace(/[&<>"']/g, ch => MAPA_ESCAPE_HTML[ch]);
+}
+
+// Retrofita acessibilidade de teclado em elementos clicáveis que não são
+// <button>/<a>/<input>/<select> nativos (chips, linhas de tabela, cards...):
+// dá foco via Tab e ativa com Enter/Espaço, sem precisar reescrever cada
+// template de HTML pra usar <button>.
+function tornarClicaveisAcessiveis(raiz) {
+  raiz.querySelectorAll('.clickable, .chip, .legend-item, .autocomplete-item, thead th[data-col]').forEach(el => {
+    const tag = el.tagName;
+    if (tag === 'BUTTON' || tag === 'A' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
+    // <th> mantém o role nativo de columnheader (o aria-sort abaixo já avisa
+    // que é ordenável) — sobrescrever pra "button" faria o leitor de tela
+    // perder a associação da coluna com as células da tabela.
+    if (tag !== 'TH' && !el.hasAttribute('role')) el.setAttribute('role', 'button');
+    if (!el.dataset.a11yClique) {
+      el.dataset.a11yClique = '1';
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+      });
+    }
+  });
+  raiz.querySelectorAll('thead th[data-col]').forEach(th => {
+    const seta = th.querySelector('.arrow');
+    const dir = seta ? seta.textContent.trim() : '';
+    th.setAttribute('aria-sort', dir === '▲' ? 'ascending' : dir === '▼' ? 'descending' : 'none');
+  });
+}
 
 // Versão abreviada pros cards de KPI (evita estourar a largura do card
 // com valores grandes, tipo R$ 4.334.163 -> R$ 4,33 mi)
@@ -1030,17 +1066,22 @@ function calcularPedidoSugeridoAoVivo(produto) {
 async function abrirDetalheProduto(produto) {
   const painel = document.getElementById('modal-panel');
 
+  // Guarda o elemento com foco antes de abrir, pra devolver o foco pra ele
+  // quando o modal fechar (senão o teclado "perde o lugar" na página).
+  elementoFocoAntesDoModal = document.activeElement;
+
   // Mostra o modal já, com uma tela de carregamento — a busca na Sysemp
   // passa pelo Google e pode levar um segundo ou dois.
   painel.innerHTML =
     '<div class="modal-header">' +
-      '<div><div class="modal-title">' + produto.produto + '</div>' +
-      '<div class="modal-sub">' + produto.marca + ' · ' + produto.grupo + '</div></div>' +
-      '<button class="modal-close" id="modal-close-btn">✕</button>' +
+      '<div><div class="modal-title">' + escapeHtml(produto.produto) + '</div>' +
+      '<div class="modal-sub">' + escapeHtml(produto.marca) + ' · ' + escapeHtml(produto.grupo) + '</div></div>' +
+      '<button class="modal-close" id="modal-close-btn" aria-label="Fechar">✕</button>' +
     '</div>' +
     '<div class="loading" style="padding:40px 20px;"><div class="spinner"></div>Buscando compras e vendas na Sysemp...</div>';
   document.getElementById('modal-close-btn').addEventListener('click', fecharDetalheProduto);
   document.getElementById('modal-backdrop').classList.add('open');
+  painel.focus();
 
   const dadosReais = await buscarComprasVendasReais(produto.codigoBarras);
 
@@ -1059,7 +1100,7 @@ function montarConteudoModal(produto, dadosReais) {
         '<div class="modal-section-title">Últimas compras <span style="color:var(--green-a);font-size:11px;font-weight:600;">● AO VIVO — SYSEMP</span></div>' +
         '<table class="modal-table"><thead><tr><th>Data</th><th>NF</th><th>Fornecedor</th><th class="num">Qtd</th><th class="num">Custo</th></tr></thead><tbody>' +
           dadosReais.compras.map(c =>
-            '<tr><td>' + c.data + '</td><td>Nº ' + c.numeroNf + '</td><td>' + c.fornecedor + '</td><td class="num">' + fmtNum(c.quantidade) + '</td><td class="num">' + fmtMoeda(c.custo) + '</td></tr>'
+            '<tr><td>' + escapeHtml(c.data) + '</td><td>Nº ' + escapeHtml(c.numeroNf) + '</td><td>' + escapeHtml(c.fornecedor) + '</td><td class="num">' + fmtNum(c.quantidade) + '</td><td class="num">' + fmtMoeda(c.custo) + '</td></tr>'
           ).join('') +
         '</tbody></table>' +
       '</div>';
@@ -1077,7 +1118,7 @@ function montarConteudoModal(produto, dadosReais) {
         '<div class="mock-warning" style="margin-bottom:10px;">⚠️ ' + (dadosReais.erro || 'Não consegui buscar os dados reais agora') + ' — mostrando dados de exemplo.</div>' +
         '<table class="modal-table"><thead><tr><th>Data</th><th>NF</th><th>Fornecedor</th><th class="num">Qtd</th></tr></thead><tbody>' +
           comprasExemplo.map(c =>
-            '<tr><td>' + c.data + '</td><td>Nº ' + c.numeroNf + '</td><td>' + c.fornecedor + '</td><td class="num">' + fmtNum(c.quantidade) + '</td></tr>'
+            '<tr><td>' + escapeHtml(c.data) + '</td><td>Nº ' + escapeHtml(c.numeroNf) + '</td><td>' + escapeHtml(c.fornecedor) + '</td><td class="num">' + fmtNum(c.quantidade) + '</td></tr>'
           ).join('') +
         '</tbody></table>' +
       '</div>';
@@ -1115,7 +1156,7 @@ function montarConteudoModal(produto, dadosReais) {
         '<div class="modal-grid">' +
           '<div class="modal-stat"><div class="k">Média mensal</div><div class="v">' + fmtNum(Math.round(an.mediaMensal)) + ' un/mês</div></div>' +
           '<div class="modal-stat"><div class="k">Desvio padrão</div><div class="v">' + fmtNum(Math.round(an.desvioPadrao)) + '</div></div>' +
-          '<div class="modal-stat"><div class="k">Curva ABC</div><div class="v">' + an.curva + '</div></div>' +
+          '<div class="modal-stat"><div class="k">Curva ABC</div><div class="v">' + escapeHtml(an.curva) + '</div></div>' +
           '<div class="modal-stat"><div class="k">Lead time total</div><div class="v">' + fmtNum(an.leadTimeTotal) + ' dias</div></div>' +
         '</div>' +
       '</div>';
@@ -1195,9 +1236,9 @@ function montarConteudoModal(produto, dadosReais) {
 
   painel.innerHTML =
     '<div class="modal-header">' +
-      '<div><div class="modal-title">' + produto.produto + '</div>' +
-      '<div class="modal-sub">' + produto.marca + ' · ' + produto.grupo + '</div></div>' +
-      '<button class="modal-close" id="modal-close-btn">✕</button>' +
+      '<div><div class="modal-title">' + escapeHtml(produto.produto) + '</div>' +
+      '<div class="modal-sub">' + escapeHtml(produto.marca) + ' · ' + escapeHtml(produto.grupo) + '</div></div>' +
+      '<button class="modal-close" id="modal-close-btn" aria-label="Fechar">✕</button>' +
     '</div>' +
 
     blocoCompras +
@@ -1224,12 +1265,28 @@ function montarConteudoModal(produto, dadosReais) {
 
 function fecharDetalheProduto() {
   document.getElementById('modal-backdrop').classList.remove('open');
+  if (elementoFocoAntesDoModal && elementoFocoAntesDoModal.isConnected) elementoFocoAntesDoModal.focus();
+  elementoFocoAntesDoModal = null;
 }
 
 document.getElementById('modal-backdrop').addEventListener('click', e => {
   if (e.target.id === 'modal-backdrop') fecharDetalheProduto();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharDetalheProduto(); });
+document.addEventListener('keydown', e => {
+  const backdrop = document.getElementById('modal-backdrop');
+  if (!backdrop.classList.contains('open')) return;
+  if (e.key === 'Escape') { fecharDetalheProduto(); return; }
+  if (e.key !== 'Tab') return;
+  // Prende o foco dentro do modal enquanto ele estiver aberto (senão o Tab
+  // vaza pro conteúdo por trás, que fica visualmente escondido pelo overlay).
+  const painel = document.getElementById('modal-panel');
+  const focaveis = painel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  if (focaveis.length === 0) return;
+  const primeiro = focaveis[0];
+  const ultimo = focaveis[focaveis.length - 1];
+  if (e.shiftKey && document.activeElement === primeiro) { e.preventDefault(); ultimo.focus(); }
+  else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primeiro.focus(); }
+});
 
 // Fecha a lista de sugestões de marca ao clicar fora dela.
 document.addEventListener('click', e => {
@@ -1465,13 +1522,13 @@ function renderizarAbaVendas() {
 
   const tabelaProdutos = (lista, colunaValor, attrNome) =>
     '<table><thead><tr><th>Produto</th><th>Marca</th><th class="num">' + colunaValor + '</th></tr></thead><tbody>' +
-      (lista.map((d, i) => '<tr class="clickable" data-' + attrNome + '="' + i + '"><td>' + d.produto + '</td><td>' + d.marca + '</td><td class="num">' + d.analise.mediaMensal.toFixed(1) + ' un/mês</td></tr>').join('')
+      (lista.map((d, i) => '<tr class="clickable" data-' + attrNome + '="' + i + '"><td>' + escapeHtml(d.produto) + '</td><td>' + escapeHtml(d.marca) + '</td><td class="num">' + d.analise.mediaMensal.toFixed(1) + ' un/mês</td></tr>').join('')
         || '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);">Sem dados suficientes.</td></tr>') +
     '</tbody></table>';
 
   const tabelaMarcas = lista =>
     '<table><thead><tr><th>Marca</th><th class="num">Produtos c/ venda</th><th class="num">Soma média mensal</th></tr></thead><tbody>' +
-      (lista.map(m => '<tr><td>' + m.marca + '</td><td class="num">' + fmtNum(m.qtdProdutos) + '</td><td class="num">' + m.totalMedia.toFixed(1) + ' un/mês</td></tr>').join('')
+      (lista.map(m => '<tr><td>' + escapeHtml(m.marca) + '</td><td class="num">' + fmtNum(m.qtdProdutos) + '</td><td class="num">' + m.totalMedia.toFixed(1) + ' un/mês</td></tr>').join('')
         || '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);">Sem dados suficientes.</td></tr>') +
     '</tbody></table>';
 
@@ -1493,7 +1550,7 @@ function renderizarAbaVendas() {
       '<h2>🐌 Produtos sem giro de estoque (' + fmtNum(qtdSemGiro) + ')</h2>' +
       '<p class="hint">Têm estoque físico mas média de venda zero — ' + fmtMoeda(valorTotalSemGiro) + ' de capital parado no total. Mostrando os 20 de maior valor.</p>' +
       '<table><thead><tr><th>Produto</th><th>Marca</th><th class="num">Estoque</th><th class="num">Valor parado</th></tr></thead><tbody>' +
-        (semGiro.map((d, i) => '<tr class="clickable" data-idx-semgiro="' + i + '"><td>' + d.produto + '</td><td>' + d.marca + '</td><td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtMoeda(d.valorEstoque) + '</td></tr>').join('')
+        (semGiro.map((d, i) => '<tr class="clickable" data-idx-semgiro="' + i + '"><td>' + escapeHtml(d.produto) + '</td><td>' + escapeHtml(d.marca) + '</td><td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtMoeda(d.valorEstoque) + '</td></tr>').join('')
           || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">Nenhum produto parado encontrado.</td></tr>') +
       '</tbody></table>' +
     '</div>' +
@@ -1517,6 +1574,8 @@ function renderizarAbaVendas() {
     const item = semGiro[parseInt(tr.dataset.idxSemgiro, 10)];
     if (item) abrirDetalheProduto(item);
   }));
+
+  tornarClicaveisAcessiveis(document.getElementById('app'));
 }
 
 function barraAbas() {
@@ -1692,20 +1751,20 @@ function renderizar() {
   document.getElementById('app').innerHTML =
     barraAbas() +
     '<div class="filters">' +
-      '<select id="filtro-grupo"><option value="">Todos os grupos</option>' +
-        todosGrupos.map(g => '<option value="' + g + '" ' + (g === filtroGrupo ? 'selected' : '') + '>' + g + '</option>').join('') +
+      '<select id="filtro-grupo" aria-label="Filtrar por grupo"><option value="">Todos os grupos</option>' +
+        todosGrupos.map(g => '<option value="' + escapeHtml(g) + '" ' + (g === filtroGrupo ? 'selected' : '') + '>' + escapeHtml(g) + '</option>').join('') +
       '</select>' +
       '<div class="autocomplete-wrap">' +
-        '<input type="text" id="busca-marca" placeholder="Marca..." autocomplete="off" value="' + (filtroMarca || buscaMarcaTexto).replace(/"/g, '&quot;') + '">' +
+        '<input type="text" id="busca-marca" placeholder="Marca..." aria-label="Buscar marca" autocomplete="off" value="' + escapeHtml(filtroMarca || buscaMarcaTexto) + '">' +
         (mostrarSugestoesMarca ? (
           '<div class="autocomplete-list" id="lista-sugestoes-marca">' +
             (sugestoesMarca.length
-              ? sugestoesMarca.map(m => '<div class="autocomplete-item" data-marca="' + m.replace(/"/g, '&quot;') + '">' + m + '</div>').join('')
+              ? sugestoesMarca.map(m => '<div class="autocomplete-item" data-marca="' + escapeHtml(m) + '">' + escapeHtml(m) + '</div>').join('')
               : '<div class="autocomplete-empty">Nenhuma marca encontrada</div>') +
           '</div>'
         ) : '') +
       '</div>' +
-      '<input type="search" id="busca" placeholder="Buscar produto..." value="' + buscaTexto.replace(/"/g, '&quot;') + '">' +
+      '<input type="search" id="busca" placeholder="Buscar produto..." aria-label="Buscar produto" value="' + escapeHtml(buscaTexto) + '">' +
       ['RUPTURA', 'BAIXO', 'EXCESSO', 'OK'].map(s => '<span class="chip ' + (filtroSituacao === s ? 'active' : '') + '" data-sit="' + s + '">' + situacaoLabel(s) + '</span>').join('') +
       ((filtroGrupo || filtroSituacao || buscaTexto || filtroMarca) ? '<span class="clear-link" id="clear-filters">limpar filtros</span>' : '') +
     '</div>' +
@@ -1741,8 +1800,8 @@ function renderizar() {
           '<p class="hint">Estoque vai acabar ANTES do próximo pedido conseguir chegar — mesmo comprando hoje, vai faltar produto. Calculado com Venda Média Diária × Lead Time da marca (só produtos que batem com a planilha de análise).</p>' +
           '<table><thead><tr><th>Marca</th><th class="num">Itens urgentes</th><th class="num">Pior caso</th><th class="num">Valor a repor</th></tr></thead><tbody>' +
             marcasUrgentes.map(m =>
-              '<tr class="clickable" data-marca-urgente="' + m.marcaOriginal.replace(/"/g, '&quot;') + '">' +
-                '<td>' + m.marcaOriginal + '</td>' +
+              '<tr class="clickable" data-marca-urgente="' + escapeHtml(m.marcaOriginal) + '">' +
+                '<td>' + escapeHtml(m.marcaOriginal) + '</td>' +
                 '<td class="num">' + fmtNum(m.qtdUrgente) + '</td>' +
                 '<td class="num" style="color:var(--red-a);font-weight:600;">vai faltar em ' + fmtNum(Math.round(-m.piorCaso)) + ' dias</td>' +
                 '<td class="num">' + fmtMoeda(m.valorRepor) + '</td>' +
@@ -1769,9 +1828,9 @@ function renderizar() {
               statusHtml = '<span class="badge badge-ok">em dia</span>';
             }
             return '<div class="rotina-card' + (temPendencia ? ' clickable' : '') + '" ' +
-              (temPendencia ? 'data-rotina-marca="' + r.marcaOriginal.replace(/"/g, '&quot;') + '"' : '') +
+              (temPendencia ? 'data-rotina-marca="' + escapeHtml(r.marcaOriginal) + '"' : '') +
               ' style="border-left-color:' + cor + ';">' +
-                '<div class="rc-nome">' + r.fornecedor + '</div>' +
+                '<div class="rc-nome">' + escapeHtml(r.fornecedor) + '</div>' +
                 '<div class="rc-rodape"><span class="rotina-tipo">' + tipoLabel + '</span>' + statusHtml + '</div>' +
             '</div>';
           }).join('') +
@@ -1802,7 +1861,7 @@ function renderizar() {
           '<th class="num" data-col="valorRepor">Valor a repor<span class="arrow">' + (ordemCol === 'valorRepor' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
         '</tr></thead><tbody>' +
           (listaTabela.map((d, i) =>
-            '<tr class="clickable" data-idx="' + i + '"><td>' + d.produto + '</td><td>' + d.marca + '</td>' +
+            '<tr class="clickable" data-idx="' + i + '"><td>' + escapeHtml(d.produto) + '</td><td>' + escapeHtml(d.marca) + '</td>' +
             '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
             '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
             '<td class="num">' + (d.valorEstoque > 0 ? fmtMoeda(d.valorEstoque) : '—') + '</td>' +
@@ -1817,7 +1876,7 @@ function renderizar() {
           const totalEmAberto = itensDaMarcaExpandida.reduce((s, d) => s + (pedidosEmAberto.get(normalizarProduto(d.produto)) || 0), 0);
           return '<div class="panel">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
-              '<h2 style="margin:0;">Itens de ' + marcaExpandidaTabela + '</h2>' +
+              '<h2 style="margin:0;">Itens de ' + escapeHtml(marcaExpandidaTabela) + '</h2>' +
               '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
                 '<button class="refresh-btn" id="importar-pedidos-btn">📥 Importar pedidos em aberto</button>' +
                 '<input type="file" id="input-pedidos-aberto" accept=".csv,.txt" style="display:none;">' +
@@ -1827,11 +1886,11 @@ function renderizar() {
             '<p class="hint"><span class="clear-link" id="fechar-marca-expandida">‹ voltar para todas as marcas</span>' +
               (totalEmAberto > 0 ? ' · ' + fmtNum(totalEmAberto) + ' un já em pedido aberto (descontadas da sugestão)' : '') +
             '</p>' +
-            '<input type="text" id="busca-itens-criticos" placeholder="Buscar item nesta lista..." autocomplete="off" value="' + buscaItensCriticosTexto.replace(/"/g, '&quot;') + '" style="margin-bottom:12px;width:280px;">' +
+            '<input type="text" id="busca-itens-criticos" placeholder="Buscar item nesta lista..." aria-label="Buscar item nesta lista" autocomplete="off" value="' + escapeHtml(buscaItensCriticosTexto) + '" style="margin-bottom:12px;width:280px;">' +
             '<table><thead><tr><th>Produto</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mín.</th><th class="num">Pedido</th><th class="num">A repor</th></tr></thead><tbody>' +
               (itensDaMarca.map((d, i) => {
                 const emAberto = pedidosEmAberto.get(normalizarProduto(d.produto)) || 0;
-                return '<tr class="clickable" data-idx-marca="' + i + '"><td>' + d.produto + '</td>' +
+                return '<tr class="clickable" data-idx-marca="' + i + '"><td>' + escapeHtml(d.produto) + '</td>' +
                 '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
                 '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
                 '<td class="num">' + (emAberto > 0 ? fmtNum(emAberto) : '—') + '</td>' +
@@ -1841,14 +1900,14 @@ function renderizar() {
           '</div>' +
           '<div class="panel" style="margin-top:16px;">' +
             '<h2 class="clickable" id="toggle-itens-normais" style="cursor:pointer;user-select:none;">' +
-              (mostrarItensNormaisMarca ? '▾' : '▸') + ' Demais itens de ' + marcaExpandidaTabela + ' (' + fmtNum(itensNormaisDaMarcaCompleto.length) + ')' +
+              (mostrarItensNormaisMarca ? '▾' : '▸') + ' Demais itens de ' + escapeHtml(marcaExpandidaTabela) + ' (' + fmtNum(itensNormaisDaMarcaCompleto.length) + ')' +
             '</h2>' +
             (mostrarItensNormaisMarca ? (
               '<p class="hint">Estoque normal ou em excesso — sem necessidade de compra no momento</p>' +
-              '<input type="text" id="busca-itens-normais" placeholder="Buscar item nesta lista..." autocomplete="off" value="' + buscaItensNormaisTexto.replace(/"/g, '&quot;') + '" style="margin-bottom:12px;width:280px;">' +
+              '<input type="text" id="busca-itens-normais" placeholder="Buscar item nesta lista..." aria-label="Buscar item nesta lista" autocomplete="off" value="' + escapeHtml(buscaItensNormaisTexto) + '" style="margin-bottom:12px;width:280px;">' +
               '<table><thead><tr><th>Produto</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mínimo</th><th class="num">Valor em estoque</th></tr></thead><tbody>' +
                 (itensNormaisDaMarca.map((d, i) =>
-                  '<tr class="clickable" data-idx-normal="' + i + '"><td>' + d.produto + '</td>' +
+                  '<tr class="clickable" data-idx-normal="' + i + '"><td>' + escapeHtml(d.produto) + '</td>' +
                   '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
                   '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
                   '<td class="num">' + (d.valorEstoque > 0 ? fmtMoeda(d.valorEstoque) : '—') + '</td></tr>'
@@ -1872,8 +1931,8 @@ function renderizar() {
         '</tr></thead><tbody>' +
           (marcasCriticas.map(m => {
             const corDominante = m.qtdRuptura >= m.qtdBaixo ? donutColors.RUPTURA : donutColors.BAIXO;
-            return '<tr class="clickable" data-marca-row="' + m.marca.replace(/"/g, '&quot;') + '" style="border-left:3px solid ' + corDominante + ';">' +
-            '<td data-label="Marca">' + m.marca + '</td>' +
+            return '<tr class="clickable" data-marca-row="' + escapeHtml(m.marca) + '" style="border-left:3px solid ' + corDominante + ';">' +
+            '<td data-label="Marca">' + escapeHtml(m.marca) + '</td>' +
             '<td class="num" data-label="Zerados" style="color:' + donutColors.RUPTURA + ';font-weight:600;">' + fmtNum(m.qtdRuptura) + '</td>' +
             '<td class="num" data-label="Baixo" style="color:' + donutColors.BAIXO + ';font-weight:600;">' + fmtNum(m.qtdBaixo) + '</td>' +
             '<td class="num" data-label="Total">' + fmtNum(m.qtdTotalItens) + '</td>' +
@@ -2168,6 +2227,8 @@ function renderizar() {
     filtroSituacao = filtroSituacao === s ? '' : s;
     renderizar();
   }));
+
+  tornarClicaveisAcessiveis(document.getElementById('app'));
 }
 
 carregarDados();
