@@ -428,6 +428,7 @@ let marcaExpandidaTabela = '';
 let abaSelecionada = 'estoque'; // 'estoque' ou 'vendas'
 let mostrarItensNormaisMarca = false; // segunda seção (estoque normal/excesso) começa fechada
 let mostrarMarcasUrgentes = false; // lista de marcas com compra urgente começa fechada
+let marcaRelatorioVendas = ''; // marca selecionada no relatório "itens mais vendidos por marca" (aba Vendas)
 let buscaItensCriticosTexto = ''; // busca dentro da seção de itens críticos
 let buscaItensNormaisTexto = ''; // busca dentro da seção "demais itens"
 let pedidosEmAberto = new Map(); // normalizarProduto(produto) -> quantidade em aberto (soma se repetir)
@@ -693,6 +694,26 @@ function tornarClicaveisAcessiveis(raiz) {
     const dir = seta ? seta.textContent.trim() : '';
     th.setAttribute('aria-sort', dir === '▲' ? 'ascending' : dir === '▼' ? 'descending' : 'none');
   });
+}
+
+// Gera e baixa um CSV (";" como separador e vírgula decimal, pra abrir certo
+// no Excel BR sem precisar de "Texto em colunas") a partir de uma matriz de
+// linhas. BOM no começo garante que acentos apareçam corretos no Excel.
+function baixarCSV(nomeArquivo, cabecalhos, linhas) {
+  const formatarCampo = valor => {
+    const texto = String(valor == null ? '' : valor);
+    return /[;"\n]/.test(texto) ? '"' + texto.replace(/"/g, '""') + '"' : texto;
+  };
+  const conteudo = [cabecalhos, ...linhas].map(l => l.map(formatarCampo).join(';')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + conteudo], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = nomeArquivo;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 // Versão abreviada pros cards de KPI (evita estourar a largura do card
@@ -1353,7 +1374,7 @@ async function gerarPedidoSysemp(marca, itens) {
   }
 
   const conteudo = linhas.map(l => l.codigo + ';' + l.qtd + ';' + l.custoFormatado).join('\n');
-  const blob = new Blob([conteudo], { type: 'text/csv' });
+  const blob = new Blob(['\uFEFF' + conteudo], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const dataHoje = new Date().toISOString().slice(0, 10);
@@ -1508,6 +1529,14 @@ function renderizarAbaVendas() {
   const marcasMaisVendidas = [...marcasArray].sort((a, b) => b.totalMedia - a.totalMedia).slice(0, 10);
   const marcasMenosVendidas = [...marcasArray].sort((a, b) => a.totalMedia - b.totalMedia).slice(0, 10);
 
+  // ---- Relatório: itens mais vendidos de uma marca escolhida ----
+  const todasMarcasComVenda = [...new Set(comVenda.map(d => d.marca))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const itensRelatorioMarca = marcaRelatorioVendas
+    ? comVenda
+        .filter(d => normalizarFornecedor(d.marca) === normalizarFornecedor(marcaRelatorioVendas))
+        .sort((a, b) => b.analise.mediaMensal - a.analise.mediaMensal)
+    : [];
+
   // Sem giro: tem estoque físico, mas média de venda zero (ou sem dado
   // nenhum de venda) — capital parado. Ordenado pelo valor parado, do
   // maior pro menor.
@@ -1536,6 +1565,29 @@ function renderizarAbaVendas() {
     barraAbas() +
     '<p class="hint" style="margin-bottom:16px;">Baseado em ' + fmtNum(comVenda.length) + ' produtos com Média Mensal disponível (batem com a planilha de análise) — de ' + fmtNum(dadosCompletos.length) + ' produtos no total.</p>' +
 
+    '<div class="panel" style="margin-bottom:16px;">' +
+      '<h2>Itens mais vendidos por marca</h2>' +
+      '<p class="hint">Selecione uma marca pra ver os itens dela ordenados por média mensal de venda.</p>' +
+      '<div class="filters" style="margin-bottom:' + (marcaRelatorioVendas ? '14px' : '0') + ';">' +
+        '<select id="select-marca-vendas" aria-label="Selecionar marca para o relatório">' +
+          '<option value="">Selecione uma marca...</option>' +
+          todasMarcasComVenda.map(m => '<option value="' + escapeHtml(m) + '" ' + (m === marcaRelatorioVendas ? 'selected' : '') + '>' + escapeHtml(m) + '</option>').join('') +
+        '</select>' +
+        (marcaRelatorioVendas ? '<button class="refresh-btn" id="baixar-csv-marca-vendas">⬇ Baixar CSV</button>' : '') +
+      '</div>' +
+      (marcaRelatorioVendas ? (
+        '<table><thead><tr><th>Produto</th><th>Curva</th><th class="num">Média mensal</th><th class="num">Estoque atual</th><th class="num">Valor em estoque</th></tr></thead><tbody>' +
+          (itensRelatorioMarca.map((d, i) =>
+            '<tr class="clickable" data-idx-relatorio-marca="' + i + '"><td>' + escapeHtml(d.produto) + '</td>' +
+            '<td>' + escapeHtml(d.analise.curva || '—') + '</td>' +
+            '<td class="num">' + d.analise.mediaMensal.toFixed(1) + ' un/mês</td>' +
+            '<td class="num">' + fmtNum(d.estoque) + '</td>' +
+            '<td class="num">' + (d.valorEstoque > 0 ? fmtMoeda(d.valorEstoque) : '—') + '</td></tr>'
+          ).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Nenhum item com venda registrada para essa marca.</td></tr>') +
+        '</tbody></table>'
+      ) : '') +
+    '</div>' +
+
     '<div class="panels">' +
       '<div class="panel"><h2>Produtos mais vendidos</h2><p class="hint">Top 15 por média mensal</p>' + tabelaProdutos(maisVendidos, 'Média mensal', 'idx-mais') + '</div>' +
       '<div class="panel"><h2>Produtos menos vendidos</h2><p class="hint">Top 15 com menor média (excluindo zero)</p>' + tabelaProdutos(menosVendidos, 'Média mensal', 'idx-menos') + '</div>' +
@@ -1561,6 +1613,26 @@ function renderizarAbaVendas() {
   if (abaEstoqueEl2) abaEstoqueEl2.addEventListener('click', () => { abaSelecionada = 'estoque'; renderizar(); });
   const abaVendasEl2 = document.getElementById('aba-vendas');
   if (abaVendasEl2) abaVendasEl2.addEventListener('click', () => { abaSelecionada = 'vendas'; renderizar(); });
+
+  const selectMarcaVendas = document.getElementById('select-marca-vendas');
+  if (selectMarcaVendas) selectMarcaVendas.addEventListener('change', e => { marcaRelatorioVendas = e.target.value; renderizar(); });
+  document.querySelectorAll('tbody tr.clickable[data-idx-relatorio-marca]').forEach(tr => tr.addEventListener('click', () => {
+    const item = itensRelatorioMarca[parseInt(tr.dataset.idxRelatorioMarca, 10)];
+    if (item) abrirDetalheProduto(item);
+  }));
+  const baixarCsvMarcaBtn = document.getElementById('baixar-csv-marca-vendas');
+  if (baixarCsvMarcaBtn) baixarCsvMarcaBtn.addEventListener('click', () => {
+    const linhas = itensRelatorioMarca.map(d => [
+      d.produto, d.marca, d.analise.curva || '',
+      d.analise.mediaMensal.toFixed(1).replace('.', ','),
+      d.estoque,
+      d.valorEstoque.toFixed(2).replace('.', ','),
+    ]);
+    const nomeArquivo = 'itens_mais_vendidos_' + normalizarFornecedor(marcaRelatorioVendas).replace(/\s+/g, '_') + '.csv';
+    baixarCSV(nomeArquivo,
+      ['Produto', 'Marca', 'Curva ABC', 'Média mensal (un)', 'Estoque atual', 'Valor em estoque (R$)'],
+      linhas);
+  });
 
   document.querySelectorAll('tbody tr.clickable[data-idx-mais]').forEach(tr => tr.addEventListener('click', () => {
     const item = maisVendidos[parseInt(tr.dataset.idxMais, 10)];
