@@ -1836,6 +1836,15 @@ function renderizar() {
     ? todasMarcas.filter(m => m.toLowerCase().includes(buscaMarcaTexto.toLowerCase())).slice(0, 8)
     : todasMarcas.slice(0, 8);
 
+  // Guarda os <canvas> dos gráficos ANTES de reescrever o innerHTML (que os
+  // destrói) — assim conseguimos devolvê-los pro DOM depois e usar
+  // chart.update() em vez de destruir/recriar a instância. Sem isso, o
+  // Chart.js trata toda renderização como "primeira vez" e não tem um
+  // estado anterior pra fazer a transição (a fatia/barra só troca na hora,
+  // sem animar), mesmo com a duração/easing configurados certinho.
+  const canvasBarraAntigo = document.getElementById('bar-chart');
+  const canvasDonutAntigo = document.getElementById('donut-chart');
+
   document.getElementById('app').innerHTML =
     barraAbas() +
     '<div class="filters">' +
@@ -2030,6 +2039,13 @@ function renderizar() {
       '</div>'
       )
     );
+
+  // Devolve os <canvas> antigos (com a instância do Chart.js ainda viva) no
+  // lugar dos novos placeholders recém-criados pelo innerHTML acima — é o
+  // que permite usar chart.update() daqui pra frente em vez de destruir e
+  // recriar (ver comentário na captura de canvasBarraAntigo/canvasDonutAntigo).
+  if (canvasBarraAntigo) document.getElementById('bar-chart').replaceWith(canvasBarraAntigo);
+  if (canvasDonutAntigo) document.getElementById('donut-chart').replaceWith(canvasDonutAntigo);
 
   animarNumero(document.getElementById('kpi-total'), totalSkus, v => fmtNum(Math.round(v)), 600);
   animarNumero(document.getElementById('kpi-valor'), valorTotal, v => fmtMoedaCompacta(Math.round(v)), 700);
@@ -2237,12 +2253,16 @@ function renderizar() {
   }
 
   // ---- gráfico de barras (por marca) — Chart.js ----
-  // renderizar() reescreve o innerHTML do painel inteiro a cada clique, o
-  // que recria os elementos <canvas> do zero — por isso o gráfico é sempre
-  // destruído e recriado aqui, nunca só ".update()" numa instância presa a
-  // um canvas antigo (que ficaria desenhando num elemento desconectado,
-  // invisível). As options ficam fixas na criação e leem
-  // filtroMarca/filtroSituacao por closure a cada clique.
+  // O <canvas> agora é preservado entre renderizações (ver captura de
+  // canvasBarraAntigo lá em cima), então dá pra usar chart.update() numa
+  // instância contínua — é isso que permite ao Chart.js animar a partir do
+  // estado anterior de verdade (cor/offset mudando suavemente), em vez de
+  // tratar cada clique como uma criação do zero sem "de onde" animar.
+  // As options (onClick etc.) ficam fixas na criação e leem
+  // filtroMarca/filtroSituacao por closure a cada clique; só `animation` é
+  // atualizada diretamente em cada render (mutar uma propriedade simples de
+  // chart.options é seguro — reatribuir chart.options INTEIRO não é, ver
+  // outro comentário mais abaixo, no donut).
   const barLabels = marcasOrdenadas.map(([m]) => m);
   const barValues = marcasOrdenadas.map(([, v]) => v);
   const barBg = marcasOrdenadas.map(([m]) => m === filtroMarca ? GOLD_BRIGHT_COLOR : GOLD_COLOR);
@@ -2250,9 +2270,21 @@ function renderizar() {
   // seleção de verdade (mesma lógica do donut, ver comentário lá em cima).
   const animarBarraAgora = animarBarraNoProximoRender;
   animarBarraNoProximoRender = false;
-  if (barChartInstance) barChartInstance.destroy();
-  barChartInstance = new Chart(document.getElementById('bar-chart'), {
-    type: 'bar',
+  // canvasBarraAntigo só existe quando a última renderização também era da
+  // aba Estoque — se o usuário esteve na aba Vendas (que não tem esses
+  // <canvas>) e voltou, o canvas antigo já foi destruído de verdade nesse
+  // meio tempo, e barChartInstance é uma instância órfã que precisa ser
+  // destruída (não atualizada) antes de criar uma nova.
+  if (barChartInstance && barChartInstance.canvas.isConnected) {
+    barChartInstance.data.labels = barLabels;
+    barChartInstance.data.datasets[0].data = barValues;
+    barChartInstance.data.datasets[0].backgroundColor = barBg;
+    barChartInstance.options.animation = animarBarraAgora ? { duration: 1400, easing: 'easeOutQuart' } : false;
+    barChartInstance.update();
+  } else {
+    if (barChartInstance) barChartInstance.destroy();
+    barChartInstance = new Chart(document.getElementById('bar-chart'), {
+      type: 'bar',
       data: { labels: barLabels, datasets: [{ data: barValues, backgroundColor: barBg, borderRadius: 4, maxBarThickness: 20 }] },
       options: {
         indexAxis: 'y',
@@ -2280,6 +2312,7 @@ function renderizar() {
         },
       },
     });
+  }
 
   // ---- donut (por situação) — Chart.js ----
   const situTotalReal = SITUACOES.reduce((s, k) => s + situacaoCount[k], 0);
@@ -2293,8 +2326,22 @@ function renderizar() {
   // seleção de verdade (ver comentário na declaração da variável lá em cima).
   const animarDonutAgora = animarDonutNoProximoRender;
   animarDonutNoProximoRender = false;
-  if (donutChartInstance) donutChartInstance.destroy();
-  {
+  const donutAnimationConfig = animarDonutAgora ? { duration: 1400, easing: 'easeOutQuart', animateRotate: true, animateScale: false } : false;
+  // Mesmo cuidado do gráfico de barras: só atualiza se o canvas atual é
+  // mesmo o que essa instância está desenhando (sobrevive a troca de aba);
+  // senão é uma instância órfã e precisa ser destruída, não atualizada.
+  if (donutChartInstance && donutChartInstance.canvas.isConnected) {
+    donutChartInstance.data.datasets[0].data = donutValues;
+    donutChartInstance.data.datasets[0].backgroundColor = donutBg;
+    donutChartInstance.data.datasets[0].offset = donutOffset;
+    // Mutar a propriedade diretamente (não reatribuir chart.options inteiro
+    // com Object.assign) — reatribuir corrompe os "resolvers" internos do
+    // Chart.js e quebra o gráfico (erro "Cannot convert object to primitive
+    // value"), como descobrimos da primeira vez que ligamos essa animação.
+    donutChartInstance.options.animation = donutAnimationConfig;
+    donutChartInstance.update();
+  } else {
+    if (donutChartInstance) donutChartInstance.destroy();
     donutChartInstance = new Chart(document.getElementById('donut-chart'), {
       type: 'doughnut',
       data: {
@@ -2303,7 +2350,7 @@ function renderizar() {
       },
       options: {
         responsive: true, maintainAspectRatio: false, cutout: '68%',
-        animation: animarDonutAgora ? { duration: 1400, easing: 'easeOutQuart', animateRotate: true, animateScale: false } : false,
+        animation: donutAnimationConfig,
         onClick: (evt, elements) => {
           if (!elements.length) return;
           const s = SITUACOES[elements[0].index];
