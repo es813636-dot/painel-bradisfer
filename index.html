@@ -434,6 +434,10 @@ let marcaRelatorioVendas = ''; // marca selecionada no relatório "itens mais ve
 // anel "recarregaria" a cada tecla digitada na busca, já que ela também
 // chama renderizar()). É lido e resetado uma única vez dentro de renderizar().
 let animarDonutNoProximoRender = false;
+// Mesma lógica da flag acima, só que pro gráfico de barras (valor em
+// estoque por marca) — liga só em cliques de verdade (chip, card, legenda,
+// clear-filters, ou numa barra), nunca em toda renderização.
+let animarBarraNoProximoRender = false;
 let buscaItensCriticosTexto = ''; // busca dentro da seção de itens críticos
 let buscaItensNormaisTexto = ''; // busca dentro da seção "demais itens"
 let pedidosEmAberto = new Map(); // normalizarProduto(produto) -> quantidade em aberto (soma se repetir)
@@ -2046,17 +2050,20 @@ function renderizar() {
   document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
     filtroSituacao = filtroSituacao === c.dataset.sit ? '' : c.dataset.sit;
     animarDonutNoProximoRender = true;
+    animarBarraNoProximoRender = true;
     renderizar();
   }));
   document.querySelectorAll('.kpi-card[data-sit]').forEach(c => c.addEventListener('click', () => {
     filtroSituacao = filtroSituacao === c.dataset.sit ? '' : c.dataset.sit;
     animarDonutNoProximoRender = true;
+    animarBarraNoProximoRender = true;
     renderizar();
   }));
   const clearEl = document.getElementById('clear-filters');
   if (clearEl) clearEl.addEventListener('click', () => {
     filtroGrupo = ''; filtroSituacao = ''; buscaTexto = ''; filtroMarca = ''; buscaMarcaTexto = ''; mostrarSugestoesMarca = false; marcaExpandidaTabela = '';
     animarDonutNoProximoRender = true;
+    animarBarraNoProximoRender = true;
     renderizar();
   });
 
@@ -2232,6 +2239,10 @@ function renderizar() {
   const barLabels = marcasOrdenadas.map(([m]) => m);
   const barValues = marcasOrdenadas.map(([, v]) => v);
   const barBg = marcasOrdenadas.map(([m]) => m === filtroMarca ? GOLD_BRIGHT_COLOR : GOLD_COLOR);
+  // Consumo único da flag: só anima se a renderização foi disparada por uma
+  // seleção de verdade (mesma lógica do donut, ver comentário lá em cima).
+  const animarBarraAgora = animarBarraNoProximoRender;
+  animarBarraNoProximoRender = false;
   if (barChartInstance) barChartInstance.destroy();
   barChartInstance = new Chart(document.getElementById('bar-chart'), {
     type: 'bar',
@@ -2239,7 +2250,7 @@ function renderizar() {
       options: {
         indexAxis: 'y',
         responsive: true, maintainAspectRatio: false,
-        animation: false,
+        animation: animarBarraAgora ? { duration: 1400, easing: 'easeOutQuart' } : false,
         onClick: (evt, elements) => {
           if (!elements.length) return;
           const marca = barChartInstance.data.labels[elements[0].index];
@@ -2248,6 +2259,7 @@ function renderizar() {
           mostrarItensNormaisMarca = false;
           buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
           buscaMarcaTexto = '';
+          animarBarraNoProximoRender = true;
           renderizar();
         },
         onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
@@ -2311,6 +2323,7 @@ function renderizar() {
     const s = li.dataset.sit;
     filtroSituacao = filtroSituacao === s ? '' : s;
     animarDonutNoProximoRender = true;
+    animarBarraNoProximoRender = true;
     renderizar();
   }));
 
