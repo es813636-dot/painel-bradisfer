@@ -383,6 +383,10 @@ const ANALISE_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '
 // um produto por vez, sob demanda (ao clicar num item).
 const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzlQJOM_53MJDm3OIuGGhtl-XDJK69ckZmqy300W0Ius7MJ4MTas7OgIuoNlfTtXSbwaw/exec';
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
+// A Sysemp calcula "Média Mensal" como total vendido em 365 dias / 12 — usamos
+// o mesmo divisor pra converter Lead Time (dias) em "meses", senão a sugestão
+// de compra fica ligeiramente inconsistente com a média que a própria API manda.
+const DIAS_POR_MES_SYSEMP = 365 / 12;
 
 // Marcas que não são mais compradas mas ainda aparecem no estoque —
 // ficam de fora do painel inteiro (KPIs, gráficos, tabela). Comparação
@@ -1248,7 +1252,7 @@ function calcularSugestaoSemPlanilha(produto, mediaMensal12M) {
   const marcaNormalizada = normalizarFornecedor(produto.marca);
   const leadTimeMarca = LEAD_TIME_POR_MARCA[marcaNormalizada];
   const temLeadTime = leadTimeMarca !== undefined && leadTimeMarca !== null;
-  const tempoReposicaoMeses = temLeadTime ? leadTimeMarca / 30 : 1;
+  const tempoReposicaoMeses = temLeadTime ? leadTimeMarca / DIAS_POR_MES_SYSEMP : 1;
   const emAberto = pedidosEmAberto.get(normalizarProduto(produto.produto)) || 0;
   const bruto = Math.max(0, Math.round(mediaMensal12M * tempoReposicaoMeses - produto.estoque - emAberto));
   return ajustarParaLoteDoNome(bruto, produto);
@@ -2080,21 +2084,18 @@ function renderizar() {
   }
 
   // ---- gráfico de barras (por marca) — Chart.js ----
-  // Só os dados (labels/values/cores) são reescritos a cada render; as
-  // options ficam fixas desde a criação e leem filtroMarca/filtroSituacao
-  // por closure. Reatribuir chart.options inteiro corrompe os "resolvers"
-  // internos do Chart.js (erro "Cannot convert object to primitive value").
+  // renderizar() reescreve o innerHTML do painel inteiro a cada clique, o
+  // que recria os elementos <canvas> do zero — por isso o gráfico é sempre
+  // destruído e recriado aqui, nunca só ".update()" numa instância presa a
+  // um canvas antigo (que ficaria desenhando num elemento desconectado,
+  // invisível). As options ficam fixas na criação e leem
+  // filtroMarca/filtroSituacao por closure a cada clique.
   const barLabels = marcasOrdenadas.map(([m]) => m);
   const barValues = marcasOrdenadas.map(([, v]) => v);
   const barBg = marcasOrdenadas.map(([m]) => m === filtroMarca ? GOLD_BRIGHT_COLOR : GOLD_COLOR);
-  if (barChartInstance) {
-    barChartInstance.data.labels = barLabels;
-    barChartInstance.data.datasets[0].data = barValues;
-    barChartInstance.data.datasets[0].backgroundColor = barBg;
-    barChartInstance.update();
-  } else {
-    barChartInstance = new Chart(document.getElementById('bar-chart'), {
-      type: 'bar',
+  if (barChartInstance) barChartInstance.destroy();
+  barChartInstance = new Chart(document.getElementById('bar-chart'), {
+    type: 'bar',
       data: { labels: barLabels, datasets: [{ data: barValues, backgroundColor: barBg, borderRadius: 4, maxBarThickness: 20 }] },
       options: {
         indexAxis: 'y',
@@ -2121,7 +2122,6 @@ function renderizar() {
         },
       },
     });
-  }
 
   // ---- donut (por situação) — Chart.js ----
   const situTotalReal = SITUACOES.reduce((s, k) => s + situacaoCount[k], 0);
@@ -2131,12 +2131,8 @@ function renderizar() {
   const donutValues = SITUACOES.map(k => situacaoCount[k]);
   const donutBg = SITUACOES.map(k => filtroSituacao && filtroSituacao !== k ? hexToRgba(donutColors[k], 0.35) : donutColors[k]);
   const donutOffset = SITUACOES.map(k => filtroSituacao === k ? 10 : 0);
-  if (donutChartInstance) {
-    donutChartInstance.data.datasets[0].data = donutValues;
-    donutChartInstance.data.datasets[0].backgroundColor = donutBg;
-    donutChartInstance.data.datasets[0].offset = donutOffset;
-    donutChartInstance.update();
-  } else {
+  if (donutChartInstance) donutChartInstance.destroy();
+  {
     donutChartInstance = new Chart(document.getElementById('donut-chart'), {
       type: 'doughnut',
       data: {
