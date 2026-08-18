@@ -43,6 +43,11 @@ O plano de redesign (dark elegante + reorganização de layout) tinha 5 fases. A
 - **Escolher uma das 4 direções de Power BI** propostas (link acima) se quiser seguir esse caminho — requer Power BI Desktop, que eu não consigo operar remotamente.
 
 ## Convenções do projeto
+- **Checar a sintaxe do JS antes de todo push.** O projeto é um único HTML sem build — um erro de sintaxe dentro do `<script>` não falha em lugar nenhum, só impede o script inteiro de executar, e a página fica congelada pra sempre no esqueleto inicial ("Buscando dados na planilha..."). Já aconteceu ao remover um bloco HTML de dentro de um ternário e deixar o ramo `else` faltando — o painel ficou fora do ar e parecia problema de cache/GitHub Pages. Comando pra validar:
+  ```
+  node -e "const h=require('fs').readFileSync('index.html','utf8');[...h.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g)].forEach((s,i)=>{try{new Function(s[1]);console.log('script '+i+': OK')}catch(e){console.log('script '+i+': '+e.message)}})"
+  ```
+  Depois disso, subir o servidor local e confirmar que a página realmente renderiza — sintaxe válida não garante que nenhuma variável ficou órfã.
 - Paleta de status validada contra daltonismo/contraste (skill `dataviz`, script `validate_palette.js`): RUPTURA `#e66767`, BAIXO `#a87c0e` (âmbar — trocado do verde `#199e70` original pra passar mais urgência; testado contra vários tons de laranja/âmbar, a maioria falhava a checagem de separação CVD contra o vermelho de RUPTURA), EXCESSO `#3987e5`, OK `#008300`. Antes de trocar qualquer cor de status, rodar o validador de novo — não escolher visualmente.
 - Gráficos Chart.js (donut) têm o `<canvas>` sempre preservado entre renderizações (nunca destruído/recriado à toa) via `replaceWith()` + checagem `instance.canvas.isConnected`, senão a animação não tem "de onde" partir.
 - Animação dos gráficos só liga em clique real do usuário (chip/card/legenda/barra), nunca em toda renderização — evita travar em 0 quando a aba está em segundo plano, e evita reanimar em toda tecla digitada numa busca.
