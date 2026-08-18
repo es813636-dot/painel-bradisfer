@@ -3174,16 +3174,6 @@ function renderizar() {
   const totalEncontrado = listaTabela.length;
   listaTabela = listaTabela.slice(0, limiteTabela);
 
-  // ---- Agregação por marca (visão padrão, sem busca ativa) ----
-  const porMarcaCritica = {};
-  dados.forEach(d => {
-    if (!porMarcaCritica[d.marca]) porMarcaCritica[d.marca] = { marca: d.marca, qtdRuptura: 0, qtdBaixo: 0, qtdTotalItens: 0, valorRepor: 0 };
-    const m = porMarcaCritica[d.marca];
-    m.qtdTotalItens++;
-    if (d.situacao === 'RUPTURA') m.qtdRuptura++;
-    if (d.situacao === 'BAIXO') m.qtdBaixo++;
-    m.valorRepor += d.valorRepor;
-  });
 
   // Troca o critério de "valor a repor > 0" por "situação é zerado ou
   // baixo" — um item com Mínimo cadastrado como 0 no Sysemp fica com
@@ -3404,7 +3394,7 @@ function renderizar() {
             ) : '<p class="hint">Clique para expandir</p>') +
           '</div>';
         })()
-      )
+      : '')
     );
 
   // Devolve o <canvas> antigo do donut (com a instância do Chart.js ainda
@@ -3503,12 +3493,6 @@ function renderizar() {
   document.querySelectorAll('tbody tr.clickable[data-idx]').forEach(tr => tr.addEventListener('click', () => {
     const item = listaTabela[parseInt(tr.dataset.idx, 10)];
     if (item) abrirDetalheProduto(item);
-  }));
-  document.querySelectorAll('tbody tr.clickable[data-marca-row]').forEach(tr => tr.addEventListener('click', () => {
-    marcaExpandidaTabela = tr.dataset.marcaRow;
-    mostrarItensNormaisMarca = false;
-    buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
-    renderizar();
   }));
   document.querySelectorAll('tbody tr.clickable[data-idx-marca]').forEach(tr => tr.addEventListener('click', () => {
     const item = itensDaMarcaExibidos[parseInt(tr.dataset.idxMarca, 10)];
