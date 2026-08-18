@@ -402,7 +402,7 @@
   .modal-itens-valor { font-family: var(--font-mono); font-weight: 600; color: var(--text); flex-shrink: 0; }
   .modal-itens-track { height: 8px; border-radius: 999px; background: var(--glass-border); overflow: hidden; }
   .modal-itens-margem { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--text-faint); }
-  .modal-itens-margem .v { font-family: var(--font-mono); font-weight: 600; }
+  .modal-itens-margem .v { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
   .modal-itens-fill {
     height: 100%; border-radius: 999px;
     /* --pct-barra vem inline (proporção real de cada produto) e define só o
@@ -2300,7 +2300,7 @@ document.addEventListener('keydown', e => {
 });
 
 // ---- Modal "itens mais vendidos da marca" (abre junto com o detalhe) ----
-function abrirRankingItensMarca(marca, maisVendidosDaMarca) {
+function abrirRankingItensMarca(marca, maisVendidosDaMarca, totalValorVendidoMarca) {
   const painel = document.getElementById('modal-itens-panel');
   if (!maisVendidosDaMarca.length) {
     painel.innerHTML = '';
@@ -2315,12 +2315,14 @@ function abrirRankingItensMarca(marca, maisVendidosDaMarca) {
         const media = d.analise.mediaMensal;
         const pctDaBarra = maiorMedia > 0 ? (media / maiorMedia) * 100 : 0;
         const cor = corMarca(i);
-        // Margem líquida real (Sysemp, tabela de preços) — só mostra quando
-        // o produto tem preço de venda cadastrado (>0); preço zerado costuma
-        // ser item sem venda ativa e a margem junto não tem leitura útil.
-        const temMargem = d.margemLucro !== null && d.precoVenda > 0;
-        const linhaMargem = temMargem
-          ? '<div class="modal-itens-margem"><span>margem líquida</span><span class="v" style="color:' + (d.margemLucro >= 0 ? 'var(--green-a)' : 'var(--red-a)') + ';">' + d.margemLucro.toFixed(1).replace('.', ',') + '% <span style="color:var(--text-faint);font-weight:400;">(' + fmtMoeda(d.precoVenda) + ')</span></span></div>'
+        // % que o valor vendido desse item (preço real da TABELA_PRECOS ×
+        // média mensal) representa do valor total vendido da marca — não é
+        // margem/lucro, é participação no faturamento da marca. Só mostra
+        // quando o produto tem preço de venda cadastrado (>0).
+        const temValor = d.precoVenda > 0 && totalValorVendidoMarca > 0;
+        const pctDoValorMarca = temValor ? (media * d.precoVenda / totalValorVendidoMarca) * 100 : 0;
+        const linhaValor = temValor
+          ? '<div class="modal-itens-margem"><span>% do valor vendido da marca</span><span class="v">' + pctDoValorMarca.toFixed(1).replace('.', ',') + '%</span></div>'
           : '';
         return '<div class="modal-itens-row">' +
           '<div class="modal-itens-top">' +
@@ -2329,7 +2331,7 @@ function abrirRankingItensMarca(marca, maisVendidosDaMarca) {
             '<span class="modal-itens-valor">' + media.toFixed(1) + ' un/mês</span>' +
           '</div>' +
           '<div class="modal-itens-track"><div class="modal-itens-fill" style="--pct-barra:' + pctDaBarra.toFixed(1) + '%;background:' + cor + ';"></div></div>' +
-          linhaMargem +
+          linhaValor +
         '</div>';
       }).join('') +
     '</div>';
@@ -3723,11 +3725,13 @@ function renderizar() {
     // Top 10 produtos mais vendidos DESSA marca — mesma métrica (Média
     // Mensal, da planilha de análise) usada em "mais vendidos" na aba
     // Vendas, só que filtrada pra uma marca em vez do painel inteiro. O
-    // gráfico em si mostra quantidade vendida, não valor financeiro — a
-    // margem líquida real (quando existe na TABELA_PRECOS) aparece à parte,
-    // como linha de texto abaixo da barra de cada item.
-    const maisVendidosDaMarca = itensDaMarca
-      .filter(d => d.analise && !d.analise.descontinuada && d.analise.mediaMensal > 0)
+    // gráfico em si mostra quantidade vendida, não valor financeiro — o %
+    // que cada item representa do valor total vendido da marca (preço real
+    // da TABELA_PRECOS × média mensal) aparece à parte, como linha de texto
+    // abaixo da barra de cada item.
+    const itensVendidosDaMarca = itensDaMarca.filter(d => d.analise && !d.analise.descontinuada && d.analise.mediaMensal > 0);
+    const totalValorVendidoMarca = itensVendidosDaMarca.reduce((s, d) => s + (d.precoVenda > 0 ? d.analise.mediaMensal * d.precoVenda : 0), 0);
+    const maisVendidosDaMarca = itensVendidosDaMarca
       .sort((a, b) => b.analise.mediaMensal - a.analise.mediaMensal)
       .slice(0, 10);
 
@@ -3738,7 +3742,7 @@ function renderizar() {
     buscaMarcaTexto = '';
     renderizar();
     abrirDetalheMarca(marca, posicaoReal, valor, pctDoTotal, cor, itensDaMarca, porSituacao, yClique);
-    abrirRankingItensMarca(marca, maisVendidosDaMarca);
+    abrirRankingItensMarca(marca, maisVendidosDaMarca, totalValorVendidoMarca);
   }));
 
   // ---- donut (por situação) — Chart.js ----
