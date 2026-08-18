@@ -19,7 +19,7 @@ O diferencial não é só mostrar os dados do Sysemp de um jeito mais rápido �
 Pipeline: Sysemp (ERP) → Google Sheets (planilhas `BaseLooker` e `AnaliseMinMax`) → este HTML estático, com atualização automática a cada poucos minutos. O detalhe de produto busca compras/vendas ao vivo direto na Sysemp via um Apps Script Web App, sob demanda (um produto por vez). Hospedado no GitHub Pages; nada é publicado automaticamente, só um `git push` explícito. O projeto inteiro é um único arquivo `index.html` (HTML/CSS/JS puro, sem build, sem dependências instaladas) — fluxo de trabalho é editar → testar local com servidor estático (`file://` não funciona por causa do `fetch`) → commit/push.
 
 ## Capabilities and Constraints
-- **Sem preço de venda no painel** — só custo de compra (`custo`) existe nos dados. Qualquer feature de "lucro", "margem" ou "faturamento real" depende desse dado, que ainda não vem da Sysemp/planilha; estimativas já existentes (ex. "faturamento estimado") são sinalizadas explicitamente como estimativa.
+- **Margem líquida real disponível desde 2026-08-18**, importada de um export do Sysemp (tabela de preços) e embutida no `index.html` (`TABELA_PRECOS`, casada por código de barras). É uma foto estática do dia da exportação, não atualiza sozinha — precisa reexportar/colar manualmente, ou migrar pra uma aba na mesma planilha Google (como `BaseLooker`/`AnaliseMinMax`) pra ficar ao vivo. Fora isso, o resto do painel só tem custo de compra (`custo`); qualquer outra feature de "lucro"/"faturamento real" ainda depende de dado que não vem da Sysemp/planilha — estimativas (ex. "faturamento estimado") continuam sinalizadas como estimativa.
 - A aba "Vendas" tem uma seção de visão BI (meta, vendedor, ticket médio, evolução por trimestre) com dados **fictícios**, claramente sinalizados na tela, esperando a API de vendas por vendedor da Sysemp ainda não disponível.
 - **Sem autenticação/login hoje** — GitHub Pages público. Lacuna conhecida: idealmente teria alguma restrição de acesso; ainda não implementada.
 - Sem framework/build — HTML/CSS/JS puro é uma escolha deliberada (deploy sem instalação, um único arquivo).
@@ -28,7 +28,7 @@ Pipeline: Sysemp (ERP) → Google Sheets (planilhas `BaseLooker` e `AnaliseMinMa
 Nome do produto: "Bradisfer — Painel de Estoque". Logo/marca Bradisfer usada no topo (imagem embutida). Idioma: português (pt-BR) em toda a interface.
 
 ## Evidence on Hand
-Fonte de dados real: planilhas `BaseLooker`/`AnaliseMinMax` e API Sysemp ao vivo (compras/vendas por produto). Não existe preço de venda/lucro real disponível — não inventar esse dado em nenhuma feature futura; qualquer estimativa precisa ficar claramente rotulada como tal.
+Fonte de dados real: planilhas `BaseLooker`/`AnaliseMinMax`, API Sysemp ao vivo (compras/vendas por produto), e um export estático do Sysemp com preço de venda/margem líquida real por produto (`TABELA_PRECOS`, ver Capabilities and Constraints). Fora dessa margem, não existe outro preço de venda/lucro real disponível — não inventar esse dado em nenhuma feature futura; qualquer estimativa precisa ficar claramente rotulada como tal.
 
 ## Product Principles
 - Decisão de reposição é o centro do produto — toda feature nova deve facilitar "o que comprar, quando, de quem", não só exibir dado.
