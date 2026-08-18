@@ -201,6 +201,11 @@
   .marca-rank-track { height: 7px; border-radius: 999px; background: var(--glass-border); overflow: hidden; }
   .marca-rank-fill {
     height: 100%; width: 100%; border-radius: 999px;
+    /* Cresce via scaleX (GPU) e não via width (layout+paint a cada frame) —
+       origem na borda esquerda pra crescer da esquerda pra direita. O
+       arredondamento das pontas estica junto durante o movimento, mas
+       termina em scaleX(1), ou seja, sem distorção no estado final. */
+    transform-origin: 0% 50%;
     transition: background 0.15s;
   }
   /* Entrada em cascata: cada barra cresce com um atraso maior que a
@@ -219,7 +224,7 @@
   .marca-ranking.anima-entrada .marca-rank-row:nth-child(8) .marca-rank-fill { animation-delay: 420ms; }
   .marca-ranking.anima-entrada .marca-rank-row:nth-child(9) .marca-rank-fill { animation-delay: 480ms; }
   .marca-ranking.anima-entrada .marca-rank-row:nth-child(10) .marca-rank-fill { animation-delay: 540ms; }
-  @keyframes marcaBarraCresce { from { width: 0 !important; } }
+  @keyframes marcaBarraCresce { from { transform: scaleX(0); } }
   @media (prefers-reduced-motion: reduce) {
     .marca-ranking.anima-entrada .marca-rank-fill { animation: none; }
   }
@@ -273,11 +278,17 @@
   .modal-itens-panel:not(:empty) {
     transform-origin: 0% 50%;
     /* Mesma duração/curva da barra que tomba no 1º modal (ver
-       marcaBarraTombaModal) — os dois efeitos terminam juntos. */
-    animation: itensPainelEmerge 0.8s cubic-bezier(0.65,0,0.35,1) forwards;
+       marcaBarraTombaModal) — os dois efeitos terminam juntos.
+       Curva ease-out forte: elemento que ENTRA precisa começar rápido, pra
+       não atrasar justamente o instante que o usuário está olhando (a curva
+       anterior, 0.65/0/0.35/1, era ease-in-out e começava devagar). */
+    animation: itensPainelEmerge 0.8s cubic-bezier(0.23,1,0.32,1) forwards;
   }
+  /* Começa quase no tamanho final (0.9, não 0.15): o deslocamento lateral é
+     quem conta a história de "saindo de trás do 1º painel". Escala perto de
+     zero fazia o painel parecer surgir do nada. */
   @keyframes itensPainelEmerge {
-    0%   { transform: scaleX(0.15) translateX(-40px); opacity: 0; }
+    0%   { transform: scaleX(0.9) translateX(-24px); opacity: 0; }
     100% { transform: scaleX(1) translateX(0); opacity: 1; }
   }
   @media (max-width: 860px) {
@@ -291,7 +302,7 @@
       animation-name: itensPainelEmergeVertical;
     }
     @keyframes itensPainelEmergeVertical {
-      0%   { transform: scaleY(0.15) translateY(-30px); opacity: 0; }
+      0%   { transform: scaleY(0.9) translateY(-18px); opacity: 0; }
       100% { transform: scaleY(1) translateY(0); opacity: 1; }
     }
   }
@@ -326,8 +337,10 @@
     box-shadow: 0 6px 20px -6px rgba(0,0,0,0.6);
     /* Nasce deitada (0°) e tomba fisicamente até em pé (90°) — rotação
        real via @keyframes, com ângulos intermediários visíveis, não uma
-       interpolação abstrata de forma. Dispara assim que o modal abre. */
-    animation: marcaBarraTombaModal 0.8s cubic-bezier(0.65,0,0.35,1) forwards;
+       interpolação abstrata de forma. Dispara assim que o modal abre.
+       Mesma curva ease-out do painel de itens, pra os dois terminarem
+       juntos e nenhum dos dois começar devagar. */
+    animation: marcaBarraTombaModal 0.8s cubic-bezier(0.23,1,0.32,1) forwards;
   }
   @keyframes marcaBarraTombaModal {
     0%   { transform: rotate(0deg); }
@@ -376,25 +389,24 @@
   .modal-itens-track { height: 8px; border-radius: 999px; background: var(--glass-border); overflow: hidden; }
   .modal-itens-fill {
     height: 100%; border-radius: 999px;
-    /* --pct-barra vem inline (proporção real de cada produto) — usada
-       explicitamente nos dois extremos da keyframe abaixo. Antes o
-       tamanho final vinha via width:X% inline direto no elemento, que
-       sempre vence sobre qualquer width do CSS (inline tem prioridade
-       sobre classe, independente de especificidade): a barra nascia já
-       no tamanho final, sem crescer visivelmente — era esse o bug de
-       "sem animação" visto (mesmo problema já corrigido antes no modal
-       de detalhe da marca, reapareceu aqui porque é um HTML separado). */
+    /* --pct-barra vem inline (proporção real de cada produto) e define só o
+       tamanho FINAL, estático. O crescimento é feito por scaleX (GPU), não
+       animando width (que recalcula layout a cada frame). Isso também
+       encerra de vez a armadilha do width inline vencendo o keyframe: aqui
+       o width nunca é animado, então não há conflito de prioridade
+       possível. */
     width: var(--pct-barra, 0%);
+    transform-origin: 0% 50%;
     /* Cascata de 60ms entre barras (mesmo valor já usado no ranking de
        marcas — ver .marca-ranking.anima-entrada), 0.5s por barra. "both"
-       aplica o frame 0% (width:0) durante o delay inicial também, não só
-       depois — sem isso a barra ficaria no width base (o valor final)
-       visível enquanto espera a vez de animar. */
+       aplica o frame 0% (scaleX(0)) durante o delay inicial também, não só
+       depois — sem isso a barra apareceria já no tamanho final enquanto
+       espera a vez de animar. */
     animation: itensBarraCresce 0.5s cubic-bezier(0.22,1,0.36,1) both;
   }
   @keyframes itensBarraCresce {
-    0%   { width: 0; }
-    100% { width: var(--pct-barra, 0%); }
+    0%   { transform: scaleX(0); }
+    100% { transform: scaleX(1); }
   }
   /* +800ms em cada delay — só começam a crescer depois que o popup
      inteiro termina de "emergir" de dentro do 1º modal (mesma duração de
@@ -1475,9 +1487,17 @@ function parseCSV(texto) {
 // true só quando a renderização veio de uma seleção real do usuário.
 const ultimoValorKpi = {};
 
+// prefers-reduced-motion pro lado JS. O @media do CSS não alcança config de
+// biblioteca (Chart.js) nem animação por requestAnimationFrame, então quem
+// pediu menos movimento no sistema precisa ser checado explicitamente aqui —
+// senão o donut continua girando e o número continua contando. matchMedia é
+// vivo: mudou a preferência, .matches reflete na hora, sem recarregar.
+const mediaMotionReduzido = window.matchMedia('(prefers-reduced-motion: reduce)');
+function motionReduzido() { return mediaMotionReduzido.matches; }
+
 function animarNumero(el, valorFinal, formatador, duracaoMs, animarAgora) {
   const chave = el.id;
-  if (!animarAgora || document.hidden) {
+  if (!animarAgora || document.hidden || motionReduzido()) {
     el.textContent = formatador(valorFinal);
     ajustarFonteParaCaber(el);
     if (chave) ultimoValorKpi[chave] = valorFinal;
@@ -2739,7 +2759,9 @@ function renderizarAbaVendas() {
 
   const animarMarcasVendasAgora = animarMarcasVendasNoProximoRender;
   animarMarcasVendasNoProximoRender = false;
-  const marcasVendasAnimConfig = animarMarcasVendasAgora ? { duration: 1400, easing: 'easeOutQuart' } : false;
+  // Mesmo gate de motion reduzido do donut — é animação de biblioteca, o
+  // @media do CSS não alcança.
+  const marcasVendasAnimConfig = (animarMarcasVendasAgora && !motionReduzido()) ? { duration: 1400, easing: 'easeOutQuart' } : false;
 
   // ---- gráfico: marcas mais vendidas ----
   const labelsMarcasMais = marcasMaisVendidas.map(m => m.marca);
@@ -3678,13 +3700,15 @@ function renderizar() {
   // seleção de verdade (ver comentário na declaração da variável lá em cima).
   const animarDonutAgora = animarDonutNoProximoRender;
   animarDonutNoProximoRender = false;
-  // animateScale ligado dá a sensação de as fatias crescendo "na direção
-  // da tela" (saem pequenas do centro e se expandem até o tamanho final),
-  // em vez de só girar — delay progressivo por fatia (animation.delay como
-  // função do contexto) faz elas chegarem em sequência, não tudo de uma vez.
-  const donutAnimationConfig = animarDonutAgora ? {
-    duration: 1000, easing: 'easeOutBack', animateRotate: true, animateScale: true,
-    delay: ctx => ctx.type === 'data' ? ctx.dataIndex * 90 : 0,
+  // Só varre em rotação (animateRotate), sem animateScale: com scale ligado
+  // as fatias nasciam com raio zero — ou seja, surgiam do nada, e o anel
+  // inteiro "inflava" na entrada. Curva easeOutQuart no lugar de easeOutBack
+  // porque o overshoot elástico do Back não combina com um painel
+  // operacional de estoque. Delay de 60ms por fatia (mesma cascata do
+  // ranking de marcas): com 4 situações, tudo assenta em ~600ms.
+  const donutAnimationConfig = (animarDonutAgora && !motionReduzido()) ? {
+    duration: 420, easing: 'easeOutQuart', animateRotate: true, animateScale: false,
+    delay: ctx => ctx.type === 'data' ? ctx.dataIndex * 60 : 0,
   } : false;
 
   // Número central: conta gradualmente só quando o donut de fato anima
