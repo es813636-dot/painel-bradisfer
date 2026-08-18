@@ -1124,7 +1124,6 @@ let ordemDirMarca = -1;
 let marcaExpandidaTabela = '';
 let abaSelecionada = 'estoque'; // 'estoque' ou 'vendas'
 let mostrarItensNormaisMarca = false; // segunda seção (estoque normal/excesso) começa fechada
-let mostrarMarcasUrgentes = false; // lista de marcas com compra urgente começa fechada
 let marcaRelatorioVendas = ''; // marca selecionada no relatório "itens mais vendidos por marca" (aba Vendas)
 let filtroGrupoVendas = ''; // filtro por grupo/linha de produto, exclusivo da aba Vendas
 // Liga a animação do donut só quando a mudança veio de uma seleção de
@@ -3256,25 +3255,6 @@ function renderizar() {
   // time — ou seja, mesmo comprando hoje, vai faltar produto no meio do
   // caminho. Só considera produtos que batem com a planilha de análise
   // (é o único lugar com Venda Média Dia e Lead Time disponíveis pra
-  // TODOS os produtos de uma vez, sem precisar consultar a Sysemp item
-  // por item).
-  const porMarcaUrgencia = {};
-  dadosCompletos.forEach(d => {
-    const an = d.analise;
-    if (!an || an.descontinuada || !(an.vendaMediaDia3M > 0) || !(an.leadTimeTotal > 0)) return;
-    const diasEstoque = d.estoque / an.vendaMediaDia3M;
-    const diasAlemLT = diasEstoque - an.leadTimeTotal;
-    if (diasAlemLT >= 0) return; // não é urgente: o estoque cobre até o pedido novo chegar
-    const chave = normalizarFornecedor(d.marca);
-    if (!porMarcaUrgencia[chave]) porMarcaUrgencia[chave] = { marcaOriginal: d.marca, qtdUrgente: 0, valorRepor: 0, piorCaso: 0 };
-    const m = porMarcaUrgencia[chave];
-    m.qtdUrgente++;
-    m.valorRepor += d.valorRepor;
-    if (diasAlemLT < m.piorCaso) m.piorCaso = diasAlemLT;
-  });
-  const marcasUrgentes = Object.values(porMarcaUrgencia).sort((a, b) => a.piorCaso - b.piorCaso);
-
-
   const todasMarcas = [...new Set(dadosCompletos.map(d => d.marca).filter(Boolean))].sort();
   const sugestoesMarca = buscaMarcaTexto
     ? todasMarcas.filter(m => m.toLowerCase().includes(buscaMarcaTexto.toLowerCase())).slice(0, 8)
@@ -3332,27 +3312,6 @@ function renderizar() {
           ).join('') +
         '</div>' +
       '</div>' +
-      '<div style="margin-top:12px;">' +
-        '<button class="refresh-btn" id="toggle-marcas-urgentes"' + (marcasUrgentes.length === 0 ? ' disabled' : '') + '>' +
-          icon('sirenIcon', 'icon-sm') + ' ' + (mostrarMarcasUrgentes ? 'Ocultar' : 'Ver') + ' marcas com compra urgente' +
-          (marcasUrgentes.length > 0 ? ' (' + fmtNum(marcasUrgentes.length) + ')' : ' (nenhuma agora)') +
-        '</button>' +
-      '</div>' +
-      (mostrarMarcasUrgentes && marcasUrgentes.length > 0 ? (
-        '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">' +
-          '<p class="hint">Estoque vai acabar ANTES do próximo pedido conseguir chegar — mesmo comprando hoje, vai faltar produto. Calculado com Venda Média Diária × Lead Time da marca (só produtos que batem com a planilha de análise).</p>' +
-          '<table><thead><tr><th>Marca</th><th class="num">Itens urgentes</th><th class="num">Pior caso</th><th class="num">Valor a repor</th></tr></thead><tbody>' +
-            marcasUrgentes.map(m =>
-              '<tr class="clickable" data-marca-urgente="' + escapeHtml(m.marcaOriginal) + '">' +
-                '<td>' + escapeHtml(m.marcaOriginal) + '</td>' +
-                '<td class="num">' + fmtNum(m.qtdUrgente) + '</td>' +
-                '<td class="num" style="color:var(--red-a);font-weight:600;">vai faltar em ' + fmtNum(Math.round(-m.piorCaso)) + ' dias</td>' +
-                '<td class="num">' + fmtMoeda(m.valorRepor) + '</td>' +
-              '</tr>'
-            ).join('') +
-          '</tbody></table>' +
-        '</div>'
-      ) : '') +
       '<p class="hint" style="margin-top:10px;">' + (rotinaHoje.length ? fmtNum(rotinaHoje.length) + ' fornecedor(es) programado(s) · clique num cartão pra ver os itens' : 'Nenhum fornecedor programado pra ' + diaSelecionadoLabel.toLowerCase() + ' na rotina.') + '</p>' +
       (rotinaHoje.length ? (
         '<div class="rotina-grid' + (animarRotinaAgora ? ' rotina-grid-animada' : '') + '">' +
@@ -3621,19 +3580,6 @@ function renderizar() {
     const novoInput = document.getElementById('busca-itens-normais');
     if (novoInput) { novoInput.focus(); novoInput.setSelectionRange(cursorPos, cursorPos); }
   }, 250));
-  const toggleUrgentesEl = document.getElementById('toggle-marcas-urgentes');
-  if (toggleUrgentesEl) toggleUrgentesEl.addEventListener('click', () => {
-    mostrarMarcasUrgentes = !mostrarMarcasUrgentes;
-    renderizar();
-  });
-  document.querySelectorAll('[data-marca-urgente]').forEach(tr => tr.addEventListener('click', () => {
-    filtroMarca = tr.dataset.marcaUrgente;
-    marcaExpandidaTabela = tr.dataset.marcaUrgente;
-    mostrarItensNormaisMarca = false;
-    buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
-    renderizar();
-    document.querySelector('.container').scrollIntoView({ behavior: 'smooth' });
-  }));
   document.querySelectorAll('[data-rotina-marca]').forEach(el => el.addEventListener('click', () => {
     // Limpa outros filtros antes de expandir, pra garantir que os itens
     // mostrados batam com o que o card da Rotina contou (que sempre olha
