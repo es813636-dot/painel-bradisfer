@@ -10,19 +10,40 @@
 1. Instalar [Git](https://git-scm.com/) e (opcional) [VS Code](https://code.visualstudio.com/).
 2. `git clone https://github.com/es813636-dot/painel-bradisfer.git`
 3. Isso já traz o `index.html` completo — é o único arquivo do projeto, tudo em HTML/CSS/JS puro (nenhuma instalação de dependência necessária).
-4. Fluxo de trabalho: editar `index.html` → testar localmente → `git add`, `git commit`, `git push` → GitHub Pages publica sozinho em ~1 min.
+4. Pra testar localmente com dados reais, **não pode ser aberto direto como arquivo** (`file://`) — o navegador bloqueia o `fetch` pro Google Sheets nesse modo. Suba um servidor estático simples na pasta do projeto (ex.: `python -m http.server 8080`) e acesse via `http://localhost:8080/index.html`.
+5. Fluxo de trabalho: editar `index.html` → testar localmente → `git add`, `git commit`, `git push` → GitHub Pages publica sozinho em ~1 min. **Nada é publicado automaticamente** — só um `git push` explícito manda pro ar.
 
 ## O que já foi construído
-- Painel de estoque em tempo real (Sysemp → Google Sheets → HTML), com KPIs, gráficos (Chart.js), busca por grupo/marca/produto/situação, rotina de compras semanal, marcas com compra urgente, geração de pedido (CSV pro Sysemp), importação de pedidos em aberto, detalhe de produto com dados ao vivo da Sysemp (via Apps Script).
+- Painel de estoque em tempo real (Sysemp → Google Sheets → HTML), com KPIs, gráficos, busca por grupo/marca/produto/situação, rotina de compras semanal, marcas com compra urgente, geração de pedido (CSV pro Sysemp), importação de pedidos em aberto, detalhe de produto com dados ao vivo da Sysemp (via Apps Script).
 - Aba "Vendas" com visão estilo BI: produtos/marcas mais vendidos, relatório por marca, e uma seção de "visão geral" com cartões de gradiente — **atenção:** meta, vendedor, ticket médio e evolução por trimestre nessa seção são **dados fictícios**, claramente sinalizados na tela, esperando a API de vendas por vendedor da Sysemp.
-- Acessibilidade: navegação por teclado, escape de HTML nos dados da planilha (proteção contra dado malicioso/quebrado), trava de foco em modal.
+- Acessibilidade: navegação por teclado, escape de HTML nos dados da planilha (proteção contra dado malicioso/quebrado), trava de foco em modais.
+
+## Redesign visual (dark elegante + glassmorphism)
+Reformulação completa do visual sem mexer na lógica de dados, feita em fases:
+- **Design tokens**: nova camada de vars CSS (`--glass-blur`, `--shadow-elevation-1/2/3`, `--radius-sm/md/lg`) somada aos tokens originais (nunca substituídos).
+- **Ícones**: todos os ~29 emojis trocados por SVG inline (`SVG_ICONS` + função `icon()` no JS) — sem dependência externa, sem CDN de ícones.
+- **Menu de navegação**: sidebar lateral com efeito 3D "porta abrindo" (rotação real via CSS) no desktop; em mobile (≤700px) vira um fade simples — o efeito 3D + `will-change:transform` do wrapper `.scene-3d` causava bugs sérios de rotação/flash no Safari iOS, resolvido restringindo o efeito 3D só a telas largas.
+- **Painéis/gráficos**: tratamento glass (blur, sombra, borda) uniforme em todos os cards.
+- **"Valor em estoque por marca"**: deixou de ser gráfico Chart.js — agora é uma lista HTML/CSS de barras de progresso (`montarRankingMarcas()`), com paleta categórica por marca (`PALETA_MARCAS`/`corMarca()`) e cores/posição sempre calculadas pela posição **real** no ranking completo (`todasMarcasOrdenadas`), nunca pelo índice local de uma lista já filtrada — evita bug de "toda marca vira #1 dourado" quando filtrada.
+- **Modal "Detalhe da marca"**: ao clicar numa marca da lista, abre um modal estático (mesmo padrão do modal de produto — fora de `.scene-3d`/`#app`, nunca `position:fixed` dentro da árvore com `will-change`) com medalha de posição, barra que "tomba" fisicamente (rotação real 0°→90°, não interpolação de forma) e resumo por situação.
+- **Modal "Itens mais vendidos"**: abre lado a lado com o de detalhe (mobile: empilhado, ≤860px) mostrando os 10 produtos mais vendidos da marca por Média Mensal — **não mostra "lucro"**, porque o painel só tem custo de compra, não preço de venda; mostrar lucro seria inventar dado. Anima "emergindo" do primeiro modal, e as barras internas só começam a crescer depois que essa animação de entrada termina.
+- **Donut "SKUs por situação"**: legenda com mini barra de proporção, animação de entrada com fatias crescendo em cascata, seta customizada aparecendo no hover (linha saindo da borda do anel até um rótulo com nome+valor) — trocou o tooltip nativo do Chart.js.
+
+## Redesign visual — o que falta do plano original
+O plano de redesign (dark elegante + reorganização de layout) tinha 5 fases. As 3 primeiras estão prontas (ver seção acima); faltam:
+- **Fase 4 — Reconciliar a aba Vendas**: ela usa um tema claro à parte (fundo branco, cores diferentes), com os valores de cor ainda em hex fixo espalhado pelo CSS, não em tokens `--vendas-*`. Falta extrair isso pra tokens (mesmo padrão do resto do painel) e aplicar a mesma escala de sombra/elevação/blur usada nos cards da aba Estoque, pra ficar visualmente consistente entre as duas abas.
+- **Fase 5 — Responsividade e regressão final**: reteste dos 3 breakpoints (700px, 860px, mobile pequeno), checagem de `prefers-reduced-motion` em tudo que foi adicionado depois da Fase 3 (ranking de marcas, os dois modais novos, donut com seta de hover), e um passe geral clicando em cada interação do painel pra confirmar que nada quebrou com o acúmulo de mudanças.
 
 ## Pendências conhecidas
-- **Revisar a conversão de Lead Time → meses** em `calcularSugestaoSemPlanilha` (usa `/30`, confirmado correto com prints reais do Sysemp — mês fixo de 30 dias, não 365/12). Já está certo, só not deixando registrado que foi validado.
+- **Revisar a conversão de Lead Time → meses** em `calcularSugestaoSemPlanilha` (usa `/30`, confirmado correto com prints reais do Sysemp — mês fixo de 30 dias, não 365/12). Já está certo, só ficando registrado que foi validado.
 - **Pedir à Sysemp o endpoint de vendas por vendedor/meta** — assim que existir, trocar os dados fictícios da aba Vendas pelos reais (a estrutura visual já está pronta pra isso).
+- **Sem preço de venda no painel** — só custo de compra existe nos dados (`custo`). Qualquer feature que peça "lucro", "margem" ou "faturamento real" precisa desse dado, que ainda não vem da Sysemp/planilha; onde já existe uma estimativa (ex. "faturamento estimado" na aba Vendas), é sinalizada como estimativa, calculada com custo × média vendida.
 - **Escolher uma das 4 direções de Power BI** propostas (link acima) se quiser seguir esse caminho — requer Power BI Desktop, que eu não consigo operar remotamente.
 
 ## Convenções do projeto
-- Paleta de status validada contra daltonismo/contraste (skill `dataviz`): RUPTURA `#e66767`, BAIXO `#199e70`, EXCESSO `#3987e5`, OK `#008300`.
-- Gráficos usam Chart.js — o `<canvas>` é sempre preservado entre renderizações (nunca destruído/recriado à toa), senão a animação não tem "de onde" partir.
-- Animação dos gráficos só liga em clique real do usuário (chip/card/legenda/barra), nunca em toda renderização — evita travar em 0 quando a aba está em segundo plano.
+- Paleta de status validada contra daltonismo/contraste (skill `dataviz`, script `validate_palette.js`): RUPTURA `#e66767`, BAIXO `#a87c0e` (âmbar — trocado do verde `#199e70` original pra passar mais urgência; testado contra vários tons de laranja/âmbar, a maioria falhava a checagem de separação CVD contra o vermelho de RUPTURA), EXCESSO `#3987e5`, OK `#008300`. Antes de trocar qualquer cor de status, rodar o validador de novo — não escolher visualmente.
+- Gráficos Chart.js (donut) têm o `<canvas>` sempre preservado entre renderizações (nunca destruído/recriado à toa) via `replaceWith()` + checagem `instance.canvas.isConnected`, senão a animação não tem "de onde" partir.
+- Animação dos gráficos só liga em clique real do usuário (chip/card/legenda/barra), nunca em toda renderização — evita travar em 0 quando a aba está em segundo plano, e evita reanimar em toda tecla digitada numa busca.
+- **`style="width:X%"` inline sempre vence sobre qualquer `width` do CSS**, incluindo dentro de `@keyframes` — isso já causou bug de "barra sem animação" duas vezes neste projeto (barras de progresso HTML/CSS). Solução padrão: passar o valor via CSS custom property inline (`style="--pct-barra:X%"`) e deixar o `width` real ser definido inteiramente pelo CSS/keyframe, nunca direto no elemento.
+- **`will-change: transform`** (ou qualquer `transform` real) num elemento ancestral cria um novo "containing block" — qualquer `position: fixed` dentro dele passa a ser relativo a esse ancestral, não ao viewport. O wrapper `.scene-3d` (menu 3D) tem isso na base; qualquer novo overlay/modal precisa ficar fora dessa árvore no HTML estático (mesmo padrão do `#modal-backdrop` original), nunca tentar virar `position:fixed` de dentro dela via JS.
+- Reaplicar uma classe que carrega uma `animation` CSS **reinicia essa animação do zero**, mesmo com `transition:none` — `transition` e `animation` são mecanismos independentes. Pra restaurar um estado visual final sem repetir a animação (ex. depois de um re-render), usar uma classe irmã sem `animation`, só com o `transform`/propriedade final direto (padrão usado em `.tombado-fixo` como par de `.tombando`).

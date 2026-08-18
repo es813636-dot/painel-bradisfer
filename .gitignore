@@ -1,0 +1,7 @@
+# Config e skills de agentes de IA (Claude Code, Codex CLI etc.) — locais
+# à máquina de cada dev, não fazem parte do painel em si.
+.agents/
+.claude/
+.codex/
+.impeccable/
+skills-lock.json
