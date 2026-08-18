@@ -53,6 +53,20 @@
     --radius-md: 12px;
     --radius-lg: 16px;
 
+    /* ---- Curvas de easing (antes espalhadas como cubic-bezier literal) ----
+       --ease-saida: ease-out forte, padrão pra qualquer coisa que ENTRA na
+         tela (começa rápido, não atrasa o instante que o usuário observa).
+       --ease-movimento: ease-in-out forte, pra algo que se move/transforma
+         entre duas posições já visíveis.
+       --ease-porta: curva com leve overshoot, só pro efeito 3D "porta
+         abrindo" do menu lateral — é o único lugar do painel com bounce
+         intencional, não usar em mais nada.
+       Não existe token de ease-in de propósito: começar devagar faz
+       qualquer interação de UI parecer lenta. */
+    --ease-saida: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-movimento: cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-porta: cubic-bezier(0.34, 1.56, 0.64, 1);
+
     /* ---- Tokens do modo claro da aba Vendas (extraídos de hex fixo) ---- */
     --vendas-indigo-deep: #1e1b4b;
     --vendas-indigo-mid: #312e81;
@@ -127,7 +141,7 @@
     backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
     padding: 16px 18px; box-shadow: var(--shadow-elevation-1), var(--glass-highlight);
     min-width: 0; overflow: hidden; transform-style: preserve-3d;
-    transition: background 0.18s, border-color 0.18s, transform 0.25s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s;
+    transition: background 0.18s, border-color 0.18s, transform 0.25s var(--ease-saida), box-shadow 0.25s;
   }
   @media (hover: hover) and (pointer: fine) {
     .kpi-card:hover {
@@ -213,7 +227,7 @@
      (adicionada via JS só em cliques reais, nunca em render passivo).
      Todas crescem até o mesmo 100% (as barras são uniformes agora, não
      proporcionais ao valor — só o texto ao lado mostra R$/%). */
-  .marca-ranking.anima-entrada .marca-rank-fill { animation: marcaBarraCresce 0.7s cubic-bezier(0.22,1,0.36,1) backwards; }
+  .marca-ranking.anima-entrada .marca-rank-fill { animation: marcaBarraCresce 0.7s var(--ease-saida) backwards; }
   .marca-ranking.anima-entrada .marca-rank-row:nth-child(1) .marca-rank-fill { animation-delay: 0ms; }
   .marca-ranking.anima-entrada .marca-rank-row:nth-child(2) .marca-rank-fill { animation-delay: 60ms; }
   .marca-ranking.anima-entrada .marca-rank-row:nth-child(3) .marca-rank-fill { animation-delay: 120ms; }
@@ -262,7 +276,7 @@
     max-width: 520px; width: 100%; max-height: 88vh; overflow-y: auto;
     padding: 32px 30px;
     box-shadow: 0 16px 48px rgba(0,0,0,0.5);
-    transform: translateY(12px) scale(0.96); transition: transform 0.3s cubic-bezier(0.22,1,0.36,1);
+    transform: translateY(12px) scale(0.96); transition: transform 0.3s var(--ease-saida);
   }
   .modal-marca-backdrop.open .modal-marca-panel { transform: translateY(0) scale(1); }
   /* O painel de itens só existe/mostra conteúdo quando abrirRankingItensMarca
@@ -282,7 +296,7 @@
        Curva ease-out forte: elemento que ENTRA precisa começar rápido, pra
        não atrasar justamente o instante que o usuário está olhando (a curva
        anterior, 0.65/0/0.35/1, era ease-in-out e começava devagar). */
-    animation: itensPainelEmerge 0.8s cubic-bezier(0.23,1,0.32,1) forwards;
+    animation: itensPainelEmerge 0.8s var(--ease-saida) forwards;
   }
   /* Começa quase no tamanho final (0.9, não 0.15): o deslocamento lateral é
      quem conta a história de "saindo de trás do 1º painel". Escala perto de
@@ -340,7 +354,7 @@
        interpolação abstrata de forma. Dispara assim que o modal abre.
        Mesma curva ease-out do painel de itens, pra os dois terminarem
        juntos e nenhum dos dois começar devagar. */
-    animation: marcaBarraTombaModal 0.8s cubic-bezier(0.23,1,0.32,1) forwards;
+    animation: marcaBarraTombaModal 0.8s var(--ease-saida) forwards;
   }
   @keyframes marcaBarraTombaModal {
     0%   { transform: rotate(0deg); }
@@ -402,7 +416,7 @@
        aplica o frame 0% (scaleX(0)) durante o delay inicial também, não só
        depois — sem isso a barra apareceria já no tamanho final enquanto
        espera a vez de animar. */
-    animation: itensBarraCresce 0.5s cubic-bezier(0.22,1,0.36,1) both;
+    animation: itensBarraCresce 0.5s var(--ease-saida) both;
   }
   @keyframes itensBarraCresce {
     0%   { transform: scaleX(0); }
@@ -452,7 +466,7 @@
      movimento, então cada cartão sozinho precisa ser lento o bastante pra
      a entrada ser percebida mesmo sem vizinhos animando junto. */
   @keyframes cartaoEntrada { from { opacity: 0; transform: translateY(16px) scale(0.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
-  .rotina-grid-animada .rotina-card { animation: cartaoEntrada 0.9s cubic-bezier(0.22,1,0.36,1) backwards; }
+  .rotina-grid-animada .rotina-card { animation: cartaoEntrada 0.9s var(--ease-saida) backwards; }
   .rotina-grid-animada .rotina-card:nth-child(n+1) { animation-delay: 0ms; }
   .rotina-grid-animada .rotina-card:nth-child(n+2) { animation-delay: 70ms; }
   .rotina-grid-animada .rotina-card:nth-child(n+3) { animation-delay: 140ms; }
@@ -476,7 +490,6 @@
   @media (prefers-reduced-motion: reduce) {
     .tabela-animada tbody tr { animation: none; }
     .rotina-grid-animada .rotina-card { animation: none; }
-    .chip.active { animation: none; }
   }
 
   /* ==================== Visão BI — só a aba Vendas ==================== */
@@ -631,7 +644,10 @@
   .legend-valor { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
   .legend-pct { font-family: var(--font-body); font-weight: 400; color: var(--text-faint); font-size: 11px; }
   .legend-bar-track { height: 5px; border-radius: 999px; background: var(--glass-border); overflow: hidden; }
-  .legend-bar-fill { height: 100%; border-radius: 999px; transition: width 0.5s cubic-bezier(0.22,1,0.36,1); }
+  /* Sem transition: a legenda é remontada via innerHTML a cada render, então
+     o elemento nasce novo e nunca teve um valor anterior de onde transicionar
+     — a regra era código morto (e animava width, fora da GPU). */
+  .legend-bar-fill { height: 100%; border-radius: 999px; }
 
   .filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
   select, input[type=search], input[type=text] {
@@ -642,10 +658,16 @@
   select option { background: var(--bg-page); color: var(--text); }
   input[type=search]::placeholder, input[type=text]::placeholder { color: var(--text-faint); }
   select:focus, input:focus { outline: 1px solid var(--gold); outline-offset: 1px; }
-  .chip { font-size: 11px; padding: 5px 12px; border: 1px solid var(--glass-border); border-radius: 999px; background: var(--glass); cursor: pointer; color: var(--text-muted); transition: all 0.15s; }
+  /* transition nas propriedades exatas, não em "all": com "all" qualquer
+     propriedade nova que entre na regra (inclusive de layout) passa a
+     animar sem querer, fora da GPU. */
+  .chip { font-size: 11px; padding: 5px 12px; border: 1px solid var(--glass-border); border-radius: 999px; background: var(--glass); cursor: pointer; color: var(--text-muted); transition: background 0.15s, border-color 0.15s, color 0.15s; }
   .chip:hover { border-color: var(--text-faint); color: var(--text); }
-  .chip.active { background: var(--gold); color: #000; border-color: var(--gold); font-weight: 700; animation: chipPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
-  @keyframes chipPop { 0% { transform: scale(0.88); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
+  /* Sem animação de "pop" ao ativar: chip de filtro é clicado dezenas de
+     vezes por dia, e nessa frequência movimento vira ruído — a troca de
+     cor (dourado sólido + texto preto + negrito) já é sinal de estado
+     suficiente, e chega instantânea. */
+  .chip.active { background: var(--gold); color: #000; border-color: var(--gold); font-weight: 700; }
   .clear-link { font-size: 12px; color: var(--gold); cursor: pointer; text-decoration: underline; margin-left: auto; }
 
   /* ---- Ícones inline (sizing contextual, cor herdada via currentColor) ---- */
@@ -710,7 +732,7 @@
     max-width: 560px; width: 100%; max-height: 85vh; overflow-y: auto;
     padding: 24px 26px;
     box-shadow: 0 16px 48px rgba(0,0,0,0.5);
-    transform: translateY(12px); transition: transform 0.22s cubic-bezier(0.22,1,0.36,1);
+    transform: translateY(12px); transition: transform 0.22s var(--ease-saida);
   }
   .modal-backdrop.open .modal-panel { transform: translateY(0); }
   .modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 6px; }
@@ -732,10 +754,12 @@
   body { perspective: 1600px; }
   .scene-3d {
     transform-style: preserve-3d; transform-origin: 50% 50%;
-    transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.5s ease;
-    will-change: transform;
+    transition: transform 0.55s var(--ease-porta), filter 0.5s ease;
   }
+  /* will-change só enquanto o menu está de fato aberto/animando — não
+     persistente pro resto da sessão, que é a maior parte do tempo de uso. */
   .scene-3d.nav-open {
+    will-change: transform;
     transform: translateX(190px) translateZ(-160px) rotateY(-9deg) scale(0.94);
     filter: brightness(0.55) saturate(0.85);
   }
@@ -769,10 +793,10 @@
     transform-style: preserve-3d; transform-origin: 0% 50%;
     transform: perspective(1600px) rotateY(-100deg) translateX(-40px);
     opacity: 0;
-    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.35s ease;
-    will-change: transform;
+    transition: transform 0.6s var(--ease-porta), opacity 0.35s ease;
   }
   .nav-sidebar.open {
+    will-change: transform;
     transform: perspective(1600px) rotateY(0deg) translateX(0);
     opacity: 1;
   }
@@ -2760,8 +2784,10 @@ function renderizarAbaVendas() {
   const animarMarcasVendasAgora = animarMarcasVendasNoProximoRender;
   animarMarcasVendasNoProximoRender = false;
   // Mesmo gate de motion reduzido do donut — é animação de biblioteca, o
-  // @media do CSS não alcança.
-  const marcasVendasAnimConfig = (animarMarcasVendasAgora && !motionReduzido()) ? { duration: 1400, easing: 'easeOutQuart' } : false;
+  // @media do CSS não alcança. Duração igual à do donut (420ms): dois
+  // gráficos do mesmo painel entrando em ritmos diferentes (1400 vs 420)
+  // lia como inconsistência, não como intenção.
+  const marcasVendasAnimConfig = (animarMarcasVendasAgora && !motionReduzido()) ? { duration: 420, easing: 'easeOutQuart' } : false;
 
   // ---- gráfico: marcas mais vendidas ----
   const labelsMarcasMais = marcasMaisVendidas.map(m => m.marca);
