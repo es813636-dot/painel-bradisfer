@@ -1119,8 +1119,6 @@ let mostrarSugestoesMarca = false;
 let buscaTexto = '';
 let ordemCol = 'valorRepor';
 let ordemDir = -1;
-let ordemColMarca = 'urgencia';
-let ordemDirMarca = -1;
 let marcaExpandidaTabela = '';
 let abaSelecionada = 'estoque'; // 'estoque' ou 'vendas'
 let mostrarItensNormaisMarca = false; // segunda seção (estoque normal/excesso) começa fechada
@@ -3186,19 +3184,6 @@ function renderizar() {
     if (d.situacao === 'BAIXO') m.qtdBaixo++;
     m.valorRepor += d.valorRepor;
   });
-  let marcasCriticas = Object.values(porMarcaCritica).filter(m => m.qtdRuptura > 0 || m.qtdBaixo > 0);
-  marcasCriticas.sort((a, b) => {
-    if (ordemColMarca === 'urgencia') {
-      // zerado primeiro, depois abaixo do mínimo, depois valor a repor — sempre nessa ordem de prioridade
-      if (b.qtdRuptura !== a.qtdRuptura) return b.qtdRuptura - a.qtdRuptura;
-      if (b.qtdBaixo !== a.qtdBaixo) return b.qtdBaixo - a.qtdBaixo;
-      return b.valorRepor - a.valorRepor;
-    }
-    const va = a[ordemColMarca], vb = b[ordemColMarca];
-    if (typeof va === 'string') return va.localeCompare(vb) * ordemDirMarca;
-    return (va - vb) * ordemDirMarca;
-  });
-  const totalMarcasCriticas = marcasCriticas.length;
 
   // Troca o critério de "valor a repor > 0" por "situação é zerado ou
   // baixo" — um item com Mínimo cadastrado como 0 no Sysemp fica com
@@ -3419,30 +3404,6 @@ function renderizar() {
             ) : '<p class="hint">Clique para expandir</p>') +
           '</div>';
         })()
-      :
-      '<div class="panel">' +
-        '<h2>Marcas que precisam de compra (' + fmtNum(totalMarcasCriticas) + ')</h2>' +
-        '<p class="hint">Clique numa marca para ver os itens dela · clique no cabeçalho para ordenar' +
-          (ordemColMarca === 'urgencia' ? ' · <strong>ordenado por urgência</strong> (zerado primeiro)' : ' · <span class="clear-link" id="ordenar-urgencia">ordenar por urgência</span>') +
-        '</p>' +
-        '<table class="marcas-criticas-table"><thead><tr>' +
-          '<th data-col="marca">Marca<span class="arrow">' + (ordemColMarca === 'marca' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
-          '<th class="num" data-col="qtdRuptura">Zerados<span class="arrow">' + (ordemColMarca === 'qtdRuptura' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
-          '<th class="num" data-col="qtdBaixo">Baixo<span class="arrow">' + (ordemColMarca === 'qtdBaixo' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
-          '<th class="num" data-col="qtdTotalItens">Total<span class="arrow">' + (ordemColMarca === 'qtdTotalItens' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
-          '<th class="num" data-col="valorRepor">A repor<span class="arrow">' + (ordemColMarca === 'valorRepor' ? (ordemDirMarca > 0 ? '▲' : '▼') : '') + '</span></th>' +
-        '</tr></thead><tbody>' +
-          (marcasCriticas.map(m => {
-            const corDominante = m.qtdRuptura >= m.qtdBaixo ? donutColors.RUPTURA : donutColors.BAIXO;
-            return '<tr class="clickable" data-marca-row="' + escapeHtml(m.marca) + '" style="border-left:3px solid ' + corDominante + ';">' +
-            '<td data-label="Marca">' + escapeHtml(m.marca) + '</td>' +
-            '<td class="num" data-label="Zerados" style="color:' + donutColors.RUPTURA + ';font-weight:600;">' + fmtNum(m.qtdRuptura) + '</td>' +
-            '<td class="num" data-label="Baixo" style="color:' + donutColors.BAIXO + ';font-weight:600;">' + fmtNum(m.qtdBaixo) + '</td>' +
-            '<td class="num" data-label="Total">' + fmtNum(m.qtdTotalItens) + '</td>' +
-            '<td class="num" data-label="A repor">' + fmtMoeda(m.valorRepor) + '</td></tr>';
-          }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Nenhuma marca precisa de reposição no momento.</td></tr>') +
-        '</tbody></table>' +
-      '</div>'
       )
     );
 
@@ -3536,10 +3497,8 @@ function renderizar() {
     const col = th.dataset.col;
     if (buscaAtiva) {
       if (ordemCol === col) ordemDir *= -1; else { ordemCol = col; ordemDir = -1; }
-    } else {
-      if (ordemColMarca === col) ordemDirMarca *= -1; else { ordemColMarca = col; ordemDirMarca = -1; }
+      renderizar();
     }
-    renderizar();
   }));
   document.querySelectorAll('tbody tr.clickable[data-idx]').forEach(tr => tr.addEventListener('click', () => {
     const item = listaTabela[parseInt(tr.dataset.idx, 10)];
@@ -3602,11 +3561,6 @@ function renderizar() {
     filtroMarca = '';
     mostrarItensNormaisMarca = false;
     buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
-    renderizar();
-  });
-  const ordenarUrgenciaEl = document.getElementById('ordenar-urgencia');
-  if (ordenarUrgenciaEl) ordenarUrgenciaEl.addEventListener('click', () => {
-    ordemColMarca = 'urgencia';
     renderizar();
   });
   const gerarPedidoBtn = document.getElementById('gerar-pedido-btn');
