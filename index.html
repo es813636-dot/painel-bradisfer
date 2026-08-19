@@ -1047,6 +1047,11 @@ const SHEET_NAME = 'BaseLooker';
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(SHEET_NAME);
 const ANALISE_SHEET_NAME = 'AnaliseMinMax';
 const ANALISE_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(ANALISE_SHEET_NAME);
+// Vendas AO VIVO em lote (Apps Script bate na Sysemp pra cada produto,
+// de tempos em tempos, e grava aqui) — média mensal real de 12 meses
+// pra todo o catálogo, sem precisar clicar item por item.
+const VENDAS_VIVO_SHEET_NAME = 'VendasAoVivo';
+const VENDAS_VIVO_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(VENDAS_VIVO_SHEET_NAME);
 // Ponte (Apps Script Web App) que busca compras/vendas reais na Sysemp,
 // um produto por vez, sob demanda (ao clicar num item).
 const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzlQJOM_53MJDm3OIuGGhtl-XDJK69ckZmqy300W0Ius7MJ4MTas7OgIuoNlfTtXSbwaw/exec';
@@ -1166,6 +1171,9 @@ let pedidosEmAberto = new Map(); // normalizarProduto(produto) -> quantidade em 
 // a anterior (Google Sheets sendo editado bem na hora da consulta, por
 // exemplo), mantém os últimos dados bons em vez de perder tudo.
 let minMaxPlanilhaPersistente = new Map();
+// Mesma lógica de persistência que minMaxPlanilhaPersistente, só que pra
+// venda AO VIVO em lote (chave: código de barras).
+let vendasVivoPersistente = new Map();
 let diaRotinaSelecionado = null; // null até carregar — definido pra "hoje" (ou SEG se hoje for fim de semana)
 
 // ----------------------------------------------------------------------
@@ -1578,9 +1586,10 @@ async function carregarDados() {
   document.getElementById('subtitle').textContent = 'conectando...';
 
   try {
-    const [respBase, respAnalise] = await Promise.all([
+    const [respBase, respAnalise, respVendasVivo] = await Promise.all([
       fetch(CSV_URL + '&t=' + Date.now()),
       fetch(ANALISE_CSV_URL + '&t=' + Date.now()).catch(() => null), // fonte opcional — não trava o painel se falhar
+      fetch(VENDAS_VIVO_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem
     ]);
     if (!respBase.ok) throw new Error('HTTP ' + respBase.status);
     const textoBase = await respBase.text();
@@ -1632,6 +1641,30 @@ async function carregarDados() {
       minMaxPlanilhaPersistente = minMaxPlanilha;
     }
 
+    // ---- fonte 3 (opcional): Vendas AO VIVO em lote (Apps Script + Sysemp) ----
+    const vendasVivo = new Map();
+    if (respVendasVivo && respVendasVivo.ok) {
+      const textoVendasVivo = await respVendasVivo.text();
+      const linhasVendasVivo = parseCSV(textoVendasVivo);
+      linhasVendasVivo.forEach(r => {
+        const codBarra = String(r['Código Barras'] || '').trim();
+        if (!codBarra) return;
+        const mediaMensal = r['Média Mensal'] !== '' ? parseNumeroBR(r['Média Mensal']) : null;
+        if (mediaMensal === null) return; // linha com erro registrado pelo lote — ignora
+        vendasVivo.set(codBarra, {
+          mediaMensal,
+          totalVendido: parseNumeroBR(r['Total Vendido (12M)']),
+          dataUltimaVenda: r['Data Última Venda'] || '',
+          qtdUltimaVenda: parseNumeroBR(r['Qtd Última Venda']),
+        });
+      });
+    }
+    const vendasVivoEhRazoavel = vendasVivo.size > 0 &&
+      (vendasVivoPersistente.size === 0 || vendasVivo.size >= vendasVivoPersistente.size * 0.5);
+    if (vendasVivoEhRazoavel) {
+      vendasVivoPersistente = vendasVivo;
+    }
+
     let qtdComOverride = 0;
 
     dadosCompletos = linhas.map(r => {
@@ -1655,7 +1688,8 @@ async function carregarDados() {
       const valorRepor = (situacao === 'RUPTURA' || situacao === 'BAIXO') ? Math.max(0, (minimo - estoque) * custo) : 0;
       const codigoBarras = String(r['Código Barras'] || '').trim();
       const precoMargem = precoMargemDoProduto(codigoBarras); // [margemLiquida, precoVenda] ou null se não achou na tabela de preços
-      return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras, estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null, margemLucro: precoMargem ? precoMargem[0] : null, precoVenda: precoMargem ? precoMargem[1] : null };
+      const vendasAoVivoLote = codigoBarras ? (vendasVivoPersistente.get(codigoBarras) || null) : null;
+      return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras, estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null, margemLucro: precoMargem ? precoMargem[0] : null, precoVenda: precoMargem ? precoMargem[1] : null, vendasAoVivoLote };
     });
 
     const totalAntesExclusao = dadosCompletos.length;
@@ -2065,52 +2099,7 @@ function montarConteudoModal(produto, dadosReais) {
 
   let blocoVendas, blocoSugestao, blocoDetalhes = '';
 
-  if (an && !an.descontinuada) {
-    // Recalcula o Pedido Sugerido com o estoque ATUAL (ao vivo), em vez de
-    // usar o valor fixo que veio da planilha (calculado com o estoque de
-    // quando a planilha foi processada) — evita ficar desatualizado se o
-    // estoque mudou desde então. Mesma função usada no botão "Gerar
-    // pedido", pra nunca mostrar números diferentes em lugares diferentes.
-    const pedidoSugeridoAoVivo = calcularPedidoSugeridoAoVivo(produto);
-
-    blocoVendas =
-      '<div class="modal-section">' +
-        '<div class="modal-section-title">Vendas (calculado — 14 meses de histórico)</div>' +
-        '<div class="modal-grid">' +
-          '<div class="modal-stat"><div class="k">Média mensal</div><div class="v">' + fmtNum(Math.round(an.mediaMensal)) + ' un/mês</div></div>' +
-          '<div class="modal-stat"><div class="k">Desvio padrão</div><div class="v">' + fmtNum(Math.round(an.desvioPadrao)) + '</div></div>' +
-          '<div class="modal-stat"><div class="k">Curva ABC</div><div class="v">' + escapeHtml(an.curva) + '</div></div>' +
-          '<div class="modal-stat"><div class="k">Lead time total</div><div class="v">' + fmtNum(an.leadTimeTotal) + ' dias</div></div>' +
-        '</div>' +
-      '</div>';
-    blocoSugestao =
-      '<div class="suggestion-box">' +
-        '<span class="k">PEDIDO SUGERIDO<br>(ponto de pedido: ' + fmtNum(Math.round(an.pontoPedido)) + ' · recalculado com estoque ao vivo)</span>' +
-        '<span class="v">' + fmtNum(pedidoSugeridoAoVivo) + ' un</span>' +
-      '</div>';
-
-    // ---- Detalhes do cálculo (todos os campos da planilha de análise) ----
-    const diasEstoque = an.vendaMediaDia3M > 0 ? produto.estoque / an.vendaMediaDia3M : null;
-    const coberturaLoteMinimoMeses = an.mediaMensal > 0 ? an.loteMinimo / an.mediaMensal : null;
-    const diasAlemLT = diasEstoque !== null ? diasEstoque - an.leadTimeTotal : null;
-    blocoDetalhes =
-      '<div class="modal-section">' +
-        '<div class="modal-section-title">Detalhes do cálculo</div>' +
-        '<div class="modal-grid">' +
-          '<div class="modal-stat"><div class="k">Nível de atendimento</div><div class="v">' + fmtNum(Math.round(an.nivelAtendimento * 100)) + '%</div></div>' +
-          '<div class="modal-stat"><div class="k">Constante (Z)</div><div class="v">' + an.constanteZ.toFixed(2) + '</div></div>' +
-          '<div class="modal-stat"><div class="k">Estoque de segurança</div><div class="v">' + fmtNum(an.estoqueSeguranca) + ' un</div></div>' +
-          '<div class="modal-stat"><div class="k">Tempo de reposição</div><div class="v">' + an.tempoReposicaoMeses.toFixed(2) + ' meses</div></div>' +
-          '<div class="modal-stat"><div class="k">Lote mínimo</div><div class="v">' + fmtNum(an.loteMinimo) + ' un</div></div>' +
-          '<div class="modal-stat"><div class="k">Cobertura do lote mínimo</div><div class="v">' + (coberturaLoteMinimoMeses !== null ? coberturaLoteMinimoMeses.toFixed(1) + ' meses' : '—') + '</div></div>' +
-          '<div class="modal-stat"><div class="k">Lote econômico</div><div class="v">' + fmtNum(an.loteEconomico) + ' un</div></div>' +
-          '<div class="modal-stat"><div class="k">Venda média/dia (3M)</div><div class="v">' + an.vendaMediaDia3M.toFixed(2) + ' un</div></div>' +
-          '<div class="modal-stat"><div class="k">Dias de estoque</div><div class="v">' + (diasEstoque !== null ? fmtNum(Math.round(diasEstoque)) + ' dias' : '—') + '</div></div>' +
-          '<div class="modal-stat"><div class="k">Dias além do LT</div><div class="v" style="color:' + (diasAlemLT !== null && diasAlemLT < 0 ? 'var(--red-a)' : 'var(--text)') + ';">' + (diasAlemLT !== null ? fmtNum(Math.round(diasAlemLT)) + ' dias' : '—') + '</div></div>' +
-        '</div>' +
-        '<p class="hint" style="margin-top:8px;margin-bottom:0;">Dias de estoque e Dias além do LT usam o estoque atual AO VIVO — os demais valores vêm da última planilha de análise carregada.</p>' +
-      '</div>';
-  } else if (an && an.descontinuada) {
+  if (an && an.descontinuada) {
     blocoVendas =
       '<div class="modal-section">' +
         '<div class="modal-section-title">Vendas (calculado — 14 meses de histórico)</div>' +
@@ -2122,10 +2111,10 @@ function montarConteudoModal(produto, dadosReais) {
     blocoSugestao =
       '<div class="mock-warning" style="margin-top:18px;">' + icon('prohibit', 'icon-sm') + ' Marca descontinuada — não é feita reposição automática deste item.</div>';
   } else if (dadosReais.vendas) {
-    // Não bateu com a planilha Excel, MAS temos dados reais de vendas ao
-    // vivo da Sysemp — usa o Lead Time da MARCA (independe do produto ter
-    // batido) pra calcular quanto cobrir, em vez de assumir 1 mês fixo.
-    // Mesma função usada na geração do pedido pro Sysemp.
+    // Fonte principal: média real (AO VIVO, Sysemp) × lead time da marca
+    // — mesma fórmula usada na geração do pedido. Decidido (19/08/2026)
+    // que é melhor que o Ponto de Pedido estático da planilha de análise,
+    // mesmo quando o produto bate com ela (ver CONTEXTO.md).
     const v = dadosReais.vendas;
     const marcaNormalizada = normalizarFornecedor(produto.marca);
     const leadTimeMarca = LEAD_TIME_POR_MARCA[marcaNormalizada];
@@ -2144,6 +2133,45 @@ function montarConteudoModal(produto, dadosReais) {
       '<div class="suggestion-box">' +
         '<span class="k">SUGESTÃO DE COMPRA<br>(' + (temLeadTime ? 'média real × lead time da marca (' + fmtNum(leadTimeMarca) + ' dias), sem estoque de segurança' : 'média real, lead time da marca desconhecido — assumindo 1 mês') + ')</span>' +
         '<span class="v">' + fmtNum(sugestaoReal) + ' un</span>' +
+      '</div>';
+
+    // Contexto extra da planilha de análise (Curva ABC etc.), só
+    // informativo — NÃO alimenta a sugestão acima, que já usa AO VIVO.
+    if (an && !an.descontinuada) {
+      const diasEstoque = an.vendaMediaDia3M > 0 ? produto.estoque / an.vendaMediaDia3M : null;
+      blocoDetalhes =
+        '<div class="modal-section">' +
+          '<div class="modal-section-title">Detalhes da planilha de análise <span style="color:var(--text-muted);font-size:11px;font-weight:600;">(contexto — não usado na sugestão acima)</span></div>' +
+          '<div class="modal-grid">' +
+            '<div class="modal-stat"><div class="k">Curva ABC</div><div class="v">' + escapeHtml(an.curva) + '</div></div>' +
+            '<div class="modal-stat"><div class="k">Nível de atendimento</div><div class="v">' + fmtNum(Math.round(an.nivelAtendimento * 100)) + '%</div></div>' +
+            '<div class="modal-stat"><div class="k">Estoque de segurança</div><div class="v">' + fmtNum(an.estoqueSeguranca) + ' un</div></div>' +
+            '<div class="modal-stat"><div class="k">Lote mínimo</div><div class="v">' + fmtNum(an.loteMinimo) + ' un</div></div>' +
+            '<div class="modal-stat"><div class="k">Lote econômico</div><div class="v">' + fmtNum(an.loteEconomico) + ' un</div></div>' +
+            '<div class="modal-stat"><div class="k">Dias de estoque</div><div class="v">' + (diasEstoque !== null ? fmtNum(Math.round(diasEstoque)) + ' dias' : '—') + '</div></div>' +
+          '</div>' +
+        '</div>';
+    }
+  } else if (an && !an.descontinuada) {
+    // Fallback: sem venda AO VIVO disponível agora (busca falhou ou deu
+    // timeout), mas o produto bate com a planilha de análise — usa o
+    // cálculo estático dela em vez de não sugerir nada.
+    const pedidoSugeridoAoVivo = calcularPedidoSugeridoAoVivo(produto);
+
+    blocoVendas =
+      '<div class="modal-section">' +
+        '<div class="modal-section-title">Vendas (calculado — 14 meses de histórico)</div>' +
+        '<div class="modal-grid">' +
+          '<div class="modal-stat"><div class="k">Média mensal</div><div class="v">' + fmtNum(Math.round(an.mediaMensal)) + ' un/mês</div></div>' +
+          '<div class="modal-stat"><div class="k">Desvio padrão</div><div class="v">' + fmtNum(Math.round(an.desvioPadrao)) + '</div></div>' +
+          '<div class="modal-stat"><div class="k">Curva ABC</div><div class="v">' + escapeHtml(an.curva) + '</div></div>' +
+          '<div class="modal-stat"><div class="k">Lead time total</div><div class="v">' + fmtNum(an.leadTimeTotal) + ' dias</div></div>' +
+        '</div>' +
+      '</div>';
+    blocoSugestao =
+      '<div class="suggestion-box">' +
+        '<span class="k">PEDIDO SUGERIDO<br>(ponto de pedido: ' + fmtNum(Math.round(an.pontoPedido)) + ' · sem venda AO VIVO disponível agora, usando planilha de análise)</span>' +
+        '<span class="v">' + fmtNum(pedidoSugeridoAoVivo) + ' un</span>' +
       '</div>';
   } else {
     // Sem match na planilha E sem venda real da Sysemp nos últimos 12
@@ -2416,20 +2444,23 @@ async function gerarPedidoSysemp(marca, itens) {
 
   const linhasCalculadas = await Promise.all(itens.map(async d => {
     let qtd;
-    if (d.analise && !d.analise.descontinuada && d.analise.pontoPedido != null) {
-      // calcularPedidoSugeridoAoVivo já desconta os pedidos em aberto
-      // internamente — mesma função usada no painel de detalhe, garante
-      // que o número aqui é sempre igual ao que aparece lá.
+    if (d.vendasAoVivoLote) {
+      // Fonte principal: média mensal real (12 meses) coletada em lote
+      // pra todo o catálogo — mesma fórmula do modal (média × lead time
+      // da marca), sem precisar de chamada individual à Sysemp aqui.
+      qtd = calcularSugestaoSemPlanilha(d, d.vendasAoVivoLote.mediaMensal);
+    } else if (d.analise && !d.analise.descontinuada && d.analise.pontoPedido != null) {
+      // Fallback: produto ainda não coberto pelo lote AO VIVO (ex. deploy
+      // recente, antes do 1º ciclo completar) — usa a planilha de análise.
       qtd = calcularPedidoSugeridoAoVivo(d) || 0;
     } else {
-      // Sem match na planilha — busca a venda real (ao vivo) pra usar a
-      // MESMA fórmula do modal (média × lead time da marca).
+      // Último recurso: busca a venda real ao vivo, um produto por vez.
       const dadosVendas = await buscarComprasVendasReais(d.codigoBarras);
       if (dadosVendas.vendas) {
         qtd = calcularSugestaoSemPlanilha(d, dadosVendas.vendas.mediaMensal12M);
       } else {
-        // Sem histórico de venda nenhum (nem Excel, nem Sysemp) — sem
-        // necessidade de repor, não sugere nada (mesma regra do modal).
+        // Sem histórico de venda nenhum (nem lote, nem Excel, nem Sysemp)
+        // — sem necessidade de repor, não sugere nada (mesma regra do modal).
         qtd = 0;
       }
     }
