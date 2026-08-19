@@ -1915,16 +1915,17 @@ async function buscarComprasVendasReais(codigoBarras) {
     if (jsonVendas.ok && jsonVendas.dados && jsonVendas.dados.retorno && jsonVendas.dados.retorno[0]) {
       const itemVendas = jsonVendas.dados.retorno[0];
       // A Sysemp atualizou o método listarVendasMediaPorProduto (ago/2026)
-      // pra exigir datainicial/datafinal em vez de fixar 12 meses sozinha
-      // — e a doc nova cita os campos sem o sufixo "12 Meses". Aceita as
-      // duas grafias até confirmarmos qual a API está devolvendo de fato.
+      // pra exigir datainicial/datafinal em vez de fixar 12 meses sozinha,
+      // e confirmou (suporte, 18/08/2026) que os campos agora são "Média
+      // Mensal" e "Total vendido", sem o sufixo "12 Meses". Mantém a
+      // grafia antiga como fallback só por segurança.
       const campoVendas = (...chaves) => {
         for (const c of chaves) if (itemVendas[c] !== undefined && itemVendas[c] !== null && itemVendas[c] !== '') return itemVendas[c];
         return undefined;
       };
       resultado.vendas = {
-        mediaMensal12M: parseFloat(campoVendas('Média Mensal 12 Meses', 'Média Mensal')) || 0,
-        totalVendido12M: parseFloat(campoVendas('Total vendido 12 Meses', 'Total Vendido', 'Total vendido')) || 0,
+        mediaMensal12M: parseFloat(campoVendas('Média Mensal', 'Média Mensal 12 Meses')) || 0,
+        totalVendido12M: parseFloat(campoVendas('Total vendido', 'Total Vendido', 'Total vendido 12 Meses')) || 0,
         dataUltimaVenda: campoVendas('Data Última Venda') ? new Date(campoVendas('Data Última Venda') + 'T00:00:00').toLocaleDateString('pt-BR') : '—',
         qtdUltimaVenda: parseFloat(campoVendas('Quantidade Última Venda')) || 0,
       };
