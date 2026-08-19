@@ -1,0 +1,982 @@
+  :root {
+    --bg-deep: #0b0b0d;
+    --bg-page: #0b0b0d;
+    --navy: #141414;
+    --navy-light: #141414;
+    --gold: #FFB800;
+    --gold-bright: #FFC933;
+    --gold-dark: #B88600;
+    --glass: #131316;
+    --glass-border: #26262c;
+    --glass-hover: #1c1c21;
+    --text: #D4D4D4;
+    --text-muted: #8A8A8A;
+    --text-faint: #808080;
+    /* Status quartet re-derived to clear WCAG/CVD checks against this dark
+       surface (validated with the dataviz skill's palette validator) — the
+       previous neon set failed the lightness band, and amber collided with
+       the brand gold used elsewhere for emphasis.
+       BAIXO (amber) re-validated again on request to read as more urgent —
+       moved from green (#199e70, felt "safe", not urgent) to a mustard/amber
+       (#a87c0e) that reads as an alert without colliding with red RUPTURA;
+       every warmer/brighter amber tested (closer to true orange) failed the
+       CVD/normal-vision separation check against #e66767 — this shade was
+       the closest to "vivid" that still cleared validation cleanly. */
+    --red-a: #e66767; --red-b: #8a3838;
+    --amber-a: #a87c0e; --amber-b: #6b4f09;
+    --blue-a: #3987e5; --blue-b: #1c4d8f;
+    --green-a: #008300; --green-b: #045c1f;
+    --font-display: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    --font-body: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Consolas', 'Courier New', monospace;
+
+    /* ---- Camada de elevação/glass (aditiva — não substitui tokens acima) ---- */
+    --glass-blur: 14px;
+    --glass-bg: rgba(19, 19, 22, 0.72);
+    --glass-bg-strong: rgba(15, 15, 17, 0.86);
+    --glass-border-soft: rgba(255, 255, 255, 0.08);
+    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    --shadow-elevation-1: 0 1px 2px rgba(0,0,0,0.35), 0 1px 1px rgba(0,0,0,0.2);
+    --shadow-elevation-2: 0 8px 24px -8px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.3);
+    --shadow-elevation-3: 0 20px 48px -12px rgba(0,0,0,0.65), 0 4px 12px rgba(0,0,0,0.4);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+
+    /* ---- Curvas de easing (antes espalhadas como cubic-bezier literal) ----
+       --ease-saida: ease-out forte, padrão pra qualquer coisa que ENTRA na
+         tela (começa rápido, não atrasa o instante que o usuário observa).
+       --ease-movimento: ease-in-out forte, pra algo que se move/transforma
+         entre duas posições já visíveis.
+       --ease-porta: curva com leve overshoot, só pro efeito 3D "porta
+         abrindo" do menu lateral — é o único lugar do painel com bounce
+         intencional, não usar em mais nada.
+       Não existe token de ease-in de propósito: começar devagar faz
+       qualquer interação de UI parecer lenta. */
+    --ease-saida: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-movimento: cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-porta: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* ---- Tokens do modo claro da aba Vendas (extraídos de hex fixo) ---- */
+    --vendas-indigo-deep: #1e1b4b;
+    --vendas-indigo-mid: #312e81;
+    --vendas-indigo-border: #3730a3;
+    --vendas-indigo-accent: #4338ca;
+    --vendas-indigo-text: #a5b4fc;
+    --vendas-indigo-text-soft: #c7d2fe;
+    --vendas-indigo-label: #818cf8;
+    --vendas-danger: #f43f5e;
+    --vendas-danger-text: #fda4af;
+    --vendas-danger-text-strong: #fecdd3;
+    --vendas-surface: #ffffff;
+    --vendas-surface-border: #e5e7eb;
+    --vendas-text: #1f2937;
+    --vendas-text-muted: #9ca3af;
+    --vendas-real-badge: #059669;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; font-family: var(--font-body); color: var(--text);
+    background:
+      radial-gradient(1100px 620px at 12% -8%, rgba(255,184,0,0.055), transparent 60%),
+      radial-gradient(900px 560px at 100% 0%, rgba(57,135,229,0.05), transparent 55%),
+      var(--bg-page);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  ::selection { background: var(--gold); color: var(--bg-deep); }
+
+  .topbar {
+    background: var(--glass-bg-strong);
+    backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border-bottom: 1px solid var(--glass-border-soft);
+    box-shadow: 0 1px 0 rgba(255,184,0,0.35), 0 12px 24px -16px rgba(0,0,0,0.6);
+    color: white; padding: 14px 28px 12px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    position: sticky; top: 0; z-index: 20;
+  }
+  .brand { display: flex; align-items: center; gap: 13px; }
+  .brand-mark {
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    filter: none;
+  }
+  .brand-mark img { width: 100%; height: 100%; object-fit: contain; }
+  .brand-text h1 { margin: 0; font-family: var(--font-display); font-size: 19px; font-weight: 700; letter-spacing: 0.2px; }
+  .brand-text p { margin: 2px 0 0; font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+  .status { display: flex; align-items: center; gap: 18px; font-size: 13px; color: var(--text-muted); }
+  .pulse-wrap { display: flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 12px; }
+  .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--green-a); animation: pulse 2s infinite; }
+  @keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.4; }
+    100% { opacity: 1; }
+  }
+  .refresh-btn {
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text);
+    padding: 7px 14px; font-size: 12px; font-family: var(--font-body); font-weight: 600;
+    cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  }
+  .refresh-btn:hover { background: var(--glass-hover); border-color: var(--gold); }
+  .refresh-btn:active { opacity: 0.8; }
+  .refresh-btn:disabled { opacity: 0.4; cursor: default; }
+
+
+  .container { max-width: none; margin: 0; padding: 22px 32px 60px; position: relative; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .kpi-card {
+    background: var(--glass-bg); border: 1px solid var(--glass-border-soft); border-radius: var(--radius-md);
+    backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    padding: 16px 18px; box-shadow: var(--shadow-elevation-1), var(--glass-highlight);
+    min-width: 0; overflow: hidden; transform-style: preserve-3d;
+    transition: background 0.18s, border-color 0.18s, transform 0.25s var(--ease-saida), box-shadow 0.25s;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .kpi-card:hover {
+      background: var(--glass-hover); border-color: #333339;
+      transform: perspective(700px) rotateX(3deg) translateY(-4px) translateZ(6px);
+      box-shadow: var(--shadow-elevation-2), var(--glass-highlight);
+    }
+  }
+  .kpi-card.clickable { cursor: pointer; position: relative; }
+  .kpi-card.clickable::after {
+    content: ""; position: absolute; top: 12px; right: 12px; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-faint); opacity: 0.55;
+  }
+  .kpi-card.clickable:hover::after { background: var(--gold); opacity: 1; }
+  .kpi-card.clickable.active { border-color: var(--gold); background: var(--glass-hover); box-shadow: 0 0 0 1px var(--gold), var(--shadow-elevation-2); }
+  .kpi-card.clickable.active::after { background: var(--gold); opacity: 1; }
+  .kpi-card .label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; line-height: 1.3; }
+  .kpi-card .value {
+    font-family: var(--font-mono); font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.15;
+    white-space: nowrap; cursor: default;
+  }
+
+  .kpi-card.hero { background: var(--glass-bg); border-left: 2px solid var(--gold); box-shadow: var(--shadow-elevation-1), var(--glass-highlight); }
+  .kpi-card.hero .label { color: var(--text-muted); }
+  .kpi-card.hero .value { color: var(--gold); font-size: 25px; font-weight: 700; letter-spacing: -0.2px; }
+
+  .kpi-card.accent-red .value { color: var(--red-a); }
+  .kpi-card.accent-amber .value { color: var(--amber-a); }
+  .kpi-card.accent-blue .value { color: var(--blue-a); }
+  .kpi-card.accent-gold {
+    background: linear-gradient(155deg, var(--gold-bright), var(--gold)); border-color: var(--gold);
+    box-shadow: var(--shadow-elevation-1), 0 0 0 1px rgba(255,184,0,0.25);
+  }
+  .kpi-card.accent-gold .label { color: rgba(0,0,0,0.65); }
+  .kpi-card.accent-gold .value { color: #000; font-size: 25px; font-weight: 700; letter-spacing: -0.2px; }
+
+  .panels { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 860px) { .panels { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--glass-bg); border: 1px solid var(--glass-border-soft); border-radius: var(--radius-md); padding: 18px 20px;
+    backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--shadow-elevation-1), var(--glass-highlight);
+  }
+  .panel h2 { font-family: var(--font-display); font-size: 12px; font-weight: 600; color: var(--gold); margin: 0 0 4px; letter-spacing: 0.8px; text-transform: uppercase; display: flex; align-items: center; gap: 7px; }
+  .panel h2 .icon { width: 15px; height: 15px; opacity: 0.9; }
+  .panel .hint { font-size: 11px; color: var(--text-faint); margin: 0 0 14px; }
+
+  .chart-box { position: relative; width: 100%; }
+  .chart-box-vendas { height: 280px; }
+
+  /* ---- Ranking de marcas — lista de barras de progresso (HTML/CSS, não Chart.js) ---- */
+  .marca-ranking { display: flex; flex-direction: column; gap: 3px; }
+  .marca-rank-row {
+    display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+    padding: 7px 8px; border-radius: var(--radius-sm); transition: background 0.15s;
+  }
+  .marca-rank-row:hover { background: var(--glass-hover); }
+  .marca-rank-top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    margin-bottom: 5px; font-size: 12.5px;
+  }
+  .marca-rank-nome { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+  .marca-rank-pos {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--text-faint);
+    flex-shrink: 0; width: 16px;
+  }
+  .marca-rank-label { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .marca-rank-nums { display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; font-family: var(--font-mono); }
+  .marca-rank-valor { font-weight: 600; color: var(--text); }
+  .marca-rank-pct { font-size: 10.5px; color: var(--text-faint); min-width: 30px; text-align: right; }
+  .marca-rank-track { height: 7px; border-radius: 999px; background: var(--glass-border); overflow: hidden; }
+  .marca-rank-fill {
+    height: 100%; width: 100%; border-radius: 999px;
+    /* Cresce via scaleX (GPU) e não via width (layout+paint a cada frame) —
+       origem na borda esquerda pra crescer da esquerda pra direita. O
+       arredondamento das pontas estica junto durante o movimento, mas
+       termina em scaleX(1), ou seja, sem distorção no estado final. */
+    transform-origin: 0% 50%;
+    transition: background 0.15s;
+  }
+  /* Entrada em cascata: cada barra cresce com um atraso maior que a
+     anterior — só dispara quando .marca-ranking tem essa classe extra
+     (adicionada via JS só em cliques reais, nunca em render passivo).
+     Todas crescem até o mesmo 100% (as barras são uniformes agora, não
+     proporcionais ao valor — só o texto ao lado mostra R$/%). */
+  .marca-ranking.anima-entrada .marca-rank-fill { animation: marcaBarraCresce 0.7s var(--ease-saida) backwards; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(1) .marca-rank-fill { animation-delay: 0ms; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(2) .marca-rank-fill { animation-delay: 60ms; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(3) .marca-rank-fill { animation-delay: 120ms; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(4) .marca-rank-fill { animation-delay: 180ms; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(5) .marca-rank-fill { animation-delay: 240ms; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(6) .marca-rank-fill { animation-delay: 300ms; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(7) .marca-rank-fill { animation-delay: 360ms; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(8) .marca-rank-fill { animation-delay: 420ms; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(9) .marca-rank-fill { animation-delay: 480ms; }
+  .marca-ranking.anima-entrada .marca-rank-row:nth-child(10) .marca-rank-fill { animation-delay: 540ms; }
+  @keyframes marcaBarraCresce { from { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) {
+    .marca-ranking.anima-entrada .marca-rank-fill { animation: none; }
+  }
+
+  /* ---- Modal "detalhe de marca" (mesmo padrão do modal de produto) ----
+     Estático no HTML, fora de .scene-3d/#app — evita de vez o problema de
+     will-change:transform quebrar position:fixed que tentativas anteriores
+     (mover o card via appendChild) enfrentaram. Visual idêntico ao
+     #modal-backdrop/#modal-panel já usado pro detalhe de produto. */
+  .modal-marca-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+    /* align-items não é mais "center" fixo — a altura vertical é ajustada
+       via JS (--marca-modal-top, ver abrirDetalheMarca) pra abrir na mesma
+       altura de onde o usuário clicou, não sempre no centro absoluto da
+       tela (que em monitores grandes fica longe do ponto de clique).
+       align-items:flex-start + padding-top dinâmico faz esse trabalho;
+       horizontal continua centralizado (justify-content). */
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: var(--marca-modal-top, 20vh);
+    z-index: 50; padding-left: 20px; padding-right: 20px; padding-bottom: 20px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .modal-marca-backdrop.open { opacity: 1; pointer-events: all; }
+  /* Os dois modais (detalhe da marca + itens mais vendidos) ficam lado a
+     lado dentro desse wrapper em telas largas — em telas estreitas
+     (≤860px) viram uma coluna empilhada, já que lado a lado não cabe com
+     conforto numa tela de celular. */
+  .modal-marca-grupo { display: flex; gap: 16px; align-items: flex-start; max-width: 100%; }
+  @media (max-width: 860px) {
+    .modal-marca-grupo { flex-direction: column; max-height: 88vh; overflow-y: auto; }
+  }
+  .modal-marca-panel {
+    background: var(--glass); border: 1px solid var(--gold); border-radius: 14px;
+    max-width: 520px; width: 100%; max-height: 88vh; overflow-y: auto;
+    padding: 32px 30px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    transform: translateY(12px) scale(0.96); transition: transform 0.3s var(--ease-saida);
+  }
+  .modal-marca-backdrop.open .modal-marca-panel { transform: translateY(0) scale(1); }
+  /* O painel de itens só existe/mostra conteúdo quando abrirRankingItensMarca
+     roda — .vazio esconde sem deixar um espaço vazio reservado no layout. */
+  .modal-itens-panel:empty { display: none; }
+  /* Nasce "de dentro" do painel de detalhe (à esquerda dele): começa
+     achatado horizontalmente e deslocado pra dentro da posição do 1º
+     modal (transform-origin na borda esquerda faz o scaleX crescer a
+     partir dali, não do centro), e se expande até o tamanho/posição
+     final — dá a sensação de emergir de dentro do primeiro painel, não
+     só aparecer do lado já pronto. Dispara só quando .modal-itens-panel
+     não está vazio (tem conteúdo montado por abrirRankingItensMarca). */
+  .modal-itens-panel:not(:empty) {
+    transform-origin: 0% 50%;
+    /* Mesma duração/curva da barra que tomba no 1º modal (ver
+       marcaBarraTombaModal) — os dois efeitos terminam juntos.
+       Curva ease-out forte: elemento que ENTRA precisa começar rápido, pra
+       não atrasar justamente o instante que o usuário está olhando (a curva
+       anterior, 0.65/0/0.35/1, era ease-in-out e começava devagar). */
+    animation: itensPainelEmerge 0.8s var(--ease-saida) forwards;
+  }
+  /* Começa quase no tamanho final (0.9, não 0.15): o deslocamento lateral é
+     quem conta a história de "saindo de trás do 1º painel". Escala perto de
+     zero fazia o painel parecer surgir do nada. */
+  @keyframes itensPainelEmerge {
+    0%   { transform: scaleX(0.9) translateX(-24px); opacity: 0; }
+    100% { transform: scaleX(1) translateX(0); opacity: 1; }
+  }
+  @media (max-width: 860px) {
+    .modal-marca-panel { max-width: 100%; max-height: none; overflow-y: visible; }
+    /* Empilhado (mobile), "de dentro" vira "de cima" — nasce achatado
+       verticalmente saindo de baixo do 1º painel, mantendo a mesma ideia
+       de emergir dele, só que na direção que faz sentido pro layout em
+       coluna. */
+    .modal-itens-panel:not(:empty) {
+      transform-origin: 50% 0%;
+      animation-name: itensPainelEmergeVertical;
+    }
+    @keyframes itensPainelEmergeVertical {
+      0%   { transform: scaleY(0.9) translateY(-18px); opacity: 0; }
+      100% { transform: scaleY(1) translateY(0); opacity: 1; }
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .modal-marca-backdrop, .modal-marca-panel { transition: none; }
+    .modal-itens-panel:not(:empty) { animation: none; }
+  }
+  /* ---- Conteúdo do modal de detalhe da marca ---- */
+  .modal-marca-topo { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; margin-bottom: 20px; }
+  .modal-marca-nome { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--text); }
+  /* height precisa ser >= ao comprimento da barra (220px) + folga, porque
+     no giro máximo (90°, em pé) esse comprimento vira a altura visual da
+     barra — sem essa folga ela vaza pra cima/baixo, sobrepondo o nome da
+     marca e o valor em R$ (era esse o bug visto: barra grande demais
+     cobrindo o resto do conteúdo do modal). */
+  .modal-marca-barra-track {
+    width: 100%; height: 240px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-marca-barra-fill {
+    /* Comprimento fixo, não mais proporcional ao valor da marca — o modal
+       é estreito demais (~460px) pra uma barra width:X% caber com folga
+       quando girada 90° (a largura vira a altura visual nesse ângulo).
+       Uma marca líder perto de 100% faria a barra quase do tamanho do
+       modal inteiro, sobrepondo nome/valor ao girar — era esse o bug
+       visto (o width:X% inline tinha prioridade sobre qualquer regra de
+       classe, então nenhum teto no CSS surtia efeito antes desta troca
+       pra um valor fixo direto no HTML). A proporção real da marca
+       continua visível no texto (R$ e %) logo abaixo da barra. */
+    width: 220px; height: 30px; border-radius: 999px;
+    transform-origin: 50% 50%;
+    box-shadow: 0 6px 20px -6px rgba(0,0,0,0.6);
+    /* Nasce deitada (0°) e tomba fisicamente até em pé (90°) — rotação
+       real via @keyframes, com ângulos intermediários visíveis, não uma
+       interpolação abstrata de forma. Dispara assim que o modal abre.
+       Mesma curva ease-out do painel de itens, pra os dois terminarem
+       juntos e nenhum dos dois começar devagar. */
+    animation: marcaBarraTombaModal 0.8s var(--ease-saida) forwards;
+  }
+  @keyframes marcaBarraTombaModal {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(90deg); }
+  }
+  .modal-marca-valor { font-family: var(--font-mono); font-size: 28px; font-weight: 700; color: var(--gold); letter-spacing: -0.3px; text-align: center; margin-top: 18px; }
+  .modal-marca-pct { font-size: 12px; color: var(--text-faint); text-align: center; margin: 3px 0 18px; }
+  .modal-marca-stats { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .modal-marca-stat {
+    background: var(--glass-bg); border: 1px solid var(--glass-border-soft); border-radius: var(--radius-sm);
+    padding: 8px 14px; min-width: 74px; border-top: 2px solid var(--stat-cor, var(--glass-border));
+  }
+  .modal-marca-stat .k { display: block; font-size: 9.5px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+  .modal-marca-stat .v { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--text); }
+  @media (prefers-reduced-motion: reduce) {
+    .modal-marca-barra-fill { animation: none; transform: rotate(90deg); }
+  }
+
+  .marca-medalha {
+    display: flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-weight: 700; font-size: 13px; padding: 6px 12px; border-radius: 999px;
+    background: linear-gradient(135deg, var(--medalha-a), var(--medalha-b));
+    color: #1a1a1a; box-shadow: 0 4px 14px -4px rgba(0,0,0,0.5);
+  }
+  .marca-medalha .icon { width: 15px; height: 15px; }
+  .marca-medalha-simples {
+    background: var(--glass); color: var(--text-muted); border: 1px solid var(--glass-border);
+    box-shadow: none;
+  }
+
+  /* ---- Modal "itens mais vendidos da marca" — gráfico de barras horizontal ----
+     Mesmo padrão visual do ranking de marcas (barras uniformes de fundo,
+     preenchimento colorido crescendo em cascata), mas aqui a barra É
+     proporcional (não uniforme) — a métrica é Média Mensal vendida de cada
+     produto, e a comparação de tamanho entre os 10 itens é o ponto central
+     do gráfico. */
+  .modal-itens-titulo { font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--gold); margin-bottom: 4px; }
+  .modal-itens-sub { font-size: 11px; color: var(--text-faint); margin-bottom: 18px; }
+  .modal-itens-lista { display: flex; flex-direction: column; gap: 10px; }
+  .modal-itens-row { display: block; }
+  .modal-itens-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 5px; font-size: 12px; }
+  .modal-itens-nome { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+  .modal-itens-pos { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--text-faint); flex-shrink: 0; width: 16px; }
+  .modal-itens-label { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal-itens-valor { font-family: var(--font-mono); font-weight: 600; color: var(--text); flex-shrink: 0; }
+  .modal-itens-track { height: 8px; border-radius: 999px; background: var(--glass-border); overflow: hidden; }
+  .modal-itens-margem { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--text-faint); }
+  .modal-itens-margem .v { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+  .modal-itens-fill {
+    height: 100%; border-radius: 999px;
+    /* --pct-barra vem inline (proporção real de cada produto) e define só o
+       tamanho FINAL, estático. O crescimento é feito por scaleX (GPU), não
+       animando width (que recalcula layout a cada frame). Isso também
+       encerra de vez a armadilha do width inline vencendo o keyframe: aqui
+       o width nunca é animado, então não há conflito de prioridade
+       possível. */
+    width: var(--pct-barra, 0%);
+    transform-origin: 0% 50%;
+    /* Cascata de 60ms entre barras (mesmo valor já usado no ranking de
+       marcas — ver .marca-ranking.anima-entrada), 0.5s por barra. "both"
+       aplica o frame 0% (scaleX(0)) durante o delay inicial também, não só
+       depois — sem isso a barra apareceria já no tamanho final enquanto
+       espera a vez de animar. */
+    animation: itensBarraCresce 0.5s var(--ease-saida) both;
+  }
+  @keyframes itensBarraCresce {
+    0%   { transform: scaleX(0); }
+    100% { transform: scaleX(1); }
+  }
+  /* +800ms em cada delay — só começam a crescer depois que o popup
+     inteiro termina de "emergir" de dentro do 1º modal (mesma duração de
+     itensPainelEmerge), não simultâneo a esse movimento. Cascata de 60ms
+     entre barras, mesmo valor do ranking de marcas. */
+  .modal-itens-row:nth-child(1) .modal-itens-fill { animation-delay: 800ms; }
+  .modal-itens-row:nth-child(2) .modal-itens-fill { animation-delay: 860ms; }
+  .modal-itens-row:nth-child(3) .modal-itens-fill { animation-delay: 920ms; }
+  .modal-itens-row:nth-child(4) .modal-itens-fill { animation-delay: 980ms; }
+  .modal-itens-row:nth-child(5) .modal-itens-fill { animation-delay: 1040ms; }
+  .modal-itens-row:nth-child(6) .modal-itens-fill { animation-delay: 1100ms; }
+  .modal-itens-row:nth-child(7) .modal-itens-fill { animation-delay: 1160ms; }
+  .modal-itens-row:nth-child(8) .modal-itens-fill { animation-delay: 1220ms; }
+  .modal-itens-row:nth-child(9) .modal-itens-fill { animation-delay: 1280ms; }
+  .modal-itens-row:nth-child(10) .modal-itens-fill { animation-delay: 1340ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .modal-itens-fill { animation: none; }
+  }
+
+  /* ---- linhas de tabela entrando com fade + leve deslize (aba Vendas) ---- */
+  @keyframes filaEntrada { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .tabela-animada tbody tr { animation: filaEntrada 0.35s ease-out backwards; }
+  .tabela-animada tbody tr:nth-child(n+1) { animation-delay: 0ms; }
+  .tabela-animada tbody tr:nth-child(n+2) { animation-delay: 20ms; }
+  .tabela-animada tbody tr:nth-child(n+3) { animation-delay: 40ms; }
+  .tabela-animada tbody tr:nth-child(n+4) { animation-delay: 60ms; }
+  .tabela-animada tbody tr:nth-child(n+5) { animation-delay: 80ms; }
+  .tabela-animada tbody tr:nth-child(n+6) { animation-delay: 100ms; }
+  .tabela-animada tbody tr:nth-child(n+7) { animation-delay: 120ms; }
+  .tabela-animada tbody tr:nth-child(n+8) { animation-delay: 140ms; }
+  .tabela-animada tbody tr:nth-child(n+9) { animation-delay: 160ms; }
+  .tabela-animada tbody tr:nth-child(n+10) { animation-delay: 180ms; }
+  .tabela-animada tbody tr:nth-child(n+11) { animation-delay: 200ms; }
+  .tabela-animada tbody tr:nth-child(n+12) { animation-delay: 220ms; }
+  .tabela-animada tbody tr:nth-child(n+13) { animation-delay: 240ms; }
+  .tabela-animada tbody tr:nth-child(n+14) { animation-delay: 260ms; }
+  .tabela-animada tbody tr:nth-child(n+15) { animation-delay: 280ms; }
+  .tabela-animada tbody tr:nth-child(n+16) { animation-delay: 300ms; }
+
+  /* ---- Cartões da Rotina de Compras entrando com fade + deslize, ao trocar de dia ----
+     Duração individual bem mais longa que o normal de propósito: com poucos
+     cartões (ex.: terça/sexta) não existe cascata pra dar a sensação de
+     movimento, então cada cartão sozinho precisa ser lento o bastante pra
+     a entrada ser percebida mesmo sem vizinhos animando junto. */
+  @keyframes cartaoEntrada { from { opacity: 0; transform: translateY(16px) scale(0.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  .rotina-grid-animada .rotina-card { animation: cartaoEntrada 0.9s var(--ease-saida) backwards; }
+  .rotina-grid-animada .rotina-card:nth-child(n+1) { animation-delay: 0ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+2) { animation-delay: 70ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+3) { animation-delay: 140ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+4) { animation-delay: 210ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+5) { animation-delay: 280ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+6) { animation-delay: 350ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+7) { animation-delay: 420ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+8) { animation-delay: 490ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+9) { animation-delay: 560ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+10) { animation-delay: 630ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+11) { animation-delay: 700ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+12) { animation-delay: 770ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+13) { animation-delay: 840ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+14) { animation-delay: 910ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+15) { animation-delay: 980ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+16) { animation-delay: 1050ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+17) { animation-delay: 1120ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+18) { animation-delay: 1190ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+19) { animation-delay: 1260ms; }
+  .rotina-grid-animada .rotina-card:nth-child(n+20) { animation-delay: 1330ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .tabela-animada tbody tr { animation: none; }
+    .rotina-grid-animada .rotina-card { animation: none; }
+  }
+
+  /* ==================== Visão BI — só a aba Vendas ==================== */
+  /* Corpo claro (cartões brancos) só dentro dessa seção — o resto do
+     painel (Estoque) continua no tema escuro de sempre. É proposital: o
+     objetivo aqui foi chegar o mais perto possível de uma referência visual
+     de BI (fundo claro, cabeçalho escuro), não redesenhar o app inteiro. */
+  .vendas-bi-header {
+    background: linear-gradient(120deg, #1e1b4b 0%, #312e81 55%, #1e1b4b 100%);
+    border-radius: 16px; padding: 16px 24px; margin-bottom: 18px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+    border: 1px solid #3730a3;
+  }
+  .vendas-bi-header .marca-header { display: flex; align-items: center; gap: 10px; }
+  .vendas-bi-header .marca-header .icone { font-size: 20px; }
+  .vendas-bi-header h1 {
+    margin: 0; font-size: 14px; font-weight: 800; letter-spacing: 1px; color: #fff; text-transform: uppercase;
+  }
+  .vendas-bi-header .sub { font-size: 11px; color: #a5b4fc; margin-top: 2px; letter-spacing: 0.3px; }
+  .vendas-bi-filtros { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .vendas-bi-filtro-grupo { display: flex; align-items: center; gap: 8px; }
+  .vendas-bi-filtro-grupo .rotulo { font-size: 9.5px; font-weight: 700; color: #818cf8; text-transform: uppercase; letter-spacing: 0.6px; }
+  .vendas-bi-pill {
+    background: rgba(255,255,255,0.06); border: 1px solid #4338ca; color: #c7d2fe;
+    padding: 5px 12px; border-radius: 999px; font-size: 11px; font-weight: 600; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .vendas-bi-pill:hover { background: rgba(255,255,255,0.12); }
+  .vendas-bi-pill.active { background: #fff; color: #312e81; border-color: #fff; }
+  .vendas-bi-select {
+    background: rgba(255,255,255,0.08); border: 1px solid #4338ca; color: #fff;
+    padding: 5px 10px; border-radius: 8px; font-size: 11.5px; font-family: var(--font-body);
+  }
+  .vendas-bi-select option { background: #1e1b4b; color: #fff; }
+
+  .vendas-ficticio-aviso {
+    background: rgba(244,63,94,0.1); border: 1px solid #f43f5e; color: #fda4af;
+    border-radius: 10px; padding: 10px 16px; font-size: 12.5px; line-height: 1.5; margin-bottom: 18px;
+  }
+  .vendas-ficticio-aviso b { color: #fecdd3; }
+
+  .vendas-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .vendas-kpi-card {
+    border-radius: 14px; padding: 16px 18px; color: #fff; position: relative; overflow: hidden;
+    box-shadow: 0 8px 20px -8px rgba(0,0,0,0.5);
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .vendas-kpi-card.gradiente-roxo { background: linear-gradient(135deg, #6d28d9, #a78bfa); }
+  .vendas-kpi-card.gradiente-rosa { background: linear-gradient(135deg, #be123c, #fb7185); }
+  .vendas-kpi-card.gradiente-verde { background: linear-gradient(135deg, #047857, #34d399); }
+  .vendas-kpi-card.gradiente-azul { background: linear-gradient(135deg, #1d4ed8, #60a5fa); }
+  .vendas-kpi-card .icone-kpi {
+    width: 38px; height: 38px; border-radius: 10px; background: rgba(255,255,255,0.18);
+    display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;
+  }
+  .vendas-kpi-card .corpo-kpi { min-width: 0; flex: 1; }
+  .vendas-kpi-card .selo-ficticio {
+    position: absolute; top: 10px; right: 12px; font-size: 8.5px; font-weight: 800; letter-spacing: 0.5px;
+    background: rgba(0,0,0,0.28); padding: 2px 7px; border-radius: 999px; text-transform: uppercase;
+  }
+  .vendas-kpi-card .label { font-size: 10.5px; font-weight: 700; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px; }
+  .vendas-kpi-card .valor { font-family: 'IBM Plex Mono', monospace; font-size: 21px; font-weight: 700; line-height: 1.1; }
+  .vendas-kpi-card .variacao { font-size: 11px; margin-top: 7px; opacity: 0.9; }
+
+  /* cartões claros — deliberadamente diferentes do --glass escuro do resto
+     do app, pra casar com a referência visual (fundo branco/quase-branco) */
+  .vendas-bi-panel {
+    background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    color: #1f2937;
+  }
+  .vendas-bi-panel h2 {
+    font-family: var(--font-display); font-size: 12px; font-weight: 700; margin: 0 0 2px; color: #312e81;
+    letter-spacing: 0.4px; text-transform: uppercase; display: flex; align-items: center; gap: 8px;
+  }
+  .vendas-bi-panel .hint { font-size: 11px; color: #9ca3af; margin: 0 0 14px; }
+  .vendas-bi-panel .selo-ficticio {
+    font-size: 8.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
+    background: rgba(244,63,94,0.12); color: #e11d48; padding: 2px 7px; border-radius: 999px;
+  }
+
+  .tabela-ranking { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+  .tabela-ranking thead th {
+    background: linear-gradient(90deg, #6d28d9, #db2777); color: #fff;
+    text-align: left; padding: 9px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  .tabela-ranking thead th:first-child { border-radius: 8px 0 0 8px; }
+  .tabela-ranking thead th:last-child { border-radius: 0 8px 8px 0; text-align: right; }
+  .tabela-ranking thead th.num { text-align: right; }
+  .tabela-ranking tbody td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; color: #374151; vertical-align: middle; }
+  .tabela-ranking tbody td.num { text-align: right; font-family: 'IBM Plex Mono', monospace; }
+  .tabela-ranking tbody tr:last-child td { border-bottom: none; }
+  .ranking-medalha { font-size: 14px; }
+  .rank-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%; font-size: 11px; font-weight: 800; color: #1f2937;
+  }
+  .ranking-avatar {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; margin-right: 8px; vertical-align: middle;
+  }
+  .ranking-nome-cel { display: flex; align-items: center; }
+  .meta-badge { font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; }
+  .meta-badge .icon { width: 13px; height: 13px; }
+  .meta-badge.bateu { color: #059669; }
+  .meta-badge.nao-bateu { color: #dc2626; }
+
+  .supervisor-linha {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 4px; border-bottom: 1px solid #f1f5f9; font-size: 12.5px;
+  }
+  .supervisor-linha:last-child { border-bottom: none; }
+  .supervisor-linha .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+  .supervisor-linha .nome { color: #1f2937; font-weight: 600; }
+  .supervisor-linha .time { color: #9ca3af; font-size: 11px; margin-left: 16px; }
+  .supervisor-linha .valor { font-family: 'IBM Plex Mono', monospace; font-weight: 700; padding: 3px 10px; border-radius: 999px; font-size: 12px; }
+
+  .donut-wrap { display: flex; flex-direction: column; align-items: center; padding: 16px 0 6px; position: relative; }
+  .donut-ring-wrap {
+    position: relative; width: 340px; height: 340px; max-width: 100%; cursor: pointer;
+    filter: drop-shadow(0 8px 20px rgba(0,0,0,0.45));
+  }
+  /* Auréola atrás do anel — puramente decorativa (fica atrás via z-index/
+     position), cor reage à fatia em destaque via JS (--glow-cor). Sutil de
+     propósito: reforça profundidade sem competir com o gráfico. Menor que
+     o wrapper (o anel real fica no centro dos 340px, com margem lateral
+     bem maior reservada pro layout.padding, onde a seta de hover sai
+     lateralmente com mais respiro até o rótulo). */
+  .donut-glow {
+    position: absolute; top: 16px; left: 50%; width: 208px; height: 208px;
+    transform: translate(-50%, 0) translateY(66px); border-radius: 50%;
+    background: radial-gradient(circle, var(--glow-cor, var(--gold)) 0%, transparent 68%);
+    opacity: 0.16; filter: blur(22px); pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .donut-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: none; text-align: center; padding: 0 14px;
+  }
+  .donut-center .l { font-size: 10px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+  .donut-center .n { font-family: var(--font-mono); font-size: 30px; font-weight: 700; color: var(--text); line-height: 1; letter-spacing: -0.5px; }
+
+  .legend { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; width: 100%; font-size: 13px; }
+  .legend-item {
+    cursor: pointer; padding: 9px 10px; border-radius: var(--radius-sm); border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s; color: var(--text-muted);
+  }
+  .legend-item:hover { background: var(--glass-hover); }
+  .legend-item.active { background: var(--glass-hover); border-color: var(--legend-cor, var(--gold)); color: var(--text); font-weight: 600; }
+  .legend-item-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+  .legend-valor { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+  .legend-pct { font-family: var(--font-body); font-weight: 400; color: var(--text-faint); font-size: 11px; }
+  .legend-bar-track { height: 5px; border-radius: 999px; background: var(--glass-border); overflow: hidden; }
+  /* Sem transition: a legenda é remontada via innerHTML a cada render, então
+     o elemento nasce novo e nunca teve um valor anterior de onde transicionar
+     — a regra era código morto (e animava width, fora da GPU). */
+  .legend-bar-fill { height: 100%; border-radius: 999px; }
+
+  .filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  select, input[type=search], input[type=text] {
+    padding: 8px 12px; border: 1px solid var(--glass-border); border-radius: 8px;
+    background: var(--glass); color: var(--text); font-size: 13px; font-family: var(--font-body);
+  }
+  input[type=search], input[type=text] { width: 200px; }
+  select option { background: var(--bg-page); color: var(--text); }
+  input[type=search]::placeholder, input[type=text]::placeholder { color: var(--text-faint); }
+  select:focus, input:focus { outline: 1px solid var(--gold); outline-offset: 1px; }
+  /* transition nas propriedades exatas, não em "all": com "all" qualquer
+     propriedade nova que entre na regra (inclusive de layout) passa a
+     animar sem querer, fora da GPU. */
+  .chip { font-size: 11px; padding: 5px 12px; border: 1px solid var(--glass-border); border-radius: 999px; background: var(--glass); cursor: pointer; color: var(--text-muted); transition: background 0.15s, border-color 0.15s, color 0.15s; }
+  .chip:hover { border-color: var(--text-faint); color: var(--text); }
+  /* Sem animação de "pop" ao ativar: chip de filtro é clicado dezenas de
+     vezes por dia, e nessa frequência movimento vira ruído — a troca de
+     cor (dourado sólido + texto preto + negrito) já é sinal de estado
+     suficiente, e chega instantânea. */
+  .chip.active { background: var(--gold); color: #000; border-color: var(--gold); font-weight: 700; }
+  .clear-link { font-size: 12px; color: var(--gold); cursor: pointer; text-decoration: underline; margin-left: auto; }
+
+  /* ---- Ícones inline (sizing contextual, cor herdada via currentColor) ---- */
+  .icon { display: inline-flex; align-items: center; justify-content: center; vertical-align: -3px; line-height: 0; }
+  .icon svg { width: 100%; height: 100%; display: block; }
+  .icon-sm { width: 14px; height: 14px; }
+  .icon-md { width: 18px; height: 18px; }
+  .icon-lg { width: 22px; height: 22px; }
+
+  /* ---- Barra de abas (segmented control) ---- */
+  .tab-bar {
+    display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 16px;
+    background: var(--glass-bg); border: 1px solid var(--glass-border-soft); border-radius: 999px;
+    backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--shadow-elevation-1), var(--glass-highlight);
+  }
+  .tab-chip {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+    padding: 8px 18px; border: none; border-radius: 999px; background: transparent; cursor: pointer;
+    color: var(--text-muted); transition: background 0.18s, color 0.18s;
+  }
+  .tab-chip:hover { color: var(--text); }
+  .tab-chip.active { background: var(--gold); color: #000; }
+  .tab-chip .icon { opacity: 0.85; }
+  .tab-chip.active .icon { opacity: 1; }
+
+  .autocomplete-wrap { position: relative; }
+  .autocomplete-list {
+    position: absolute; top: calc(100% + 4px); left: 0; min-width: 220px; max-width: 320px;
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 10px;
+    z-index: 30; overflow: hidden;
+    max-height: 260px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .autocomplete-item { padding: 9px 13px; font-size: 13px; color: var(--text); cursor: pointer; }
+  .autocomplete-item:hover, .autocomplete-item.destaque { background: var(--glass-hover); }
+  .autocomplete-empty { padding: 10px 13px; font-size: 12px; color: var(--text-faint); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; padding: 8px 12px; color: var(--text-faint); font-weight: 600;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--gold);
+    cursor: pointer; user-select: none; white-space: nowrap; transition: color 0.15s;
+  }
+  thead th:hover { color: var(--gold-bright); }
+  thead th .arrow { font-size: 9px; opacity: 0.6; margin-left: 3px; }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid var(--glass-border); color: var(--text); font-family: var(--font-body); font-size: 13px; }
+  tbody tr { transition: background 0.1s; }
+  tbody tr:hover { background: var(--glass-hover); }
+  tbody tr.clickable { cursor: pointer; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 50; padding: 20px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .modal-backdrop.open { opacity: 1; pointer-events: all; }
+  .modal-panel {
+    background: var(--glass);
+    border: 1px solid var(--gold); border-radius: 14px;
+    max-width: 560px; width: 100%; max-height: 85vh; overflow-y: auto;
+    padding: 24px 26px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    transform: translateY(12px); transition: transform 0.22s var(--ease-saida);
+  }
+  .modal-backdrop.open .modal-panel { transform: translateY(0); }
+  .modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 6px; }
+  .modal-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: white; line-height: 1.35; }
+  .modal-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .modal-close {
+    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text-muted);
+    width: 28px; height: 28px; cursor: pointer; flex-shrink: 0;
+    font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  }
+  .modal-close:hover { background: var(--glass-hover); color: white; }
+
+  .mock-warning {
+    background: rgba(255,184,0,0.08); border: 1px solid var(--gold); border-radius: 8px; color: var(--gold);
+    padding: 10px 14px; font-size: 12px; margin: 16px 0; line-height: 1.5;
+  }
+
+  /* ---- Menu de navegação lateral: efeito 3D "porta abrindo" ---- */
+  body { perspective: 1600px; }
+  .scene-3d {
+    transform-style: preserve-3d; transform-origin: 50% 50%;
+    transition: transform 0.55s var(--ease-porta), filter 0.5s ease;
+  }
+  /* will-change só enquanto o menu está de fato aberto/animando — não
+     persistente pro resto da sessão, que é a maior parte do tempo de uso. */
+  .scene-3d.nav-open {
+    will-change: transform;
+    transform: translateX(190px) translateZ(-160px) rotateY(-9deg) scale(0.94);
+    filter: brightness(0.55) saturate(0.85);
+  }
+  .nav-toggle {
+    width: 36px; height: 36px; border-radius: var(--radius-sm);
+    background: var(--glass); border: 1px solid var(--glass-border); color: var(--text);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .nav-toggle:hover { background: var(--glass-hover); border-color: var(--gold); }
+  .nav-toggle::before, .nav-toggle::after, .nav-toggle span {
+    content: ""; display: block; width: 16px; height: 2px; background: currentColor; border-radius: 2px;
+  }
+  .nav-toggle span { position: relative; }
+  .nav-toggle::before { position: absolute; transform: translateY(-6px); }
+  .nav-toggle::after { position: absolute; transform: translateY(6px); }
+
+  .nav-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    z-index: 55; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .nav-backdrop.open { opacity: 1; pointer-events: all; }
+
+  .nav-sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; width: 300px; max-width: 84vw;
+    background: var(--glass-bg-strong);
+    backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border-right: 1px solid var(--glass-border-soft);
+    box-shadow: var(--shadow-elevation-3), 24px 0 60px -20px rgba(0,0,0,0.7);
+    z-index: 56; display: flex; flex-direction: column;
+    transform-style: preserve-3d; transform-origin: 0% 50%;
+    transform: perspective(1600px) rotateY(-100deg) translateX(-40px);
+    opacity: 0;
+    transition: transform 0.6s var(--ease-porta), opacity 0.35s ease;
+  }
+  .nav-sidebar.open {
+    will-change: transform;
+    transform: perspective(1600px) rotateY(0deg) translateX(0);
+    opacity: 1;
+  }
+  .nav-sidebar-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 16px 14px; border-bottom: 1px solid var(--glass-border-soft);
+  }
+  .nav-sidebar-title { font-family: var(--font-display); font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; }
+  .nav-close {
+    width: 30px; height: 30px; border-radius: var(--radius-sm);
+    background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-muted);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .nav-close:hover { background: var(--glass-hover); color: white; }
+  .nav-close .icon { width: 14px; height: 14px; }
+  .nav-sidebar-body { padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid transparent;
+    background: transparent; color: var(--text-muted); font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .nav-item:hover { background: var(--glass-hover); color: var(--text); }
+  .nav-item.active { background: rgba(255,184,0,0.1); border-color: var(--gold); color: var(--gold); }
+  .nav-item .icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+  .modal-section { margin-top: 20px; }
+  .modal-section-title { font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal-stat { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 10px; padding: 12px 14px; }
+  .modal-stat .k { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+  .modal-stat .v { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text); }
+
+  .suggestion-box {
+    background: var(--gold); border-radius: 10px;
+    padding: 16px 18px; margin-top: 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .suggestion-box .k { font-size: 12px; color: rgba(0,0,0,0.7); font-weight: 600; }
+  .suggestion-box .v { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: #000; }
+
+  .rotina-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+  .rotina-card {
+    background: var(--glass-bg); border: 1px solid var(--glass-border-soft); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-elevation-1);
+    padding: 12px 14px; transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  }
+  .rotina-card.clickable { cursor: pointer; }
+  @media (hover: hover) and (pointer: fine) {
+    .rotina-card.clickable:hover { background: var(--glass-hover); border-color: var(--gold); transform: translateY(-1px); box-shadow: var(--shadow-elevation-2); }
+  }
+  .rotina-card .rc-nome { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; margin-bottom: 8px; min-height: 34px; }
+  .rotina-card .rc-rodape { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+  .rotina-tipo { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-faint); }
+  .rotina-status-nao-encontrado { font-size: 11px; color: var(--text-faint); font-style: italic; }
+
+  .modal-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  .modal-table thead th {
+    text-align: left; padding: 7px 10px; color: var(--text-faint); font-weight: 600;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 1px solid var(--glass-border); cursor: default;
+  }
+  .modal-table tbody td { padding: 9px 10px; border-bottom: 1px solid var(--glass-border); color: var(--text); font-family: var(--font-body); font-size: 12.5px; }
+  .modal-table tbody tr:last-child td { border-bottom: none; }
+  .modal-table .num { text-align: right; }
+  .badge { padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; display: inline-block; text-transform: uppercase; letter-spacing: 0.3px; }
+  .badge::before { content: "● "; }
+  .badge-ruptura { background: rgba(230,103,103,0.14); color: var(--red-a); }
+  .badge-baixo { background: rgba(168,124,14,0.14); color: var(--amber-a); }
+  .badge-excesso { background: rgba(57,135,229,0.14); color: var(--blue-a); }
+  .badge-ok { background: rgba(0,131,0,0.14); color: var(--green-a); }
+  .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  .loading, .error-box { text-align: center; padding: 70px 20px; color: var(--text-muted); }
+  .error-box { color: var(--red-a); max-width: 480px; margin: 0 auto; line-height: 1.6; }
+  .spinner {
+    width: 30px; height: 30px; border: 3px solid var(--glass-border); border-top-color: var(--gold);
+    border-radius: 50%; margin: 0 auto 14px; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer { text-align: center; padding: 22px; color: var(--text-faint); font-size: 12px; font-family: var(--font-body); }
+
+  /* ==================== AJUSTES PARA CELULAR/TABLET ==================== */
+  @media (max-width: 700px) {
+    .topbar { padding: 14px 16px 12px; gap: 8px; }
+    .brand-mark { width: 32px; height: 32px; }
+    .brand-text h1 { font-size: 15px; }
+    .brand-text p { font-size: 10px; }
+    .status { gap: 10px; font-size: 11px; flex-wrap: wrap; }
+    .refresh-btn { padding: 7px 12px; font-size: 12px; }
+
+    .container { padding: 16px 12px 40px; }
+
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 1px; margin-bottom: 18px; }
+    .kpi-card { padding: 12px 14px; }
+    .kpi-card .label { font-size: 10px; margin-bottom: 6px; }
+    .kpi-card .value { font-size: 18px; }
+
+    .panel { padding: 16px; }
+    .panel h2 { font-size: 12px; }
+
+    /* Blur pesado em muitos cards empilhados custa scroll performance em
+       celular — reduz a intensidade em vez de empilhar vários blurs full-size
+       durante o scroll longo da página. */
+    :root { --glass-blur: 7px; }
+
+    .filters { gap: 8px; }
+    .filters > .autocomplete-wrap,
+    input[type=search], input[type=text] { width: 100%; }
+    .clear-link { margin-left: 0; }
+
+    /* Tabelas viram roláveis na horizontal em vez de espremer ou vazar da tela */
+    table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+    thead th, tbody td { padding: 9px 10px; }
+    .modal-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+
+    /* "Marcas que precisam de compra" — vira cartão em vez de rolar pro
+       lado, pra dar pra ver tudo de uma vez sem gesto nenhum. */
+    .marcas-criticas-table { display: block; overflow-x: visible; white-space: normal; width: 100%; }
+    .marcas-criticas-table thead { display: none; }
+    .marcas-criticas-table tbody { display: block; }
+    .marcas-criticas-table tbody tr {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px;
+      padding: 12px 14px; border-bottom: 1px solid var(--glass-border);
+    }
+    .marcas-criticas-table tbody tr td:first-child { grid-column: 1 / -1; }
+    .marcas-criticas-table tbody td {
+      display: flex; flex-direction: column; align-items: flex-start;
+      border: none; padding: 0; font-size: 13px; white-space: normal;
+    }
+    .marcas-criticas-table tbody td.num { align-items: flex-start; text-align: left; }
+    .marcas-criticas-table tbody td::before {
+      content: attr(data-label); color: var(--text-faint); font-size: 9px;
+      text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; font-weight: 600;
+    }
+    .marcas-criticas-table tbody td:first-child { font-size: 14px; font-weight: 600; }
+    .marcas-criticas-table tbody td:first-child::before { content: none; }
+
+    .modal-backdrop { padding: 0; align-items: flex-end; }
+    .modal-panel {
+      max-width: 100%; width: 100%; max-height: 92vh;
+      padding: 20px 16px 24px;
+    }
+    .modal-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .modal-title { font-size: 16px; }
+
+    .rotina-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+    .rotina-card { padding: 10px 12px; }
+
+    .donut-ring-wrap { width: 180px; height: 180px; }
+    .donut-center .n { font-size: 26px; }
+    .donut-glow { display: none; }
+
+    .suggestion-box { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .suggestion-box .v { font-size: 21px; }
+
+    /* botões de ação em pilha, ocupando a largura toda — mais fácil de tocar */
+    .panel > div[style*="display:flex"][style*="justify-content:space-between"] {
+      flex-direction: column; align-items: stretch !important;
+    }
+
+    /* Em telas pequenas o efeito 3D (perspective + will-change + filter no
+       conteúdo por trás) causava flash de repaint no Safari iOS. Solução:
+       o conteúdo principal fica parado, e a sidebar anima só opacidade —
+       a transição mais simples e barata que existe, sem transform, sem
+       perspective, sem backdrop-filter. Isso é 100% estável em qualquer
+       engine mobile, ao custo de perder o slide (ela só aparece/desaparece
+       com um fade curto), o que é uma troca aceitável em tela pequena. */
+    body { perspective: none; }
+    .scene-3d { transform: none; filter: none; }
+    .nav-sidebar {
+      width: 260px; max-width: 78vw;
+      background: #0f0f11; backdrop-filter: none; -webkit-backdrop-filter: none;
+      left: 0; transform: none;
+      opacity: 0; visibility: hidden;
+      transition: opacity 0.22s ease-out, visibility 0s linear 0.22s;
+    }
+    .nav-sidebar.open { opacity: 1; visibility: visible; transition: opacity 0.22s ease-out; }
+  }
+  @media (max-width: 420px) {
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .modal-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+    body { perspective: none; }
+    .scene-3d, .scene-3d.nav-open { transform: none !important; filter: none !important; }
+    .nav-sidebar { transform: translateX(-100%) !important; }
+    .nav-sidebar.open { transform: translateX(0) !important; }
+  }
