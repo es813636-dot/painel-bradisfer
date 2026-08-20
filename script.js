@@ -2175,10 +2175,23 @@ function renderizar() {
   // baixo" — um item com Mínimo cadastrado como 0 no Sysemp fica com
   // valor a repor R$0 mesmo estando zerado de verdade, e antes ficava
   // invisível aqui mesmo contando no card da Rotina.
+  // TAMBÉM entra na lista se a sugestão de compra AO VIVO (média real de
+  // venda × lead time da marca) for maior que zero, mesmo com situação
+  // OK/EXCESSO — o mínimo/máximo parametrizado no Sysemp fica desatualizado
+  // em itens de giro alto (ex. vendendo 2.700un/mês com mínimo de 56un),
+  // e sem isso o item nunca aparecia na lista nem saía no CSV do pedido,
+  // apesar de precisar de compra de verdade.
+  const precisaReporAoVivo = d => {
+    if (d.situacao === 'RUPTURA' || d.situacao === 'BAIXO') return true;
+    if (d.vendasAoVivoLote) {
+      return calcularSugestaoSemPlanilha(d, d.vendasAoVivoLote.mediaMensal) > 0;
+    }
+    return false;
+  };
   // Lista COMPLETA (sem filtro de busca) — usada pro botão "Gerar pedido"
   // e pro total de "em pedido aberto", que precisam considerar tudo.
   const itensDaMarcaExpandida = marcaExpandidaTabela
-    ? dados.filter(d => d.marca === marcaExpandidaTabela && (d.situacao === 'RUPTURA' || d.situacao === 'BAIXO')).sort((a, b) => b.valorRepor - a.valorRepor)
+    ? dados.filter(d => d.marca === marcaExpandidaTabela && precisaReporAoVivo(d)).sort((a, b) => b.valorRepor - a.valorRepor)
     : [];
   // Lista filtrada pela busca da seção — só pra EXIBIÇÃO na tabela.
   const itensDaMarcaExibidos = buscaItensCriticosTexto
@@ -2187,9 +2200,10 @@ function renderizar() {
   // sem limite — mostra todas as marcas que precisam de reposição
 
   // Segunda seção: itens da mesma marca que NÃO precisam de compra
-  // (estoque normal ou em excesso) — só informativo, sem ação sugerida.
+  // (estoque normal ou em excesso, e sem sugestão AO VIVO) — só
+  // informativo, sem ação sugerida.
   const itensNormaisDaMarcaCompleto = marcaExpandidaTabela
-    ? dados.filter(d => d.marca === marcaExpandidaTabela && (d.situacao === 'OK' || d.situacao === 'EXCESSO')).sort((a, b) => b.valorEstoque - a.valorEstoque)
+    ? dados.filter(d => d.marca === marcaExpandidaTabela && (d.situacao === 'OK' || d.situacao === 'EXCESSO') && !precisaReporAoVivo(d)).sort((a, b) => b.valorEstoque - a.valorEstoque)
     : [];
   const itensNormaisDaMarca = buscaItensNormaisTexto
     ? itensNormaisDaMarcaCompleto.filter(d => d.produto.toLowerCase().includes(buscaItensNormaisTexto.toLowerCase()))
@@ -2364,11 +2378,17 @@ function renderizar() {
             '<table><thead><tr><th>Produto</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mín.</th><th class="num">Pedido</th><th class="num">A repor</th></tr></thead><tbody>' +
               (itensDaMarca.map((d, i) => {
                 const emAberto = pedidosEmAberto.get(normalizarProduto(d.produto)) || 0;
+                // Itens que só entram aqui pela sugestão AO VIVO (situação
+                // OK/EXCESSO, mas média real de venda pede reposição) têm
+                // valorRepor = 0 pelo cálculo antigo — usa a quantidade AO
+                // VIVO × custo pra "A repor" não ficar zerado à toa.
+                const valorReporExibido = d.valorRepor > 0 ? d.valorRepor
+                  : (d.vendasAoVivoLote ? calcularSugestaoSemPlanilha(d, d.vendasAoVivoLote.mediaMensal) * (d.custo || 0) : 0);
                 return '<tr class="clickable" data-idx-marca="' + i + '"><td>' + escapeHtml(d.produto) + '</td>' +
                 '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
                 '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
                 '<td class="num">' + (emAberto > 0 ? fmtNum(emAberto) : '—') + '</td>' +
-                '<td class="num">' + fmtMoeda(d.valorRepor) + '</td></tr>';
+                '<td class="num">' + fmtMoeda(valorReporExibido) + '</td></tr>';
               }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Nenhum item encontrado.</td></tr>') +
             '</tbody></table>' +
           '</div>' +
