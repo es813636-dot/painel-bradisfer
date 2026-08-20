@@ -93,18 +93,27 @@ async function main() {
   const mapaLinhas = new Map();
   existentes.forEach((linha, i) => mapaLinhas.set(String(linha[0]), i));
 
+  // O endpoint em lote (sem código de barras) devolve os campos com
+  // nomes diferentes do endpoint de 1 produto só (sem acento,
+  // capitalização diferente) — aceita as duas grafias, pra não quebrar
+  // se algum dia a Sysemp padronizar.
+  const campo = (item, ...chaves) => {
+    for (const c of chaves) if (item[c] !== undefined && item[c] !== null && item[c] !== '') return item[c];
+    return undefined;
+  };
+
   const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   let atualizados = 0;
   registros.forEach((item) => {
-    const codBarra = String(item['Código Barras'] || '').trim();
+    const codBarra = String(campo(item, 'Codigo barras', 'Código Barras') || '').trim();
     if (!codBarra) return;
     const linhaNova = [
       codBarra,
-      item['Descrição Produto'] || '',
-      parseFloat(item['Média Mensal']) || 0,
-      parseFloat(item['Total vendido']) || 0,
-      item['Data Última Venda'] || '',
-      parseFloat(item['Quantidade Última Venda']) || 0,
+      campo(item, 'Descricao produto', 'Descrição Produto') || '',
+      parseFloat(campo(item, 'Média Mensal', 'Media Mensal')) || 0,
+      parseFloat(campo(item, 'Total vendido', 'Total Vendido')) || 0,
+      campo(item, 'Data ultima venda', 'Data Última Venda') || '',
+      parseFloat(campo(item, 'Quantidade ultima venda', 'Quantidade Última Venda')) || 0,
       agora,
       '',
     ];
