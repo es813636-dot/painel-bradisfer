@@ -47,11 +47,12 @@ async function buscarTodasVendas(token) {
     const resp = await fetch(URL_VENDAS_MEDIA, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Token: token },
-      body: JSON.stringify({ datainicial, datafinal, offset: String(offset) }),
+      body: JSON.stringify({ cod_barra: '', datainicial, datafinal, offset: String(offset) }),
     });
 
     if (!resp.ok) {
-      throw new Error('HTTP ' + resp.status + ' no offset ' + offset);
+      const corpo = await resp.text().catch(() => '(sem corpo)');
+      throw new Error('HTTP ' + resp.status + ' no offset ' + offset + ' — resposta: ' + corpo);
     }
 
     const dados = await resp.json();
