@@ -2249,7 +2249,7 @@ function renderizar() {
         todosGrupos.map(g => '<option value="' + escapeHtml(g) + '" ' + (g === filtroGrupo ? 'selected' : '') + '>' + escapeHtml(g) + '</option>').join('') +
       '</select>' +
       '<div class="autocomplete-wrap">' +
-        '<input type="text" id="busca-marca" placeholder="Marca..." aria-label="Buscar marca" autocomplete="off" value="' + escapeHtml(filtroMarca || buscaMarcaTexto) + '">' +
+        '<input type="search" id="busca-marca" placeholder="Marca..." aria-label="Buscar marca" autocomplete="off" value="' + escapeHtml(filtroMarca || buscaMarcaTexto) + '">' +
         (mostrarSugestoesMarca ? (
           '<div class="autocomplete-list" id="lista-sugestoes-marca">' +
             (sugestoesMarca.length
