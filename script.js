@@ -1433,8 +1433,12 @@ async function gerarPedidoSysemp(marca, itens) {
     return;
   }
 
+  // Sem BOM aqui de proposito -- o arquivo so tem codigo de barras/numero,
+  // sem acento nenhum, e o importador de pedido do Sysemp nao remove o
+  // BOM: ele gruda no codigo de barras da primeira linha, corrompendo so
+  // esse item na hora de importar (as demais linhas ficam intactas).
   const conteudo = linhas.map(l => l.codigo + ';' + l.qtd + ';' + l.custoFormatado).join('\n');
-  const blob = new Blob(['\uFEFF' + conteudo], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob([conteudo], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const dataHoje = new Date().toISOString().slice(0, 10);
