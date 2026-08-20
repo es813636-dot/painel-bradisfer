@@ -1,0 +1,29 @@
+name: Atualizar Vendas AO VIVO
+
+on:
+  schedule:
+    # A cada hora, das 5h às 23h59 horário de Brasília (UTC-3) — mesma
+    # janela usada pelo atualizarEstoque no Apps Script, evita gastar
+    # chamadas de madrugada quando ninguém está usando o painel.
+    - cron: '0 8-23,0-2 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  atualizar-vendas:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: automacao-vendas
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      - run: node atualizar-vendas.js
+        env:
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}

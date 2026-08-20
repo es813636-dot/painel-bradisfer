@@ -1,0 +1,13 @@
+{
+  "name": "atualizar-vendas-bradisfer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Atualiza a aba VendasAoVivo da planilha do painel de estoque, buscando vendas em lote na Sysemp.",
+  "main": "atualizar-vendas.js",
+  "scripts": {
+    "start": "node atualizar-vendas.js"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}
