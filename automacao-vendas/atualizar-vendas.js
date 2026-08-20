@@ -80,6 +80,9 @@ async function main() {
   console.log('Buscando vendas de todo o catálogo na Sysemp (paginado, sem código de barras)...');
   const registros = await buscarTodasVendas(sysempToken);
   console.log('Total de produtos com venda encontrados: ' + registros.length);
+  if (registros.length > 0) {
+    console.log('DIAGNÓSTICO — primeiro item bruto: ' + JSON.stringify(registros[0]));
+  }
 
   console.log('Lendo dados existentes na aba ' + NOME_ABA + '...');
   const leitura = await sheets.spreadsheets.values.get({
