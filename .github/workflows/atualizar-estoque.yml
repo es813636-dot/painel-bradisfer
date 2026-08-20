@@ -1,0 +1,28 @@
+name: Atualizar Estoque
+
+on:
+  schedule:
+    # A cada 10 min, das 5h às 23h59 horário de Brasília (UTC-3) — mesma
+    # janela que o atualizarEstoque do Apps Script já usava.
+    - cron: '*/10 8-23,0-2 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  atualizar-estoque:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: automacao-vendas
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      - run: node atualizar-estoque.js
+        env:
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
