@@ -127,6 +127,26 @@ let pedidosEmAberto = new Map(); // normalizarProduto(produto) -> quantidade em 
 // importado de novo por engano, ja que pedidosEmAberto SOMA a cada
 // importacao (proposital, pra acumular varios pedidos diferentes).
 let arquivosPedidosAbertoImportados = new Set();
+const CHAVE_LOCALSTORAGE_PEDIDOS_ABERTO = 'bradisfer_pedidosEmAberto';
+// Salva pedidosEmAberto no localStorage (sobrevive a recarregar a pagina).
+// Chamado depois de toda importacao de arquivo e toda edicao manual.
+function salvarPedidosEmAbertoNoLocalStorage() {
+  try {
+    localStorage.setItem(CHAVE_LOCALSTORAGE_PEDIDOS_ABERTO, JSON.stringify(Array.from(pedidosEmAberto.entries())));
+  } catch (erro) {
+    console.warn('Nao consegui salvar pedidos em aberto no localStorage:', erro);
+  }
+}
+// Recarrega pedidosEmAberto do localStorage (chamado uma vez, no inicio).
+function carregarPedidosEmAbertoDoLocalStorage() {
+  try {
+    const salvo = localStorage.getItem(CHAVE_LOCALSTORAGE_PEDIDOS_ABERTO);
+    if (salvo) pedidosEmAberto = new Map(JSON.parse(salvo));
+  } catch (erro) {
+    console.warn('Nao consegui carregar pedidos em aberto do localStorage:', erro);
+  }
+}
+carregarPedidosEmAbertoDoLocalStorage();
 // Dados da planilha de análise (Média, Desvio, Ponto de Pedido, etc.) —
 // persiste entre atualizações. Se uma busca vier vazia ou muito menor que
 // a anterior (Google Sheets sendo editado bem na hora da consulta, por
@@ -2396,7 +2416,7 @@ function renderizar() {
                 return '<tr class="clickable" data-idx-marca="' + i + '"><td>' + escapeHtml(d.produto) + '</td>' +
                 '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
                 '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
-                '<td class="num">' + (emAberto > 0 ? fmtNum(emAberto) : '—') + '</td>' +
+                '<td class="num"><input type="number" class="input-pedido-aberto" data-idx-marca-pedido="' + i + '" min="0" step="1" placeholder="—" value="' + (emAberto > 0 ? emAberto : '') + '" style="width:80px;text-align:right;"></td>' +
                 '<td class="num">' + fmtMoeda(valorReporExibido) + '</td></tr>';
               }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Nenhum item encontrado.</td></tr>') +
             '</tbody></table>' +
@@ -2523,6 +2543,20 @@ function renderizar() {
     const item = itensDaMarcaExibidos[parseInt(tr.dataset.idxMarca, 10)];
     if (item) abrirDetalheProduto(item);
   }));
+  document.querySelectorAll('.input-pedido-aberto').forEach(inp => {
+    inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('change', e => {
+      e.stopPropagation();
+      const item = itensDaMarcaExibidos[parseInt(inp.dataset.idxMarcaPedido, 10)];
+      if (!item) return;
+      const chave = normalizarProduto(item.produto);
+      const valor = Math.max(0, Math.round(parseFloat(e.target.value) || 0));
+      if (valor > 0) pedidosEmAberto.set(chave, valor);
+      else pedidosEmAberto.delete(chave);
+      salvarPedidosEmAbertoNoLocalStorage();
+      renderizar();
+    });
+  });
   document.querySelectorAll('tbody tr.clickable[data-idx-normal]').forEach(tr => tr.addEventListener('click', () => {
     const item = itensNormaisDaMarca[parseInt(tr.dataset.idxNormal, 10)];
     if (item) abrirDetalheProduto(item);
@@ -2613,6 +2647,7 @@ function renderizar() {
         }
         const resultado = processarArquivoPedidosAberto(texto);
         if (resultado.ok) {
+          salvarPedidosEmAbertoNoLocalStorage();
           alert(resultado.importados + ' produto(s) com pedido em aberto importado(s). A sugestão de compra já foi ajustada.');
         } else {
           alert('Não consegui ler o arquivo: ' + resultado.erro);

@@ -650,6 +650,11 @@
   select option { background: var(--bg-page); color: var(--text); }
   input[type=search]::placeholder, input[type=text]::placeholder { color: var(--text-faint); }
   select:focus, input:focus { outline: 1px solid var(--gold); outline-offset: 1px; }
+  input.input-pedido-aberto {
+    padding: 4px 8px; border: 1px solid var(--glass-border); border-radius: 6px;
+    background: var(--glass); color: var(--text); font-size: 13px; font-family: var(--font-body);
+  }
+  input.input-pedido-aberto::placeholder { color: var(--text-faint); }
   /* transition nas propriedades exatas, não em "all": com "all" qualquer
      propriedade nova que entre na regra (inclusive de layout) passa a
      animar sem querer, fora da GPU. */
