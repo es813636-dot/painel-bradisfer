@@ -122,6 +122,11 @@ let vendasTicketAnoChartInstance = null;
 let buscaItensCriticosTexto = ''; // busca dentro da seção de itens críticos
 let buscaItensNormaisTexto = ''; // busca dentro da seção "demais itens"
 let pedidosEmAberto = new Map(); // normalizarProduto(produto) -> quantidade em aberto (soma se repetir)
+// Impressao digital (nome+tamanho+data de modificacao) de cada arquivo ja
+// importado nessa sessao -- usado so pra avisar se o mesmo arquivo for
+// importado de novo por engano, ja que pedidosEmAberto SOMA a cada
+// importacao (proposital, pra acumular varios pedidos diferentes).
+let arquivosPedidosAbertoImportados = new Set();
 // Dados da planilha de análise (Média, Desvio, Ponto de Pedido, etc.) —
 // persiste entre atualizações. Se uma busca vier vazia ou muito menor que
 // a anterior (Google Sheets sendo editado bem na hora da consulta, por
@@ -2578,6 +2583,16 @@ function renderizar() {
     inputArquivo.addEventListener('change', e => {
       const arquivo = e.target.files[0];
       if (!arquivo) return;
+      const impressaoDigital = arquivo.name + '|' + arquivo.size + '|' + arquivo.lastModified;
+      if (arquivosPedidosAbertoImportados.has(impressaoDigital)) {
+        const continuar = confirm(
+          'Esse arquivo ("' + arquivo.name + '") já foi importado antes nesta sessão.\n\n' +
+          'Importar de novo vai SOMAR os valores em cima do que já foi importado, ' +
+          'duplicando o pedido em aberto.\n\nTem certeza que quer importar mesmo assim?'
+        );
+        if (!continuar) { e.target.value = ''; return; }
+      }
+      arquivosPedidosAbertoImportados.add(impressaoDigital);
       const leitor = new FileReader();
       leitor.onload = evt => {
         // Detecta a codificação automaticamente:
