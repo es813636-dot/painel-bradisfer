@@ -556,6 +556,15 @@ function debounce(fn, atrasoMs) {
   };
 }
 
+// Rola a tela ate o painel de resultados de uma busca (produto ou marca)
+// depois que ele acabou de ser desenhado -- so os dois paineis usam esse
+// id, e nunca os dois ao mesmo tempo (busca por produto x marca
+// selecionada), entao basta um seletor.
+function rolarParaResultadosBusca() {
+  const painel = document.getElementById('painel-resultados-busca');
+  if (painel) painel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function normalizarProduto(texto) {
   return String(texto || '').trim().toUpperCase().replace(/\s+/g, ' ');
 }
@@ -2365,7 +2374,7 @@ function renderizar() {
     '</div>' +
 
     (buscaAtiva && !marcaExpandidaTabela ?
-      '<div class="panel">' +
+      '<div class="panel" id="painel-resultados-busca">' +
         '<h2>Resultados (' + fmtNum(totalEncontrado) + (totalEncontrado > limiteTabela ? ', mostrando ' + limiteTabela : '') + ')</h2>' +
         '<p class="hint">Clique no cabeçalho de uma coluna para ordenar</p>' +
         '<table><thead><tr>' +
@@ -2391,7 +2400,7 @@ function renderizar() {
         (() => {
           const itensDaMarca = itensDaMarcaExibidos;
           const totalEmAberto = itensDaMarcaExpandida.reduce((s, d) => s + (pedidosEmAberto.get(normalizarProduto(d.produto)) || 0), 0);
-          return '<div class="panel">' +
+          return '<div class="panel" id="painel-resultados-busca">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
               '<h2 style="margin:0;">Itens de ' + escapeHtml(marcaExpandidaTabela) + '</h2>' +
               '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
@@ -2471,6 +2480,7 @@ function renderizar() {
       novoInput.focus();
       novoInput.setSelectionRange(cursorPos, cursorPos);
     }
+    if (buscaTexto) rolarParaResultadosBusca();
   }, 250);
   document.getElementById('busca').addEventListener('input', aplicarBuscaProduto);
   document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
@@ -2526,6 +2536,7 @@ function renderizar() {
     buscaMarcaTexto = '';
     mostrarSugestoesMarca = false;
     renderizar();
+    rolarParaResultadosBusca();
   }));
 
   document.querySelectorAll('thead th').forEach(th => th.addEventListener('click', () => {
