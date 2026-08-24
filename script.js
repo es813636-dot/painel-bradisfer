@@ -1455,7 +1455,7 @@ async function gerarPedidoSysemp(marca, itens) {
       }
     }
     const custoFormatado = (d.custo || 0).toFixed(2).replace('.', ',');
-    return { codigo: d.codigoBarras, qtd, custoFormatado };
+    return { codigo: d.codigoBarras, produto: d.produto, qtd, custo: d.custo || 0, custoFormatado };
   }));
 
   if (btn && textoOriginalBtn !== null) { btn.disabled = false; btn.textContent = textoOriginalBtn; }
@@ -1467,6 +1467,44 @@ async function gerarPedidoSysemp(marca, itens) {
     return;
   }
 
+  mostrarResumoPedido(marca, linhas);
+}
+
+// Mostra o pedido calculado (itens, quantidades, valor) num modal ANTES de
+// baixar o CSV -- reaproveita o mesmo modal-backdrop/modal-panel do
+// detalhe de produto (fecharDetalheProduto/Esc/click-fora já funcionam).
+function mostrarResumoPedido(marca, linhas) {
+  const painel = document.getElementById('modal-panel');
+  elementoFocoAntesDoModal = document.activeElement;
+  const valorTotal = linhas.reduce((s, l) => s + l.qtd * l.custo, 0);
+
+  painel.innerHTML =
+    '<div class="modal-header">' +
+      '<div><div class="modal-title">Resumo do pedido — ' + escapeHtml(marca) + '</div>' +
+      '<div class="modal-sub">' + fmtNum(linhas.length) + ' item(ns) · ' + fmtMoeda(valorTotal) + '</div></div>' +
+      '<button class="modal-close" id="modal-close-btn" aria-label="Fechar">' + icon('x', 'icon-sm') + '</button>' +
+    '</div>' +
+    '<div class="modal-section">' +
+      '<table class="modal-table"><thead><tr><th>Produto</th><th class="num">Qtd</th><th class="num">Custo unit.</th><th class="num">Subtotal</th></tr></thead><tbody>' +
+        linhas.map(l =>
+          '<tr><td>' + escapeHtml(l.produto) + '</td><td class="num">' + fmtNum(l.qtd) + '</td>' +
+          '<td class="num">' + fmtMoeda(l.custo) + '</td><td class="num">' + fmtMoeda(l.qtd * l.custo) + '</td></tr>'
+        ).join('') +
+      '</tbody></table>' +
+    '</div>' +
+    '<div style="display:flex;justify-content:flex-end;padding:16px 20px 4px;">' +
+      '<button class="refresh-btn" id="baixar-pedido-csv-btn" style="background:var(--gold);border:1px solid var(--gold);color:#000;font-weight:700;">' +
+        icon('downloadSimple', 'icon-sm') + ' Baixar CSV (' + fmtMoeda(valorTotal) + ')' +
+      '</button>' +
+    '</div>';
+
+  document.getElementById('modal-close-btn').addEventListener('click', fecharDetalheProduto);
+  document.getElementById('baixar-pedido-csv-btn').addEventListener('click', () => baixarCsvPedido(marca, linhas));
+  document.getElementById('modal-backdrop').classList.add('open');
+  painel.focus({ preventScroll: true });
+}
+
+function baixarCsvPedido(marca, linhas) {
   // Sem BOM aqui de proposito -- o arquivo so tem codigo de barras/numero,
   // sem acento nenhum, e o importador de pedido do Sysemp nao remove o
   // BOM: ele gruda no codigo de barras da primeira linha, corrompendo so
