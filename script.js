@@ -434,6 +434,81 @@ function baixarCSV(nomeArquivo, cabecalhos, linhas) {
   URL.revokeObjectURL(url);
 }
 
+// Nomes de aba do Excel tem limite de 31 caracteres e nao aceitam
+// : \ / ? * [ ] -- sanitiza e desempata nomes que colidiram depois do
+// corte (ex. duas marcas que só diferem depois do caractere 31).
+function sanitizarNomeAba(nome, nomesJaUsados) {
+  let base = String(nome).replace(/[:\\/?*[\]]/g, ' ').trim().slice(0, 31) || 'Marca';
+  let candidato = base;
+  let sufixo = 2;
+  while (nomesJaUsados.has(candidato.toLowerCase())) {
+    const corte = 31 - String(sufixo).length - 1;
+    candidato = base.slice(0, corte) + '_' + sufixo;
+    sufixo++;
+  }
+  nomesJaUsados.add(candidato.toLowerCase());
+  return candidato;
+}
+
+// Exporta um .xlsx com todos os itens de estoque zerado (situação
+// RUPTURA) de hoje: uma aba "Resumo" com a contagem/valor por marca, e
+// uma aba por marca com a lista de itens dela. Usa a lib SheetJS (xlsx),
+// carregada via CDN no index.html.
+function exportarZeradosExcel() {
+  const zerados = dadosCompletos.filter(d => d.situacao === 'RUPTURA');
+  if (zerados.length === 0) {
+    alert('Nenhum item com estoque zerado no momento.');
+    return;
+  }
+
+  const porMarca = new Map(); // marca -> itens[]
+  zerados.forEach(d => {
+    const chave = d.marca || '(sem marca)';
+    if (!porMarca.has(chave)) porMarca.set(chave, []);
+    porMarca.get(chave).push(d);
+  });
+  const marcasOrdenadas = [...porMarca.keys()].sort((a, b) => a.localeCompare(b));
+
+  const wb = XLSX.utils.book_new();
+
+  const linhasResumo = marcasOrdenadas.map(marca => {
+    const itens = porMarca.get(marca);
+    return {
+      Marca: marca,
+      'Itens zerados': itens.length,
+      'Valor a repor (mínimo)': itens.reduce((s, d) => s + (d.valorRepor || 0), 0),
+    };
+  });
+  linhasResumo.push({
+    Marca: 'TOTAL',
+    'Itens zerados': zerados.length,
+    'Valor a repor (mínimo)': zerados.reduce((s, d) => s + (d.valorRepor || 0), 0),
+  });
+  const wsResumo = XLSX.utils.json_to_sheet(linhasResumo);
+  wsResumo['!cols'] = [{ wch: 30 }, { wch: 14 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+
+  const nomesAbasUsados = new Set(['resumo']);
+  marcasOrdenadas.forEach(marca => {
+    const itens = [...porMarca.get(marca)].sort((a, b) => a.produto.localeCompare(b.produto));
+    const linhas = itens.map(d => ({
+      Produto: d.produto,
+      'Código de Barras': d.codigoBarras,
+      Grupo: d.grupo,
+      Mínimo: d.minimo,
+      Máximo: d.maximo,
+      Custo: d.custo || 0,
+      'Valor a repor (mínimo)': d.valorRepor || 0,
+    }));
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    ws['!cols'] = [{ wch: 45 }, { wch: 16 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws, sanitizarNomeAba(marca, nomesAbasUsados));
+  });
+
+  const dataHoje = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, 'estoque_zerado_por_marca_' + dataHoje + '.xlsx');
+}
+
 // Versão abreviada pros cards de KPI (evita estourar a largura do card
 // com valores grandes, tipo R$ 4.334.163 -> R$ 4,33 mi)
 function fmtMoedaCompacta(v) {
@@ -2351,6 +2426,7 @@ function renderizar() {
       '<input type="search" id="busca" placeholder="Buscar produto..." aria-label="Buscar produto" value="' + escapeHtml(buscaTexto) + '">' +
       ['RUPTURA', 'BAIXO', 'EXCESSO', 'OK'].map(s => '<span class="chip ' + (filtroSituacao === s ? 'active' : '') + '" data-sit="' + s + '">' + situacaoLabel(s) + '</span>').join('') +
       ((filtroGrupo || filtroSituacao || buscaTexto || filtroMarca) ? '<span class="clear-link" id="clear-filters">limpar filtros</span>' : '') +
+      '<button class="refresh-btn" id="exportar-zerados-btn" style="margin-left:auto;">' + icon('downloadSimple', 'icon-sm') + ' Exportar zerados (Excel)</button>' +
     '</div>' +
 
     '<div class="kpi-grid">' +
@@ -2543,6 +2619,8 @@ function renderizar() {
     animarKpiNoProximoRender = true;
     renderizar();
   });
+  const exportarZeradosEl = document.getElementById('exportar-zerados-btn');
+  if (exportarZeradosEl) exportarZeradosEl.addEventListener('click', exportarZeradosExcel);
 
   // ---- autocomplete de marca ----
   const inputMarca = document.getElementById('busca-marca');
