@@ -175,9 +175,26 @@ async function main() {
     );
   }
 
+  // DIAGNOSTICO TEMPORARIO -- confirma o que a Sysemp manda de verdade pro
+  // item que sabemos que deveria ser 0074468051034 (13 digitos), pra saber
+  // se o valor bruto ja chega errado (< 13 digitos) ou se o problema eh
+  // depois. Remover assim que confirmar.
+  const itemDiagnostico = registros.find((reg) => String(reg.cod_barra || '').includes('74468051034'));
+  if (itemDiagnostico) {
+    console.log('DIAGNOSTICO cod_barra bruto: valor=' + JSON.stringify(itemDiagnostico.cod_barra) + ' tipo=' + typeof itemDiagnostico.cod_barra);
+    console.log('DIAGNOSTICO registro completo: ' + JSON.stringify(itemDiagnostico));
+  } else {
+    console.log('DIAGNOSTICO: item 74468051034 nao encontrado nesta rodada de ' + registros.length + ' registros.');
+  }
+
   const linhas = registros.map((reg) =>
     COLUNAS_PLANILHA.map((coluna) => valorConvertido(coluna, reg[MAPEAMENTO_CAMPOS[coluna]]))
   );
+
+  const linhaDiagnostico = linhas.find((linha) => String(linha[COLUNAS_PLANILHA.indexOf('Código Barras')] || '').includes('74468051034'));
+  if (linhaDiagnostico) {
+    console.log('DIAGNOSTICO valor normalizado que vai pro Sheets: ' + JSON.stringify(linhaDiagnostico[COLUNAS_PLANILHA.indexOf('Código Barras')]));
+  }
 
   // Limpa a área reservada inteira antes de escrever (mesmo comportamento
   // do Apps Script) — evita sobrar linha antiga de produto removido.
