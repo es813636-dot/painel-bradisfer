@@ -145,6 +145,13 @@ async function main() {
     return;
   }
 
+  // DIAGNOSTICO TEMPORARIO -- testando a hipotese de que a API da Sysemp
+  // e inconsistente entre ciclos (as vezes manda o codigo certo, as
+  // vezes nao) pro item 74468051034. Comparar esse log entre varias
+  // rodadas diferentes. Remover assim que confirmar/descartar.
+  const itemDiag = registros.find((reg) => String(reg.cod_barra || '').includes('74468051034'));
+  console.log('DIAGNOSTICO cod_barra bruto desta rodada: ' + (itemDiag ? JSON.stringify(itemDiag.cod_barra) : 'item nao encontrado nesta rodada'));
+
   if (registros.length > MAX_LINHAS_RESERVADAS) {
     console.log(
       'AVISO: ' + registros.length + ' produtos encontrados, mas só há ' +
