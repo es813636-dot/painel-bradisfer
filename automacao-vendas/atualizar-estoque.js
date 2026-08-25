@@ -220,6 +220,20 @@ async function main() {
     resource: { values: linhas },
   });
 
+  // DIAGNOSTICO TEMPORARIO -- le a celula de volta direto pela API
+  // (sem cache do CSV publico) logo apos a escrita RAW, pra saber se o
+  // valor ja se perde nesse ponto ou so depois.
+  const idxDiagnostico = linhas.findIndex((linha) => String(linha[colunaCodigoBarras] || '').includes('74468051034'));
+  if (idxDiagnostico !== -1) {
+    const linhaPlanilha = LINHA_INICIO_DADOS + idxDiagnostico;
+    const leituraPosRaw = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: NOME_ABA + '!' + letraColunaBarras + linhaPlanilha,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+    console.log('DIAGNOSTICO leitura pos-RAW (linha ' + linhaPlanilha + '): ' + JSON.stringify(leituraPosRaw.data.values));
+  }
+
   // Com a coluna ja travada em "Texto simples", RAW normal ja preserva os
   // digitos -- mas escreve de novo com USER_ENTERED + aspa simples (mesmo
   // truque de digitar '0074468051034 direto na planilha) como reforco,
@@ -232,6 +246,17 @@ async function main() {
     valueInputOption: 'USER_ENTERED',
     resource: { values: valoresBarras },
   });
+
+  // DIAGNOSTICO TEMPORARIO -- le de novo apos a escrita USER_ENTERED.
+  if (idxDiagnostico !== -1) {
+    const linhaPlanilha = LINHA_INICIO_DADOS + idxDiagnostico;
+    const leituraPosUserEntered = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: NOME_ABA + '!' + letraColunaBarras + linhaPlanilha,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+    console.log('DIAGNOSTICO leitura pos-USER_ENTERED (linha ' + linhaPlanilha + '): ' + JSON.stringify(leituraPosUserEntered.data.values));
+  }
 
   const dataHora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const colunaAviso = String.fromCharCode(64 + COLUNAS_PLANILHA.length + 2); // +2 colunas de espaço, igual Apps Script
