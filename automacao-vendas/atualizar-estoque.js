@@ -26,10 +26,10 @@ const PAUSA_ENTRE_ONDAS_MS = 300;
 // endpoint ja era rapido sozinho (~45-70s pro catalogo, contra os
 // ~450-660s que o de vendas tinha antes), entao o ganho aqui e menor em
 // termos absolutos -- mas mantem consistencia entre os dois scripts.
-// Testar de novo o teto de paralelismo pra ESSE endpoint especifico se
-// for subir esse numero -- e um endpoint diferente do de vendas, pode
-// ter um limite de 504 diferente.
-const PAGINAS_EM_PARALELO = 12;
+// Testado em 25/08/2026: 8 (~24-28s) e 12 (~28s, sem ganho -- nessa
+// escala pequena de tempo a diferenca ja e ruido de rede/fila do
+// GitHub Actions, nao vale a pena arriscar). Ficou em 8.
+const PAGINAS_EM_PARALELO = 8;
 
 const NOME_ABA = 'Produtos';
 const LINHA_INICIO_DADOS = 4; // cabeçalho na linha 3, dados a partir da 4
