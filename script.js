@@ -565,6 +565,18 @@ function parseCSV(texto) {
   });
 }
 
+// A automacao grava o codigo de barras com uma aspa simples na FRENTE do
+// valor (ex. "'0074468051034") -- nao como dica de formatacao do Sheets
+// (isso so funciona digitando na UI ou com USER_ENTERED, e mesmo assim o
+// Sheets as vezes reconverte o texto pra numero num recalculo depois,
+// perdendo zero a esquerda -- ver CONTEXTO.md). A aspa faz parte do
+// CONTEUDO de verdade da celula (escrita como RAW), o que torna o valor
+// permanentemente nao-numerico e imune a qualquer reformatacao. Aqui so
+// tira essa aspa de volta antes de usar o codigo.
+function limparCodigoBarras(valor) {
+  return String(valor || '').trim().replace(/^'/, '');
+}
+
 // id do elemento -> último valor numérico que ele terminou de mostrar.
 // Chave por el.id (string), não por referência ao nó: renderizar() reescreve
 // #app inteiro via innerHTML a cada chamada, então o <div id="kpi-total">
@@ -712,7 +724,7 @@ async function carregarDados() {
       const textoVendasVivo = await respVendasVivo.text();
       const linhasVendasVivo = parseCSV(textoVendasVivo);
       linhasVendasVivo.forEach(r => {
-        const codBarra = String(r['Código Barras'] || '').trim();
+        const codBarra = limparCodigoBarras(r['Código Barras']);
         if (!codBarra) return;
         const mediaMensal = r['Média Mensal'] !== '' ? parseNumeroBR(r['Média Mensal']) : null;
         if (mediaMensal === null) return; // linha com erro registrado pelo lote — ignora
@@ -751,7 +763,7 @@ async function carregarDados() {
       const situacao = estoque <= 0 ? 'RUPTURA' : (estoque < minimo ? 'BAIXO' : (estoque > maximo ? 'EXCESSO' : 'OK'));
       const valorEstoque = Math.max(0, estoque) * custo; // estoque negativo (venda além do saldo) não vira valor negativo
       const valorRepor = (situacao === 'RUPTURA' || situacao === 'BAIXO') ? Math.max(0, (minimo - estoque) * custo) : 0;
-      const codigoBarras = String(r['Código Barras'] || '').trim();
+      const codigoBarras = limparCodigoBarras(r['Código Barras']);
       const precoMargem = precoMargemDoProduto(codigoBarras); // [margemLiquida, precoVenda] ou null se não achou na tabela de preços
       const vendasAoVivoLote = codigoBarras ? (vendasVivoPersistente.get(codigoBarras) || null) : null;
       return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras, estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null, margemLucro: precoMargem ? precoMargem[0] : null, precoVenda: precoMargem ? precoMargem[1] : null, vendasAoVivoLote };

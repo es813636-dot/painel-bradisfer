@@ -52,19 +52,27 @@ const COLUNAS_NUMERICAS = new Set([
   'Estoque Bradisfer', 'EstMinimo1', 'EstMaximo1', 'Custo Atual', 'Preço',
 ]);
 
-// A Sysemp as vezes devolve o codigo de barras como NUMERO no JSON (nao
-// string), o que perde zeros a esquerda antes mesmo de chegar aqui --
-// confirmado com um caso real: codigo cadastrado 0074468051034 (13
-// digitos, EAN-13) voltou da API como 74468051034 (11 digitos, 2 zeros
-// a menos). Como nao da pra recuperar um zero que ja sumiu no JSON,
-// completa de volta pra 13 digitos (padrao EAN-13, o mais comum no
-// Brasil) sempre que o codigo só tiver digitos e for mais curto que
-// isso -- nao mexe em codigos que ja tem 13+ digitos (EAN-13/GTIN-14
-// legitimos ficam intactos).
+// Duas correcoes pro codigo de barras, as duas confirmadas com casos
+// reais (ver CONTEXTO.md pro historico completo da investigacao):
+//
+// 1. A Sysemp as vezes devolve cod_barra como NUMERO no JSON (nao
+//    string), perdendo zeros a esquerda antes mesmo de chegar aqui.
+//    Completa de volta pra 13 digitos (EAN-13, o mais comum no Brasil)
+//    quando o codigo so tiver digitos e for mais curto que isso.
+//
+// 2. Mesmo gravando como texto (RAW, USER_ENTERED+aspa, formato "Texto
+//    simples" na coluna, e ate formula de string literal -- tentamos
+//    TODAS essas abordagens), o Google Sheets reconverte um valor
+//    so-digitos de volta pra numero num recalculo em segundo plano,
+//    perdendo o zero de novo minutos depois. A UNICA forma que resistiu
+//    foi colocar uma aspa simples como parte literal do CONTEUDO da
+//    celula (nao como dica de formatacao da UI) -- isso torna o valor
+//    permanentemente nao-numerico, imune a qualquer reformatacao futura.
+//    script.js tira essa aspa de volta ao ler (limparCodigoBarras).
 function normalizarCodigoBarras(valor) {
   const texto = String(valor === undefined || valor === null ? '' : valor).trim();
-  if (texto && /^\d+$/.test(texto) && texto.length < 13) return texto.padStart(13, '0');
-  return texto;
+  const completo = (texto && /^\d+$/.test(texto) && texto.length < 13) ? texto.padStart(13, '0') : texto;
+  return completo ? "'" + completo : completo;
 }
 
 function valorConvertido(coluna, valor) {
@@ -163,27 +171,6 @@ async function main() {
     range: NOME_ABA + '!A' + LINHA_INICIO_DADOS,
     valueInputOption: 'RAW',
     resource: { values: linhas },
-  });
-
-  // O Google Sheets reconverte a coluna Codigo Barras pra numero (perdendo
-  // zero a esquerda) num recalculo em segundo plano, mesmo escrita como
-  // texto forcado (RAW, USER_ENTERED+aspa, ou formato "Texto simples" na
-  // coluna) -- confirmado por tentativa e erro, o valor fica certo na
-  // hora mas degrada sozinho minutos depois. A unica forma que realmente
-  // resiste a isso e gravar como uma FORMULA cujo resultado e uma string
-  // literal (="0074468051034") -- o resultado de uma string literal numa
-  // formula nunca e reinterpretado como numero, nem em recalculo nenhum.
-  const colunaCodigoBarras = COLUNAS_PLANILHA.indexOf('Código Barras');
-  const letraColunaBarras = String.fromCharCode(65 + colunaCodigoBarras);
-  const formulasBarras = linhas.map((linha) => {
-    const valor = String(linha[colunaCodigoBarras] || '');
-    return [valor ? '="' + valor.replace(/"/g, '""') + '"' : ''];
-  });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID,
-    range: NOME_ABA + '!' + letraColunaBarras + LINHA_INICIO_DADOS,
-    valueInputOption: 'USER_ENTERED',
-    resource: { values: formulasBarras },
   });
 
   const dataHora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });

@@ -29,16 +29,14 @@ function dormir(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Mesma normalizacao usada em atualizar-estoque.js -- a Sysemp as vezes
-// devolve o codigo de barras como numero, perdendo zeros a esquerda (ver
-// comentario la pro caso real que confirmou isso). Precisa ser IDENTICA
-// nos dois scripts: eh essa chave que casa VendasAoVivo com Produtos
-// (script.js:756, vendasVivoPersistente.get(codigoBarras)) -- se só um
-// dos dois lados completar o zero, a busca para de bater.
+// Mesma normalizacao usada em atualizar-estoque.js (ver comentario la pro
+// historico completo). Precisa ser IDENTICA nos dois scripts: eh essa
+// chave (ja sem a aspa -- ver limparCodigoBarras em script.js) que casa
+// VendasAoVivo com Produtos (script.js, vendasVivoPersistente.get(...)).
 function normalizarCodigoBarras(valor) {
   const texto = String(valor === undefined || valor === null ? '' : valor).trim();
-  if (texto && /^\d+$/.test(texto) && texto.length < 13) return texto.padStart(13, '0');
-  return texto;
+  const completo = (texto && /^\d+$/.test(texto) && texto.length < 13) ? texto.padStart(13, '0') : texto;
+  return completo ? "'" + completo : completo;
 }
 
 async function buscarTodasVendas(token) {
@@ -103,7 +101,11 @@ async function main() {
   });
   const existentes = leitura.data.values || [];
   const mapaLinhas = new Map();
-  existentes.forEach((linha, i) => mapaLinhas.set(String(linha[0]), i));
+  // Chave de comparacao sempre sem a aspa simples (ver normalizarCodigoBarras
+  // mais abaixo) -- assim o casamento funciona igual pra linhas antigas
+  // (gravadas sem aspa, antes desse fix) e novas (com aspa), sem duplicar
+  // linha nenhuma na transicao.
+  existentes.forEach((linha, i) => mapaLinhas.set(String(linha[0]).replace(/^'/, ''), i));
 
   // O endpoint em lote (sem código de barras) devolve os campos com
   // nomes diferentes do endpoint de 1 produto só (sem acento,
@@ -119,6 +121,7 @@ async function main() {
   registros.forEach((item) => {
     const codBarra = normalizarCodigoBarras(campo(item, 'Codigo barras', 'Código Barras'));
     if (!codBarra) return;
+    const chave = codBarra.replace(/^'/, '');
     const linhaNova = [
       codBarra,
       campo(item, 'Descricao produto', 'Descrição Produto') || '',
@@ -129,10 +132,10 @@ async function main() {
       agora,
       '',
     ];
-    if (mapaLinhas.has(codBarra)) {
-      existentes[mapaLinhas.get(codBarra)] = linhaNova;
+    if (mapaLinhas.has(chave)) {
+      existentes[mapaLinhas.get(chave)] = linhaNova;
     } else {
-      mapaLinhas.set(codBarra, existentes.length);
+      mapaLinhas.set(chave, existentes.length);
       existentes.push(linhaNova);
     }
     atualizados++;
@@ -146,22 +149,6 @@ async function main() {
     range: NOME_ABA + '!A1',
     valueInputOption: 'RAW',
     resource: { values: [CABECALHO, ...existentes] },
-  });
-
-  // Mesmo problema do atualizar-estoque.js: o Sheets reconverte a coluna
-  // Codigo Barras pra numero num recalculo em segundo plano, mesmo com
-  // texto forcado. Regrava so essa coluna (A) como FORMULA de string
-  // literal (="0074468051034") -- o resultado de string literal numa
-  // formula nunca vira numero de novo, resiste a qualquer recalculo.
-  const formulasBarras = existentes.map((linha) => {
-    const valor = String(linha[0] || '');
-    return [valor ? '="' + valor.replace(/"/g, '""') + '"' : ''];
-  });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID,
-    range: NOME_ABA + '!A2',
-    valueInputOption: 'USER_ENTERED',
-    resource: { values: formulasBarras },
   });
 
   console.log('Concluído.');
