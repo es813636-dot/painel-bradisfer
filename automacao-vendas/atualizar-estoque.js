@@ -29,7 +29,7 @@ const PAUSA_ENTRE_ONDAS_MS = 300;
 // Testar de novo o teto de paralelismo pra ESSE endpoint especifico se
 // for subir esse numero -- e um endpoint diferente do de vendas, pode
 // ter um limite de 504 diferente.
-const PAGINAS_EM_PARALELO = 8;
+const PAGINAS_EM_PARALELO = 12;
 
 const NOME_ABA = 'Produtos';
 const LINHA_INICIO_DADOS = 4; // cabeçalho na linha 3, dados a partir da 4
