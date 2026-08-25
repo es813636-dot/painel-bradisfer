@@ -24,7 +24,7 @@ const PAUSA_ENTRE_ONDAS_MS = 300;
 // aumentar o tamanho da pagina (que ja tentamos, deu 504). Moderado de
 // proposito -- se o servidor deles nao aguentar bem paralelo, e so
 // baixar esse numero.
-const PAGINAS_EM_PARALELO = 8;
+const PAGINAS_EM_PARALELO = 10;
 
 function formatarDataBR(data) {
   const dd = String(data.getDate()).padStart(2, '0');
