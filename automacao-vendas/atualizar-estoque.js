@@ -20,7 +20,16 @@ const { google } = require('googleapis');
 const SHEET_ID = '1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A';
 const URL_METODO = 'https://api.sysemp.com.br/163/listaProdutosComEstoquePrecoVendaCusto';
 const LIMITE_POR_PAGINA = 100;
-const PAUSA_ENTRE_PAGINAS_MS = 300;
+const PAUSA_ENTRE_ONDAS_MS = 300;
+// Mesmo padrao de busca em paralelo do atualizar-vendas.js (ver
+// CONTEXTO.md pro historico completo dos testes de paralelismo). Esse
+// endpoint ja era rapido sozinho (~45-70s pro catalogo, contra os
+// ~450-660s que o de vendas tinha antes), entao o ganho aqui e menor em
+// termos absolutos -- mas mantem consistencia entre os dois scripts.
+// Testar de novo o teto de paralelismo pra ESSE endpoint especifico se
+// for subir esse numero -- e um endpoint diferente do de vendas, pode
+// ter um limite de 504 diferente.
+const PAGINAS_EM_PARALELO = 8;
 
 const NOME_ABA = 'Produtos';
 const LINHA_INICIO_DADOS = 4; // cabeçalho na linha 3, dados a partir da 4
@@ -105,24 +114,30 @@ async function buscarPagina(token, offset) {
 async function buscarTodosProdutos(token) {
   let offset = 0;
   let todos = [];
+  let acabou = false;
 
-  while (true) {
-    const resposta = await buscarPagina(token, offset);
+  while (!acabou) {
+    const offsetsDaOnda = [];
+    for (let i = 0; i < PAGINAS_EM_PARALELO; i++) offsetsDaOnda.push(offset + i * LIMITE_POR_PAGINA);
 
-    if (resposta.status === false) {
-      console.log('AVISO: a API retornou status=false. Resposta: ' + JSON.stringify(resposta));
+    const respostas = await Promise.all(offsetsDaOnda.map((o) => buscarPagina(token, o)));
+
+    for (let i = 0; i < respostas.length; i++) {
+      const resposta = respostas[i];
+      if (resposta.status === false) {
+        console.log('AVISO: a API retornou status=false. Resposta: ' + JSON.stringify(resposta));
+      }
+      const registros = resposta.retorno || resposta.data || [];
+      console.log('  -> offset ' + offsetsDaOnda[i] + ': ' + registros.length + ' registros (total: ' + (todos.length + registros.length) + ')');
+      if (registros.length === 0) { acabou = true; break; }
+      todos = todos.concat(registros);
+      // Pagina parcial (menor que o limite) tambem sinaliza fim de
+      // catalogo -- as proximas ofertas da mesma onda seriam vazias.
+      if (registros.length < LIMITE_POR_PAGINA) { acabou = true; break; }
     }
 
-    const registros = resposta.retorno || resposta.data || [];
-    if (registros.length === 0) break;
-
-    todos = todos.concat(registros);
-    console.log('  -> offset ' + offset + ': ' + registros.length + ' registros (total: ' + todos.length + ')');
-
-    if (registros.length < LIMITE_POR_PAGINA) break;
-
-    offset += LIMITE_POR_PAGINA;
-    await dormir(PAUSA_ENTRE_PAGINAS_MS);
+    offset += PAGINAS_EM_PARALELO * LIMITE_POR_PAGINA;
+    if (!acabou) await dormir(PAUSA_ENTRE_ONDAS_MS);
   }
 
   return todos;
