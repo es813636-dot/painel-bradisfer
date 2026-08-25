@@ -29,6 +29,18 @@ function dormir(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Mesma normalizacao usada em atualizar-estoque.js -- a Sysemp as vezes
+// devolve o codigo de barras como numero, perdendo zeros a esquerda (ver
+// comentario la pro caso real que confirmou isso). Precisa ser IDENTICA
+// nos dois scripts: eh essa chave que casa VendasAoVivo com Produtos
+// (script.js:756, vendasVivoPersistente.get(codigoBarras)) -- se só um
+// dos dois lados completar o zero, a busca para de bater.
+function normalizarCodigoBarras(valor) {
+  const texto = String(valor === undefined || valor === null ? '' : valor).trim();
+  if (texto && /^\d+$/.test(texto) && texto.length < 13) return texto.padStart(13, '0');
+  return texto;
+}
+
 async function buscarTodasVendas(token) {
   // Usa ONTEM como data final — vendas de hoje ainda estão sendo
   // processadas/fechadas na Sysemp e causavam oscilação entre consultas.
@@ -105,7 +117,7 @@ async function main() {
   const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   let atualizados = 0;
   registros.forEach((item) => {
-    const codBarra = String(campo(item, 'Codigo barras', 'Código Barras') || '').trim();
+    const codBarra = normalizarCodigoBarras(campo(item, 'Codigo barras', 'Código Barras'));
     if (!codBarra) return;
     const linhaNova = [
       codBarra,

@@ -52,7 +52,23 @@ const COLUNAS_NUMERICAS = new Set([
   'Estoque Bradisfer', 'EstMinimo1', 'EstMaximo1', 'Custo Atual', 'Preço',
 ]);
 
+// A Sysemp as vezes devolve o codigo de barras como NUMERO no JSON (nao
+// string), o que perde zeros a esquerda antes mesmo de chegar aqui --
+// confirmado com um caso real: codigo cadastrado 0074468051034 (13
+// digitos, EAN-13) voltou da API como 74468051034 (11 digitos, 2 zeros
+// a menos). Como nao da pra recuperar um zero que ja sumiu no JSON,
+// completa de volta pra 13 digitos (padrao EAN-13, o mais comum no
+// Brasil) sempre que o codigo só tiver digitos e for mais curto que
+// isso -- nao mexe em codigos que ja tem 13+ digitos (EAN-13/GTIN-14
+// legitimos ficam intactos).
+function normalizarCodigoBarras(valor) {
+  const texto = String(valor === undefined || valor === null ? '' : valor).trim();
+  if (texto && /^\d+$/.test(texto) && texto.length < 13) return texto.padStart(13, '0');
+  return texto;
+}
+
 function valorConvertido(coluna, valor) {
+  if (coluna === 'Código Barras') return normalizarCodigoBarras(valor);
   if (valor === undefined || valor === null || valor === '') return '';
   if (COLUNAS_NUMERICAS.has(coluna)) {
     const num = parseFloat(String(valor).replace(',', '.'));
