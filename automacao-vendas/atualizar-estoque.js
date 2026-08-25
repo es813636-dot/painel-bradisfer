@@ -165,6 +165,23 @@ async function main() {
     resource: { values: linhas },
   });
 
+  // O Google Sheets reconverte pra numero (perdendo zero a esquerda de
+  // novo) mesmo com RAW quando o valor eh so digitos -- RAW so evita
+  // parsing de formula/data, nao desliga a deteccao automatica de
+  // numero. A forma confiavel de forcar texto de verdade via API eh
+  // escrever com valueInputOption USER_ENTERED e prefixo de aspa simples
+  // (mesmo truque de digitar '0074468051034 direto na planilha) -- por
+  // isso a coluna Codigo Barras (B) eh regravada separado, so ela.
+  const colunaCodigoBarras = COLUNAS_PLANILHA.indexOf('Código Barras');
+  const letraColunaBarras = String.fromCharCode(65 + colunaCodigoBarras);
+  const valoresBarras = linhas.map((linha) => ["'" + linha[colunaCodigoBarras]]);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: NOME_ABA + '!' + letraColunaBarras + LINHA_INICIO_DADOS,
+    valueInputOption: 'USER_ENTERED',
+    resource: { values: valoresBarras },
+  });
+
   const dataHora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const colunaAviso = String.fromCharCode(64 + COLUNAS_PLANILHA.length + 2); // +2 colunas de espaço, igual Apps Script
   await sheets.spreadsheets.values.update({

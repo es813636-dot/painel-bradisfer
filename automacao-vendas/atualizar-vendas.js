@@ -148,6 +148,18 @@ async function main() {
     resource: { values: [CABECALHO, ...existentes] },
   });
 
+  // O Google Sheets reconverte pra numero (perdendo zero a esquerda de
+  // novo) mesmo com RAW quando o valor eh so digitos -- mesma explicacao
+  // do atualizar-estoque.js. Regrava só a coluna A (Código Barras) com
+  // USER_ENTERED + prefixo de aspa simples, que forca texto de verdade.
+  const valoresBarras = existentes.map((linha) => ["'" + linha[0]]);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: NOME_ABA + '!A2',
+    valueInputOption: 'USER_ENTERED',
+    resource: { values: valoresBarras },
+  });
+
   console.log('Concluído.');
 }
 
