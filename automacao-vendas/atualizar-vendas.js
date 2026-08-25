@@ -148,6 +148,22 @@ async function main() {
     resource: { values: [CABECALHO, ...existentes] },
   });
 
+  // Mesmo problema do atualizar-estoque.js: o Sheets reconverte a coluna
+  // Codigo Barras pra numero num recalculo em segundo plano, mesmo com
+  // texto forcado. Regrava so essa coluna (A) como FORMULA de string
+  // literal (="0074468051034") -- o resultado de string literal numa
+  // formula nunca vira numero de novo, resiste a qualquer recalculo.
+  const formulasBarras = existentes.map((linha) => {
+    const valor = String(linha[0] || '');
+    return [valor ? '="' + valor.replace(/"/g, '""') + '"' : ''];
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: NOME_ABA + '!A2',
+    valueInputOption: 'USER_ENTERED',
+    resource: { values: formulasBarras },
+  });
+
   console.log('Concluído.');
 }
 

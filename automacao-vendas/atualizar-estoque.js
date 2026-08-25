@@ -165,6 +165,27 @@ async function main() {
     resource: { values: linhas },
   });
 
+  // O Google Sheets reconverte a coluna Codigo Barras pra numero (perdendo
+  // zero a esquerda) num recalculo em segundo plano, mesmo escrita como
+  // texto forcado (RAW, USER_ENTERED+aspa, ou formato "Texto simples" na
+  // coluna) -- confirmado por tentativa e erro, o valor fica certo na
+  // hora mas degrada sozinho minutos depois. A unica forma que realmente
+  // resiste a isso e gravar como uma FORMULA cujo resultado e uma string
+  // literal (="0074468051034") -- o resultado de uma string literal numa
+  // formula nunca e reinterpretado como numero, nem em recalculo nenhum.
+  const colunaCodigoBarras = COLUNAS_PLANILHA.indexOf('Código Barras');
+  const letraColunaBarras = String.fromCharCode(65 + colunaCodigoBarras);
+  const formulasBarras = linhas.map((linha) => {
+    const valor = String(linha[colunaCodigoBarras] || '');
+    return [valor ? '="' + valor.replace(/"/g, '""') + '"' : ''];
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: NOME_ABA + '!' + letraColunaBarras + LINHA_INICIO_DADOS,
+    valueInputOption: 'USER_ENTERED',
+    resource: { values: formulasBarras },
+  });
+
   const dataHora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const colunaAviso = String.fromCharCode(64 + COLUNAS_PLANILHA.length + 2); // +2 colunas de espaço, igual Apps Script
   await sheets.spreadsheets.values.update({
