@@ -41,6 +41,33 @@ function normalizarCodigoBarras(valor) {
   return texto;
 }
 
+// Mesmo motivo do atualizar-estoque.js: o Sheets reformata a coluna de
+// volta pra numero num recalculo posterior se ela ficar com formato
+// "Automatico" -- trava como "Texto simples" antes de escrever.
+async function garantirColunaTexto(sheets, spreadsheetId, nomeAba, colunaIndice, linhaInicio, qtdLinhas) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
+  const aba = meta.data.sheets.find((s) => s.properties.title === nomeAba);
+  if (!aba) throw new Error('Aba "' + nomeAba + '" nao encontrada pra travar formato de coluna.');
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    resource: {
+      requests: [{
+        repeatCell: {
+          range: {
+            sheetId: aba.properties.sheetId,
+            startRowIndex: linhaInicio - 1,
+            endRowIndex: linhaInicio - 1 + qtdLinhas,
+            startColumnIndex: colunaIndice,
+            endColumnIndex: colunaIndice + 1,
+          },
+          cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } },
+          fields: 'userEnteredFormat.numberFormat',
+        },
+      }],
+    },
+  });
+}
+
 async function buscarTodasVendas(token) {
   // Usa ONTEM como data final — vendas de hoje ainda estão sendo
   // processadas/fechadas na Sysemp e causavam oscilação entre consultas.
@@ -140,6 +167,11 @@ async function main() {
   // Produtos que não vieram na resposta (sem venda no período, ou já
   // processados antes) mantêm a linha que já tinham — nunca são apagados.
 
+  // Trava o formato da coluna A (Codigo Barras) como "Texto simples" ANTES
+  // de escrever -- sem isso, o Sheets reformata de volta pra numero num
+  // recalculo posterior, mesmo apos escrita forcada como texto.
+  await garantirColunaTexto(sheets, SHEET_ID, NOME_ABA, 0, 2, existentes.length);
+
   console.log('Gravando ' + existentes.length + ' linhas na planilha (' + atualizados + ' atualizadas nesta rodada)...');
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
@@ -148,10 +180,9 @@ async function main() {
     resource: { values: [CABECALHO, ...existentes] },
   });
 
-  // O Google Sheets reconverte pra numero (perdendo zero a esquerda de
-  // novo) mesmo com RAW quando o valor eh so digitos -- mesma explicacao
-  // do atualizar-estoque.js. Regrava só a coluna A (Código Barras) com
-  // USER_ENTERED + prefixo de aspa simples, que forca texto de verdade.
+  // Com a coluna ja travada em "Texto simples", regrava so a coluna A
+  // (Codigo Barras) com USER_ENTERED + aspa simples como reforco (mesmo
+  // truque de digitar '0074468051034 direto na planilha).
   const valoresBarras = existentes.map((linha) => ["'" + linha[0]]);
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,

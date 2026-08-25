@@ -81,6 +81,36 @@ function dormir(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// O truque de RAW/USER_ENTERED + aspa simples so evita a reconversao pra
+// numero NA HORA da escrita -- confirmado que o Sheets volta a reformatar
+// a coluna como numero (perdendo o zero de novo) num recalculo/refresh
+// posterior, se a coluna continuar com formato "Automatico". A fixacao
+// de verdade e travar o formato da coluna como "Texto simples" (TEXT) --
+// depois disso, mesmo escrita RAW simples mantem os digitos intactos.
+async function garantirColunaTexto(sheets, spreadsheetId, nomeAba, colunaIndice, linhaInicio, qtdLinhas) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
+  const aba = meta.data.sheets.find((s) => s.properties.title === nomeAba);
+  if (!aba) throw new Error('Aba "' + nomeAba + '" nao encontrada pra travar formato de coluna.');
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    resource: {
+      requests: [{
+        repeatCell: {
+          range: {
+            sheetId: aba.properties.sheetId,
+            startRowIndex: linhaInicio - 1,
+            endRowIndex: linhaInicio - 1 + qtdLinhas,
+            startColumnIndex: colunaIndice,
+            endColumnIndex: colunaIndice + 1,
+          },
+          cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } },
+          fields: 'userEnteredFormat.numberFormat',
+        },
+      }],
+    },
+  });
+}
+
 async function buscarPagina(token, offset) {
   const resp = await fetch(URL_METODO, {
     method: 'POST',
@@ -158,6 +188,14 @@ async function main() {
     range: NOME_ABA + '!A' + LINHA_INICIO_DADOS + ':' + ultimaColuna + (LINHA_INICIO_DADOS + MAX_LINHAS_RESERVADAS - 1),
   });
 
+  const colunaCodigoBarras = COLUNAS_PLANILHA.indexOf('Código Barras');
+  const letraColunaBarras = String.fromCharCode(65 + colunaCodigoBarras);
+
+  // Trava o formato da coluna Codigo Barras como "Texto simples" ANTES de
+  // escrever -- sem isso, o Sheets pode reformatar de volta pra numero
+  // num recalculo posterior, mesmo tendo sido escrito como texto forcado.
+  await garantirColunaTexto(sheets, SHEET_ID, NOME_ABA, colunaCodigoBarras, LINHA_INICIO_DADOS, MAX_LINHAS_RESERVADAS);
+
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
     range: NOME_ABA + '!A' + LINHA_INICIO_DADOS,
@@ -165,15 +203,11 @@ async function main() {
     resource: { values: linhas },
   });
 
-  // O Google Sheets reconverte pra numero (perdendo zero a esquerda de
-  // novo) mesmo com RAW quando o valor eh so digitos -- RAW so evita
-  // parsing de formula/data, nao desliga a deteccao automatica de
-  // numero. A forma confiavel de forcar texto de verdade via API eh
-  // escrever com valueInputOption USER_ENTERED e prefixo de aspa simples
-  // (mesmo truque de digitar '0074468051034 direto na planilha) -- por
-  // isso a coluna Codigo Barras (B) eh regravada separado, so ela.
-  const colunaCodigoBarras = COLUNAS_PLANILHA.indexOf('Código Barras');
-  const letraColunaBarras = String.fromCharCode(65 + colunaCodigoBarras);
+  // Com a coluna ja travada em "Texto simples", RAW normal ja preserva os
+  // digitos -- mas escreve de novo com USER_ENTERED + aspa simples (mesmo
+  // truque de digitar '0074468051034 direto na planilha) como reforco,
+  // caso o formato da coluna nao tenha aplicado a tempo na escrita RAW
+  // acima (repeatCell e values.update sao chamadas separadas).
   const valoresBarras = linhas.map((linha) => ["'" + linha[colunaCodigoBarras]]);
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
