@@ -19,12 +19,12 @@ const CABECALHO = ['Código Barras', 'Descrição Produto', 'Média Mensal', 'To
 const PAUSA_ENTRE_ONDAS_MS = 300;
 // Quantas paginas buscar ao mesmo tempo por "onda" -- antes era 1 por vez
 // (sequencial), levando ~10min pro catalogo inteiro (~46 paginas de 100).
-// A Sysemp confirmou que nao trava por tempo do lado deles, entao buscar
-// varias em paralelo deve cortar bastante esse tempo sem depender de
-// aumentar o tamanho da pagina (que ja tentamos, deu 504). Moderado de
-// proposito -- se o servidor deles nao aguentar bem paralelo, e so
-// baixar esse numero.
-const PAGINAS_EM_PARALELO = 10;
+// Testado em 25/08/2026: 4 (~240s), 6 (~193s), 8 (~170-225s, estavel em
+// varias rodadas) e 10 (504 Gateway Time-out no offset 3600, todo run
+// falhou). 8 e o maior valor confirmado estavel -- nao subir sem testar
+// de novo com cuidado (uma falha aqui nao corrompe a planilha, o erro
+// interrompe ANTES de escrever nada, mas ainda assim é um ciclo perdido).
+const PAGINAS_EM_PARALELO = 8;
 
 function formatarDataBR(data) {
   const dd = String(data.getDate()).padStart(2, '0');
