@@ -16,7 +16,15 @@ const SHEET_ID = '1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A';
 const NOME_ABA = 'VendasAoVivo';
 const URL_VENDAS_MEDIA = 'https://api.sysemp.com.br/163/listarVendasMediaPorProduto';
 const CABECALHO = ['Código Barras', 'Descrição Produto', 'Média Mensal', 'Total Vendido (12M)', 'Data Última Venda', 'Qtd Última Venda', 'Atualizado em', 'Erro'];
-const PAUSA_ENTRE_PAGINAS_MS = 400;
+const PAUSA_ENTRE_ONDAS_MS = 300;
+// Quantas paginas buscar ao mesmo tempo por "onda" -- antes era 1 por vez
+// (sequencial), levando ~10min pro catalogo inteiro (~46 paginas de 100).
+// A Sysemp confirmou que nao trava por tempo do lado deles, entao buscar
+// varias em paralelo deve cortar bastante esse tempo sem depender de
+// aumentar o tamanho da pagina (que ja tentamos, deu 504). Moderado de
+// proposito -- se o servidor deles nao aguentar bem paralelo, e so
+// baixar esse numero.
+const PAGINAS_EM_PARALELO = 4;
 
 function formatarDataBR(data) {
   const dd = String(data.getDate()).padStart(2, '0');
@@ -39,6 +47,20 @@ function normalizarCodigoBarras(valor) {
   return completo ? "'" + completo : completo;
 }
 
+async function buscarPagina(token, offset, datainicial, datafinal) {
+  const resp = await fetch(URL_VENDAS_MEDIA, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Token: token },
+    body: JSON.stringify({ cod_barra: '', datainicial, datafinal, offset: String(offset) }),
+  });
+  if (!resp.ok) {
+    const corpo = await resp.text().catch(() => '(sem corpo)');
+    throw new Error('HTTP ' + resp.status + ' no offset ' + offset + ' — resposta: ' + corpo);
+  }
+  const dados = await resp.json();
+  return dados.retorno || [];
+}
+
 async function buscarTodasVendas(token) {
   // Usa ONTEM como data final — vendas de hoje ainda estão sendo
   // processadas/fechadas na Sysemp e causavam oscilação entre consultas.
@@ -50,30 +72,38 @@ async function buscarTodasVendas(token) {
   const datainicial = formatarDataBR(umAnoAtras);
   const datafinal = formatarDataBR(ontem);
 
-  let offset = 0;
   let todos = [];
 
-  while (true) {
-    const resp = await fetch(URL_VENDAS_MEDIA, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Token: token },
-      body: JSON.stringify({ cod_barra: '', datainicial, datafinal, offset: String(offset) }),
-    });
+  // Primeira pagina sozinha, so pra descobrir o tamanho de pagina que a
+  // Sysemp esta usando nesse ciclo (ja foi 100, mas e controlado do lado
+  // deles -- nao assume valor fixo).
+  const primeira = await buscarPagina(token, 0, datainicial, datafinal);
+  console.log('offset 0: ' + primeira.length + ' registros (total: ' + primeira.length + ')');
+  if (primeira.length === 0) return todos;
+  todos = todos.concat(primeira);
+  const tamanhoPagina = primeira.length;
+  let offset = tamanhoPagina;
+  let acabou = false;
 
-    if (!resp.ok) {
-      const corpo = await resp.text().catch(() => '(sem corpo)');
-      throw new Error('HTTP ' + resp.status + ' no offset ' + offset + ' — resposta: ' + corpo);
+  while (!acabou) {
+    const offsetsDaOnda = [];
+    for (let i = 0; i < PAGINAS_EM_PARALELO; i++) offsetsDaOnda.push(offset + i * tamanhoPagina);
+
+    const paginas = await Promise.all(offsetsDaOnda.map((o) => buscarPagina(token, o, datainicial, datafinal)));
+
+    for (let i = 0; i < paginas.length; i++) {
+      const pagina = paginas[i];
+      console.log('offset ' + offsetsDaOnda[i] + ': ' + pagina.length + ' registros (total: ' + (todos.length + pagina.length) + ')');
+      if (pagina.length === 0) { acabou = true; break; }
+      todos = todos.concat(pagina);
+      // Pagina parcial (menor que o tamanho normal) tambem sinaliza fim
+      // de catalogo -- as proximas ofertas da mesma onda, se sobrarem,
+      // seriam vazias mesmo.
+      if (pagina.length < tamanhoPagina) { acabou = true; break; }
     }
 
-    const dados = await resp.json();
-    const pagina = dados.retorno || [];
-    console.log('offset ' + offset + ': ' + pagina.length + ' registros (total: ' + (todos.length + pagina.length) + ')');
-
-    if (pagina.length === 0) break;
-    todos = todos.concat(pagina);
-    offset += pagina.length;
-
-    await dormir(PAUSA_ENTRE_PAGINAS_MS);
+    offset += PAGINAS_EM_PARALELO * tamanhoPagina;
+    if (!acabou) await dormir(PAUSA_ENTRE_ONDAS_MS);
   }
 
   return todos;
