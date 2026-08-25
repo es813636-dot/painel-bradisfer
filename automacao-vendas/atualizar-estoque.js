@@ -81,36 +81,6 @@ function dormir(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// O truque de RAW/USER_ENTERED + aspa simples so evita a reconversao pra
-// numero NA HORA da escrita -- confirmado que o Sheets volta a reformatar
-// a coluna como numero (perdendo o zero de novo) num recalculo/refresh
-// posterior, se a coluna continuar com formato "Automatico". A fixacao
-// de verdade e travar o formato da coluna como "Texto simples" (TEXT) --
-// depois disso, mesmo escrita RAW simples mantem os digitos intactos.
-async function garantirColunaTexto(sheets, spreadsheetId, nomeAba, colunaIndice, linhaInicio, qtdLinhas) {
-  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
-  const aba = meta.data.sheets.find((s) => s.properties.title === nomeAba);
-  if (!aba) throw new Error('Aba "' + nomeAba + '" nao encontrada pra travar formato de coluna.');
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    resource: {
-      requests: [{
-        repeatCell: {
-          range: {
-            sheetId: aba.properties.sheetId,
-            startRowIndex: linhaInicio - 1,
-            endRowIndex: linhaInicio - 1 + qtdLinhas,
-            startColumnIndex: colunaIndice,
-            endColumnIndex: colunaIndice + 1,
-          },
-          cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } },
-          fields: 'userEnteredFormat.numberFormat',
-        },
-      }],
-    },
-  });
-}
-
 async function buscarPagina(token, offset) {
   const resp = await fetch(URL_METODO, {
     method: 'POST',
@@ -175,26 +145,9 @@ async function main() {
     );
   }
 
-  // DIAGNOSTICO TEMPORARIO -- confirma o que a Sysemp manda de verdade pro
-  // item que sabemos que deveria ser 0074468051034 (13 digitos), pra saber
-  // se o valor bruto ja chega errado (< 13 digitos) ou se o problema eh
-  // depois. Remover assim que confirmar.
-  const itemDiagnostico = registros.find((reg) => String(reg.cod_barra || '').includes('74468051034'));
-  if (itemDiagnostico) {
-    console.log('DIAGNOSTICO cod_barra bruto: valor=' + JSON.stringify(itemDiagnostico.cod_barra) + ' tipo=' + typeof itemDiagnostico.cod_barra);
-    console.log('DIAGNOSTICO registro completo: ' + JSON.stringify(itemDiagnostico));
-  } else {
-    console.log('DIAGNOSTICO: item 74468051034 nao encontrado nesta rodada de ' + registros.length + ' registros.');
-  }
-
   const linhas = registros.map((reg) =>
     COLUNAS_PLANILHA.map((coluna) => valorConvertido(coluna, reg[MAPEAMENTO_CAMPOS[coluna]]))
   );
-
-  const linhaDiagnostico = linhas.find((linha) => String(linha[COLUNAS_PLANILHA.indexOf('Código Barras')] || '').includes('74468051034'));
-  if (linhaDiagnostico) {
-    console.log('DIAGNOSTICO valor normalizado que vai pro Sheets: ' + JSON.stringify(linhaDiagnostico[COLUNAS_PLANILHA.indexOf('Código Barras')]));
-  }
 
   // Limpa a área reservada inteira antes de escrever (mesmo comportamento
   // do Apps Script) — evita sobrar linha antiga de produto removido.
@@ -205,58 +158,12 @@ async function main() {
     range: NOME_ABA + '!A' + LINHA_INICIO_DADOS + ':' + ultimaColuna + (LINHA_INICIO_DADOS + MAX_LINHAS_RESERVADAS - 1),
   });
 
-  const colunaCodigoBarras = COLUNAS_PLANILHA.indexOf('Código Barras');
-  const letraColunaBarras = String.fromCharCode(65 + colunaCodigoBarras);
-
-  // Trava o formato da coluna Codigo Barras como "Texto simples" ANTES de
-  // escrever -- sem isso, o Sheets pode reformatar de volta pra numero
-  // num recalculo posterior, mesmo tendo sido escrito como texto forcado.
-  await garantirColunaTexto(sheets, SHEET_ID, NOME_ABA, colunaCodigoBarras, LINHA_INICIO_DADOS, MAX_LINHAS_RESERVADAS);
-
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
     range: NOME_ABA + '!A' + LINHA_INICIO_DADOS,
     valueInputOption: 'RAW',
     resource: { values: linhas },
   });
-
-  // DIAGNOSTICO TEMPORARIO -- le a celula de volta direto pela API
-  // (sem cache do CSV publico) logo apos a escrita RAW, pra saber se o
-  // valor ja se perde nesse ponto ou so depois.
-  const idxDiagnostico = linhas.findIndex((linha) => String(linha[colunaCodigoBarras] || '').includes('74468051034'));
-  if (idxDiagnostico !== -1) {
-    const linhaPlanilha = LINHA_INICIO_DADOS + idxDiagnostico;
-    const leituraPosRaw = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: NOME_ABA + '!' + letraColunaBarras + linhaPlanilha,
-      valueRenderOption: 'UNFORMATTED_VALUE',
-    });
-    console.log('DIAGNOSTICO leitura pos-RAW (linha ' + linhaPlanilha + '): ' + JSON.stringify(leituraPosRaw.data.values));
-  }
-
-  // Com a coluna ja travada em "Texto simples", RAW normal ja preserva os
-  // digitos -- mas escreve de novo com USER_ENTERED + aspa simples (mesmo
-  // truque de digitar '0074468051034 direto na planilha) como reforco,
-  // caso o formato da coluna nao tenha aplicado a tempo na escrita RAW
-  // acima (repeatCell e values.update sao chamadas separadas).
-  const valoresBarras = linhas.map((linha) => ["'" + linha[colunaCodigoBarras]]);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID,
-    range: NOME_ABA + '!' + letraColunaBarras + LINHA_INICIO_DADOS,
-    valueInputOption: 'USER_ENTERED',
-    resource: { values: valoresBarras },
-  });
-
-  // DIAGNOSTICO TEMPORARIO -- le de novo apos a escrita USER_ENTERED.
-  if (idxDiagnostico !== -1) {
-    const linhaPlanilha = LINHA_INICIO_DADOS + idxDiagnostico;
-    const leituraPosUserEntered = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: NOME_ABA + '!' + letraColunaBarras + linhaPlanilha,
-      valueRenderOption: 'UNFORMATTED_VALUE',
-    });
-    console.log('DIAGNOSTICO leitura pos-USER_ENTERED (linha ' + linhaPlanilha + '): ' + JSON.stringify(leituraPosUserEntered.data.values));
-  }
 
   const dataHora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const colunaAviso = String.fromCharCode(64 + COLUNAS_PLANILHA.length + 2); // +2 colunas de espaço, igual Apps Script
