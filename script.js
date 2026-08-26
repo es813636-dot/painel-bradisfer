@@ -2945,5 +2945,89 @@ function renderizar() {
   tornarClicaveisAcessiveis(document.getElementById('app'));
 }
 
-carregarDados();
-setInterval(carregarDados, AUTO_REFRESH_MS);
+// ----------------------------------------------------------------------
+// Login Google (Nivel A -- protecao so na tela, ver CONTEXTO.md).
+// NAO esconde a URL bruta dos dados da planilha (CSV publico do
+// gviz, ja usado em CSV_URL/ANALISE_CSV_URL/VENDAS_VIVO_CSV_URL) --
+// so bloqueia quem entra pela tela normal do painel. Protecao de
+// verdade exigiria mover a hospedagem pro Apps Script (Nivel B,
+// nao implementado ainda).
+// ----------------------------------------------------------------------
+const GOOGLE_CLIENT_ID = '590352840411-7m1aq5q5limp271h49iasmsq5d0v4llr.apps.googleusercontent.com';
+const EMAILS_PERMITIDOS = [
+  'marcusmatos19@gmail.com',
+  'bradisferdistribuuidora@gmail.com',
+];
+const CHAVE_LOCALSTORAGE_LOGIN = 'bradisfer_login';
+const VALIDADE_LOGIN_MS = 12 * 60 * 60 * 1000; // 12h -- depois disso pede login de novo
+
+function emailPermitido(email) {
+  const alvo = String(email || '').toLowerCase().trim();
+  return EMAILS_PERMITIDOS.some(e => e.toLowerCase().trim() === alvo);
+}
+
+// Decodifica so a parte de dados (payload) de um JWT -- nao valida a
+// assinatura (nao da pra validar de verdade sem backend). Suficiente
+// pro Nivel A: o objetivo aqui e so ler o e-mail que o Google devolveu.
+function decodificarJwt(token) {
+  try {
+    const payload = token.split('.')[1];
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const texto = decodeURIComponent(
+      atob(base64).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')
+    );
+    return JSON.parse(texto);
+  } catch (erro) {
+    return null;
+  }
+}
+
+function mostrarErroLogin(mensagem) {
+  const el = document.getElementById('login-erro');
+  el.textContent = mensagem;
+  el.style.display = 'block';
+}
+
+function iniciarPainelAutenticado() {
+  document.getElementById('login-overlay').style.display = 'none';
+  carregarDados();
+  setInterval(carregarDados, AUTO_REFRESH_MS);
+}
+
+function handleGoogleLogin(response) {
+  const dados = decodificarJwt(response.credential);
+  if (!dados || !dados.email) {
+    mostrarErroLogin('Não consegui ler os dados do login. Tente de novo.');
+    return;
+  }
+  if (!emailPermitido(dados.email)) {
+    mostrarErroLogin('Acesso negado para ' + dados.email + '. Peça pro administrador liberar esse e-mail.');
+    return;
+  }
+  localStorage.setItem(CHAVE_LOCALSTORAGE_LOGIN, JSON.stringify({ email: dados.email, expira: Date.now() + VALIDADE_LOGIN_MS }));
+  iniciarPainelAutenticado();
+}
+
+function loginSalvoValido() {
+  try {
+    const salvo = JSON.parse(localStorage.getItem(CHAVE_LOCALSTORAGE_LOGIN) || 'null');
+    return !!(salvo && salvo.expira > Date.now() && emailPermitido(salvo.email));
+  } catch (erro) {
+    return false;
+  }
+}
+
+if (loginSalvoValido()) {
+  iniciarPainelAutenticado();
+} else {
+  window.addEventListener('load', () => {
+    if (window.google && google.accounts && google.accounts.id) {
+      google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleLogin });
+      google.accounts.id.renderButton(document.getElementById('google-signin-button'), {
+        theme: 'filled_black', size: 'large', text: 'signin_with', locale: 'pt-BR',
+      });
+    } else {
+      mostrarErroLogin('Não consegui carregar o login do Google. Verifique sua conexão e recarregue a página.');
+    }
+  });
+}

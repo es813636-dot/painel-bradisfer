@@ -985,3 +985,43 @@
     .nav-sidebar { transform: translateX(-100%) !important; }
     .nav-sidebar.open { transform: translateX(0) !important; }
   }
+
+  /* ---- Overlay de login (Google, Nivel A -- ver CONTEXTO.md) ---- */
+  .login-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-page);
+    padding: 24px;
+  }
+  .login-card {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    padding: 40px 36px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+    box-shadow: var(--shadow-elevation-2);
+  }
+  .login-card h1 {
+    font-family: var(--font-body);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 8px;
+  }
+  .login-sub {
+    font-family: var(--font-body);
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0 0 24px;
+    line-height: 1.5;
+  }
+  .login-btn-wrap { display: flex; justify-content: center; }
+  .login-erro {
+    font-family: var(--font-body);
+    font-size: 12.5px;
+    color: var(--red-a, #e66767);
+    margin-top: 16px;
+    line-height: 1.5;
+  }
