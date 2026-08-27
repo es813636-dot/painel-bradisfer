@@ -22,7 +22,7 @@ flowchart LR
     SYS -- "listaProdutosComEstoquePrecoVendaCusto\n(a cada 10 min, GitHub Actions)" --> PROD
     PROD -- "formula =SE(...)" --> BASE
     BASE -- "formula ={Base!A2:O5502}" --> BL
-    SYS -- "listarVendasMediaPorProduto\n(a cada hora, GitHub Actions)" --> VAV
+    SYS -- "listarVendasMediaPorProduto\n(a cada 20 min, GitHub Actions)" --> VAV
     SYS -. "1 produto por vez, sob demanda\n(clique no modal)" .-> CFW
     CFW -. resposta direta, nao passa pela planilha .-> JS
     BL -- "CSV publico (gviz)" --> JS
@@ -37,7 +37,7 @@ flowchart LR
 | Endpoint | Consumido por | Frequência | O que traz |
 |---|---|---|---|
 | `listaProdutosComEstoquePrecoVendaCusto` | `automacao-vendas/atualizar-estoque.js` (GitHub Actions) | A cada 10 min (5h–23h59 e 0h–2h Brasília) | Catálogo inteiro: estoque, mín/máx, custo, preço de venda, código de barras |
-| `listarVendasMediaPorProduto` (sem `cod_barra`) | `automacao-vendas/atualizar-vendas.js` (GitHub Actions) | A cada hora (mesma janela) | Catálogo inteiro: média mensal e total vendido (12 meses), por produto |
+| `listarVendasMediaPorProduto` (sem `cod_barra`) | `automacao-vendas/atualizar-vendas.js` (GitHub Actions) | A cada 20 min (mesma janela) | Catálogo inteiro: média mensal e total vendido (12 meses), por produto |
 | `listarComprasPorProduto` / `listarVendasMediaPorProduto` (1 produto) | **Cloudflare Worker** `cloudflare-worker/produto-detalhe.js` (`rough-dust-49b2.bradisferdistribuuidora.workers.dev`) | Sob demanda, a cada clique no modal de produto | Últimas compras e venda AO VIVO de 1 produto só |
 | (endpoint de venda por vendedor/meta) | — não implementado | — | Pedido enviado à Sysemp, resposta pendente — ver `CONTEXTO.md` |
 
@@ -53,7 +53,7 @@ flowchart LR
 | **Base** | Fórmula `=SE(Produtos!Bxxxx="";"";Produtos!Bxxxx)` célula a célula, referenciando `Produtos` | Ninguém edita manualmente — nota na própria aba: *"BASE — calculada automaticamente a partir da aba Produtos. Não editar manualmente."* | Reflete `Produtos` quase em tempo real (recálculo de fórmula do Sheets) | Aba `BaseLooker` (fórmula) |
 | **BaseLooker** | Fórmula `={Base!A2:O5502}` (array, espelha `Base` inteira) | Idem — não editar manualmente | Idem `Base` | **`script.js`** (fonte principal do painel, via CSV público) |
 | **AnaliseMinMax** | Import manual único (Excel → Sheets), feito uma vez | Ninguém — **congelada desde a importação original** (~meados de agosto/2026) | ⚠️ **Estática, não atualiza sozinha.** Só fallback pra produtos ainda não cobertos por `VendasAoVivo` | `script.js` (fallback + Curva ABC/Nível de Atendimento informativos) |
-| **VendasAoVivo** | Escrita direta por `atualizar-vendas.js` (upsert por código de barras) | Automação (GitHub Actions) | Fresca (~1h) | `script.js` (fonte principal de sugestão de compra) |
+| **VendasAoVivo** | Escrita direta por `atualizar-vendas.js` (upsert por código de barras) | Automação (GitHub Actions) | Fresca (~20 min) | `script.js` (fonte principal de sugestão de compra) |
 | **Relatorio Comparativo** | Escrita direta por `automacao-vendas/relatorio-comparativo.js` | Manual — só quando alguém dispara o workflow `Relatorio Comparativo (Julho x Agosto)` | Só reflete o momento em que foi gerado, não atualiza sozinha | Ninguém automaticamente — leitura manual na planilha |
 | **Painel** | ⚠️ **Não mapeado.** Existe na planilha (visível na lista de abas), mas nenhum script deste repositório (nem `script.js`, nem as automações) lê ou escreve nela | Desconhecido | Desconhecido | Desconhecido — **investigar antes de assumir que está em uso ou que pode ser removida** |
 
