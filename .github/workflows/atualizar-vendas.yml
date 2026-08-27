@@ -2,10 +2,13 @@ name: Atualizar Vendas AO VIVO
 
 on:
   schedule:
-    # A cada hora, das 5h às 23h59 horário de Brasília (UTC-3) — mesma
-    # janela usada pelo atualizarEstoque no Apps Script, evita gastar
-    # chamadas de madrugada quando ninguém está usando o painel.
-    - cron: '0 8-23,0-2 * * *'
+    # A cada 20 min, das 5h às 23h59 horário de Brasília (UTC-3) --
+    # reduzido de 1h em 1h pra 20 em 20 min em 25/08/2026, depois da
+    # busca em paralelo deixar cada rodada bem mais rapida (~170-225s,
+    # era ~450-660s) -- sobra folga de sobra pra rodar mais vezes sem
+    # uma rodada esbarrar na outra. Mesma janela do atualizarEstoque,
+    # evita gastar chamadas de madrugada quando ninguem usa o painel.
+    - cron: '*/20 8-23,0-2 * * *'
   workflow_dispatch: {}
 
 jobs:
