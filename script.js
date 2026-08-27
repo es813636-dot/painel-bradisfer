@@ -991,17 +991,13 @@ function gerarComprasExemplo(produto) {
 // Busca compras e vendas REAIS na Sysemp (via ponte do Apps Script),
 // um produto por vez, sob demanda — só quando o usuário clica no item.
 // ----------------------------------------------------------------------
-async function buscarComprasVendasReais(codigoBarras) {
+async function buscarComprasVendasReais(codigoBarras, vendasAoVivoLote) {
   const resultado = { compras: null, vendas: null, erro: null };
   if (!codigoBarras) { resultado.erro = 'Produto sem código de barras.'; return resultado; }
 
-  // Cadeia navegador -> Apps Script -> Sysemp pode travar sem avisar —
-  // limita a espera a 15s por chamada, pra sempre cair no modo de exemplo
-  // em vez de ficar preso na tela de carregamento pra sempre.
-  // Aplicativos da Web do Apps Script têm uma sobrecarga própria de
-  // infraestrutura (redirecionamentos internos do Google) que pode levar
-  // vários segundos, mesmo quando o código em si roda rápido — por isso
-  // a margem é generosa (30s), não é sinal de código lento.
+  // Cadeia navegador -> Worker -> Sysemp pode travar sem avisar — limita
+  // a espera a 30s pra sempre cair no modo de exemplo em vez de ficar
+  // preso na tela de carregamento pra sempre.
   const TIMEOUT_MS = 30000;
   function fetchComTimeout(url) {
     const controller = new AbortController();
@@ -1009,13 +1005,32 @@ async function buscarComprasVendasReais(codigoBarras) {
     return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
   }
 
+  // A busca de "vendas" AO VIVO na Sysemp (1 produto, 1 ano de historico)
+  // e lenta de verdade (5-15s, confirmado 25/08/2026 -- gargalo e a
+  // propria Sysemp processando a consulta, nao infraestrutura de
+  // transporte, ja trocamos o Apps Script pelo Cloudflare Worker e nao
+  // mudou). Mas esse mesmo dado (media mensal, total vendido, ultima
+  // venda) ja esta na memoria do navegador -- veio no carregamento
+  // inicial do painel, via VendasAoVivo (sincronizada de hora em hora).
+  // Entao so busca "vendas" ao vivo se AINDA nao tivermos esse produto
+  // no lote (produto novo, fora do ciclo de sincronizacao) -- na maioria
+  // dos cliques, isso elimina a chamada mais lenta por completo.
+  if (vendasAoVivoLote) {
+    resultado.vendas = {
+      mediaMensal12M: vendasAoVivoLote.mediaMensal || 0,
+      totalVendido12M: vendasAoVivoLote.totalVendido || 0,
+      dataUltimaVenda: vendasAoVivoLote.dataUltimaVenda ? new Date(vendasAoVivoLote.dataUltimaVenda + 'T00:00:00').toLocaleDateString('pt-BR') : '—',
+      qtdUltimaVenda: vendasAoVivoLote.qtdUltimaVenda || 0,
+    };
+  }
+
   try {
-    const [respCompras, respVendas] = await Promise.all([
-      fetchComTimeout(WEBAPP_URL + '?codBarra=' + encodeURIComponent(codigoBarras) + '&tipo=compras'),
-      fetchComTimeout(WEBAPP_URL + '?codBarra=' + encodeURIComponent(codigoBarras) + '&tipo=vendas'),
-    ]);
+    const chamadas = [fetchComTimeout(WEBAPP_URL + '?codBarra=' + encodeURIComponent(codigoBarras) + '&tipo=compras')];
+    if (!vendasAoVivoLote) {
+      chamadas.push(fetchComTimeout(WEBAPP_URL + '?codBarra=' + encodeURIComponent(codigoBarras) + '&tipo=vendas'));
+    }
+    const [respCompras, respVendas] = await Promise.all(chamadas);
     const jsonCompras = await respCompras.json();
-    const jsonVendas = await respVendas.json();
 
     if (jsonCompras.ok && jsonCompras.dados && jsonCompras.dados.retorno && jsonCompras.dados.retorno[0]) {
       const itemCompras = jsonCompras.dados.retorno[0];
@@ -1028,23 +1043,26 @@ async function buscarComprasVendasReais(codigoBarras) {
       }));
     }
 
-    if (jsonVendas.ok && jsonVendas.dados && jsonVendas.dados.retorno && jsonVendas.dados.retorno[0]) {
-      const itemVendas = jsonVendas.dados.retorno[0];
-      // A Sysemp atualizou o método listarVendasMediaPorProduto (ago/2026)
-      // pra exigir datainicial/datafinal em vez de fixar 12 meses sozinha,
-      // e confirmou (suporte, 18/08/2026) que os campos agora são "Média
-      // Mensal" e "Total vendido", sem o sufixo "12 Meses". Mantém a
-      // grafia antiga como fallback só por segurança.
-      const campoVendas = (...chaves) => {
-        for (const c of chaves) if (itemVendas[c] !== undefined && itemVendas[c] !== null && itemVendas[c] !== '') return itemVendas[c];
-        return undefined;
-      };
-      resultado.vendas = {
-        mediaMensal12M: parseFloat(campoVendas('Média Mensal', 'Média Mensal 12 Meses')) || 0,
-        totalVendido12M: parseFloat(campoVendas('Total vendido', 'Total Vendido', 'Total vendido 12 Meses')) || 0,
-        dataUltimaVenda: campoVendas('Data Última Venda') ? new Date(campoVendas('Data Última Venda') + 'T00:00:00').toLocaleDateString('pt-BR') : '—',
-        qtdUltimaVenda: parseFloat(campoVendas('Quantidade Última Venda')) || 0,
-      };
+    if (respVendas) {
+      const jsonVendas = await respVendas.json();
+      if (jsonVendas.ok && jsonVendas.dados && jsonVendas.dados.retorno && jsonVendas.dados.retorno[0]) {
+        const itemVendas = jsonVendas.dados.retorno[0];
+        // A Sysemp atualizou o método listarVendasMediaPorProduto (ago/2026)
+        // pra exigir datainicial/datafinal em vez de fixar 12 meses sozinha,
+        // e confirmou (suporte, 18/08/2026) que os campos agora são "Média
+        // Mensal" e "Total vendido", sem o sufixo "12 Meses". Mantém a
+        // grafia antiga como fallback só por segurança.
+        const campoVendas = (...chaves) => {
+          for (const c of chaves) if (itemVendas[c] !== undefined && itemVendas[c] !== null && itemVendas[c] !== '') return itemVendas[c];
+          return undefined;
+        };
+        resultado.vendas = {
+          mediaMensal12M: parseFloat(campoVendas('Média Mensal', 'Média Mensal 12 Meses')) || 0,
+          totalVendido12M: parseFloat(campoVendas('Total vendido', 'Total Vendido', 'Total vendido 12 Meses')) || 0,
+          dataUltimaVenda: campoVendas('Data Última Venda') ? new Date(campoVendas('Data Última Venda') + 'T00:00:00').toLocaleDateString('pt-BR') : '—',
+          qtdUltimaVenda: parseFloat(campoVendas('Quantidade Última Venda')) || 0,
+        };
+      }
     }
 
     if (!resultado.compras && !resultado.vendas) {
@@ -1122,7 +1140,7 @@ async function abrirDetalheProduto(produto) {
   document.getElementById('modal-backdrop').classList.add('open');
   painel.focus();
 
-  const dadosReais = await buscarComprasVendasReais(produto.codigoBarras);
+  const dadosReais = await buscarComprasVendasReais(produto.codigoBarras, produto.vendasAoVivoLote);
 
   montarConteudoModal(produto, dadosReais);
 }
@@ -1537,7 +1555,7 @@ async function gerarPedidoSysemp(marca, itens) {
       qtd = calcularPedidoSugeridoAoVivo(d) || 0;
     } else {
       // Último recurso: busca a venda real ao vivo, um produto por vez.
-      const dadosVendas = await buscarComprasVendasReais(d.codigoBarras);
+      const dadosVendas = await buscarComprasVendasReais(d.codigoBarras, d.vendasAoVivoLote);
       if (dadosVendas.vendas) {
         qtd = calcularSugestaoSemPlanilha(d, dadosVendas.vendas.mediaMensal12M);
       } else {
