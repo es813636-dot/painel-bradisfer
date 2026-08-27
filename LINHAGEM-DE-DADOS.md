@@ -2,7 +2,7 @@
 
 > Documento de governança. Objetivo: qualquer pessoa (inclusive uma versão futura de mim) consegue olhar aqui e saber **de onde vem cada dado, quem é responsável por atualizá-lo, e qual a validade dele** — sem precisar reconstruir a investigação do zero, como aconteceu com o bug do código de barras em 25/08/2026 (a aba `Base` intermediária só foi descoberta durante aquela depuração).
 >
-> Última revisão: 25/08/2026. Atualizar este arquivo sempre que uma fonte de dados, aba ou script mudar de lugar/comportamento — é uma falha de governança deixar esse documento ficar desatualizado silenciosamente, o mesmo problema que ele existe pra evitar.
+> Última revisão: 25/08/2026 (migração do doGet pro Cloudflare Worker). Atualizar este arquivo sempre que uma fonte de dados, aba ou script mudar de lugar/comportamento — é uma falha de governança deixar esse documento ficar desatualizado silenciosamente, o mesmo problema que ele existe pra evitar.
 
 ## Visão geral do fluxo
 
@@ -17,14 +17,14 @@ flowchart LR
     PAINEL[Painel]
     REL["Relatorio Comparativo"]
     JS["script.js (navegador)"]
-    APPS["Apps Script doGet"]
+    CFW["Cloudflare Worker\n(produto-detalhe.js)"]
 
     SYS -- "listaProdutosComEstoquePrecoVendaCusto\n(a cada 10 min, GitHub Actions)" --> PROD
     PROD -- "formula =SE(...)" --> BASE
     BASE -- "formula ={Base!A2:O5502}" --> BL
     SYS -- "listarVendasMediaPorProduto\n(a cada hora, GitHub Actions)" --> VAV
-    SYS -. "1 produto por vez, sob demanda\n(clique no modal)" .-> APPS
-    APPS -. resposta direta, nao passa pela planilha .-> JS
+    SYS -. "1 produto por vez, sob demanda\n(clique no modal)" .-> CFW
+    CFW -. resposta direta, nao passa pela planilha .-> JS
     BL -- "CSV publico (gviz)" --> JS
     AMM -- "CSV publico (gviz)\nfonte estatica, import unico" --> JS
     VAV -- "CSV publico (gviz)" --> JS
@@ -38,10 +38,12 @@ flowchart LR
 |---|---|---|---|
 | `listaProdutosComEstoquePrecoVendaCusto` | `automacao-vendas/atualizar-estoque.js` (GitHub Actions) | A cada 10 min (5h–23h59 e 0h–2h Brasília) | Catálogo inteiro: estoque, mín/máx, custo, preço de venda, código de barras |
 | `listarVendasMediaPorProduto` (sem `cod_barra`) | `automacao-vendas/atualizar-vendas.js` (GitHub Actions) | A cada hora (mesma janela) | Catálogo inteiro: média mensal e total vendido (12 meses), por produto |
-| `listarVendasMediaPorProduto`/compras (1 produto) | Apps Script `doGet` (projeto "Estoque") | Sob demanda, a cada clique no modal de produto | Últimas compras e venda AO VIVO de 1 produto só |
+| `listarComprasPorProduto` / `listarVendasMediaPorProduto` (1 produto) | **Cloudflare Worker** `cloudflare-worker/produto-detalhe.js` (`rough-dust-49b2.bradisferdistribuuidora.workers.dev`) | Sob demanda, a cada clique no modal de produto | Últimas compras e venda AO VIVO de 1 produto só |
 | (endpoint de venda por vendedor/meta) | — não implementado | — | Pedido enviado à Sysemp, resposta pendente — ver `CONTEXTO.md` |
 
-**Autenticação**: header `Token` (não `Authorization: Bearer`), enviado em toda chamada. Token guardado como secret `SYSEMP_TOKEN` no GitHub (para as automações) e como propriedade do script no Apps Script (para o `doGet`). Sem endpoint de login separado — é um valor estático fornecido pela Sysemp.
+**Autenticação**: header `Token` (não `Authorization: Bearer`), enviado em toda chamada. Token guardado como secret `SYSEMP_TOKEN` no GitHub (para as automações) e como Secret nas variáveis do Cloudflare Worker (para o clique individual). Sem endpoint de login separado — é um valor estático fornecido pela Sysemp.
+
+**Nota de performance (25/08/2026)**: migrar do Apps Script `doGet` pro Worker deixou a busca de "compras" ~8x mais rápida (2,9s → 0,36s, eliminando o redirecionamento interno do Google). A busca de "vendas" continuou parecida (5–15s) — o gargalo é a própria Sysemp calculando 1 ano de histórico por produto, não infraestrutura de transporte; não dá pra resolver trocando de servidor de novo.
 
 ## Planilha Google (`Bradisfer_Painel_Estoque_v2`, ID `1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A`)
 
@@ -81,6 +83,7 @@ Grava com uma aspa simples como parte literal do conteúdo (`'0074468051034`), n
 | Planilha Google (estrutura das abas, fórmulas) | Usuário — criada originalmente a partir de um `.xlsx` importado, mantida à mão nas partes não automatizadas (`Base`, `BaseLooker`, `AnaliseMinMax`) |
 | Automações (GitHub Actions, `automacao-vendas/*.js`) | Código no repositório, sem dono humano designado além de quem tem acesso ao repo |
 | Lista de e-mails autorizados no painel | Usuário (`EMAILS_PERMITIDOS` em `script.js`) |
+| Cloudflare Worker (`produto-detalhe.js`) | Conta Cloudflare do usuário (`bradisferdistribuuidora`) — código versionado em `cloudflare-worker/produto-detalhe.js`, mas o deploy em si é manual (colar no editor do dashboard), não automatizado por CI |
 
 ## Lacunas conhecidas (não resolvidas ainda)
 
@@ -88,4 +91,4 @@ Grava com uma aspa simples como parte literal do conteúdo (`'0074468051034`), n
 2. **`TABELA_PRECOS` congelada** desde 18/08/2026, embutida no código em vez de numa aba viva.
 3. **`AnaliseMinMax` congelada** desde a importação original — só fallback, mas ainda influencia Curva ABC/Nível de Atendimento exibidos.
 4. **CSV público sem proteção real** — só a tela do painel tem login, os dados brutos continuam acessíveis por quem souber a URL.
-5. **Código morto no Apps Script** — as funções antigas `atualizarEstoque`/`atualizarVendasAoVivo` continuam fisicamente no arquivo do projeto "Estoque", mesmo com os gatilhos removidos (confirmado 25/08/2026). Não executam mais, mas podem confundir quem abrir o projeto sem saber disso.
+5. **Apps Script "Estoque" 100% desativado, mas ainda existe** — desde 25/08/2026 (migração do `doGet` pro Cloudflare Worker), nenhuma parte do Apps Script está mais em uso pelo painel: `atualizarEstoque`/`atualizarVendasAoVivo` já tinham os gatilhos removidos antes, e agora o `doGet` também não é mais chamado por `script.js`. O projeto e o código continuam existindo no Apps Script (não foi excluído), só não roda mais nada. Considerar excluir a implantação Web App lá (Gerenciar implantações → Arquivar) pra deixar claro que está desativado, ou pelo menos anotar isso no próprio arquivo do projeto.
