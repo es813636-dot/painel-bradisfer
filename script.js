@@ -8,9 +8,14 @@ const ANALISE_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '
 // pra todo o catálogo, sem precisar clicar item por item.
 const VENDAS_VIVO_SHEET_NAME = 'VendasAoVivo';
 const VENDAS_VIVO_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(VENDAS_VIVO_SHEET_NAME);
-// Ponte (Apps Script Web App) que busca compras/vendas reais na Sysemp,
-// um produto por vez, sob demanda (ao clicar num item).
-const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzlQJOM_53MJDm3OIuGGhtl-XDJK69ckZmqy300W0Ius7MJ4MTas7OgIuoNlfTtXSbwaw/exec';
+// Ponte (Cloudflare Worker, ver cloudflare-worker/produto-detalhe.js) que
+// busca compras/vendas reais na Sysemp, um produto por vez, sob demanda
+// (ao clicar num item). Substituiu o Apps Script Web App em 25/08/2026 --
+// eliminava o redirecionamento interno do Google (ver CONTEXTO.md e
+// LINHAGEM-DE-DADOS.md pro historico). "Compras" ficou ~8x mais rapido
+// (2,9s -> 0,36s); "vendas" continua limitado pela propria Sysemp
+// calculando 1 ano de historico por produto (5-15s, nao e coisa nossa).
+const WEBAPP_URL = 'https://rough-dust-49b2.bradisferdistribuuidora.workers.dev';
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 // A Sysemp calcula "Média Mensal" como total vendido em 365 dias / 12 — usamos
 // o mesmo divisor pra converter Lead Time (dias) em "meses", senão a sugestão
