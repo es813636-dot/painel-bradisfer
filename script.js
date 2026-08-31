@@ -86,7 +86,19 @@ let buscaTexto = '';
 let ordemCol = 'valorRepor';
 let ordemDir = -1;
 let marcaExpandidaTabela = '';
-let abaSelecionada = 'estoque'; // 'estoque' ou 'vendas'
+let abaSelecionada = 'estoque'; // 'estoque', 'vendas' ou 'atencao'
+
+// Estado da IA (aba Atenção) -- resumo automático + chat, ambos passando
+// pelo mesmo Worker que já fala com a Sysemp (WEBAPP_URL), rota nova via
+// POST. Nunca dispara chamada de novo sozinho num re-render: só quando o
+// usuário entra na aba (resumo) ou envia uma pergunta (chat) -- ver
+// buscarResumoIA()/enviarPerguntaIA().
+let resumoIA = null;
+let resumoIACarregando = false;
+let resumoIAErro = null;
+let chatIAHistorico = []; // [{ papel: 'usuario'|'assistente', texto }]
+let chatIACarregando = false;
+let chatIAErro = null;
 let mostrarItensNormaisMarca = false; // segunda seção (estoque normal/excesso) começa fechada
 let marcaRelatorioVendas = ''; // marca selecionada no relatório "itens mais vendidos por marca" (aba Vendas)
 let filtroGrupoVendas = ''; // filtro por grupo/linha de produto, exclusivo da aba Vendas
@@ -1637,6 +1649,78 @@ function calcularAlertas(dados) {
   return { itensAlerta, marcasAlerta };
 }
 
+// Condensa a saída de calcularAlertas() pro tamanho que manda pra IA --
+// só os itens/marcas mais relevantes, não o catálogo inteiro, pra manter
+// o custo por chamada baixo e previsível (não escala com o tamanho do
+// catálogo).
+function montarContextoIA(itensAlerta, marcasAlerta) {
+  const criticos = itensAlerta.filter(x => x.urgencia === 'CRITICO');
+  const atencao = itensAlerta.filter(x => x.urgencia === 'ATENCAO');
+  const faturamentoEmRisco = itensAlerta.reduce((s, x) => s + x.faturamentoMensal, 0);
+  return {
+    totalCriticos: criticos.length,
+    totalAtencao: atencao.length,
+    faturamentoMensalEmRisco: Math.round(faturamentoEmRisco),
+    marcasEmAlertaMaisRelevantes: marcasAlerta.slice(0, 15).map(m => ({
+      marca: m.marca, criticos: m.criticos, atencao: m.atencao, faturamentoEmRisco: Math.round(m.faturamentoEmRisco),
+    })),
+    itensMaisUrgentes: itensAlerta.slice(0, 25).map(x => ({
+      produto: x.produtoRef.produto, marca: x.produtoRef.marca, urgencia: x.urgencia,
+      curvaAoVivo: x.curvaAoVivo, curvaPlanilha: x.curvaPlanilha, estoqueAtual: x.produtoRef.estoque,
+      coberturaDias: x.coberturaDias !== null ? Math.round(x.coberturaDias) : null,
+      leadTimeDias: x.leadTimeDias, faturamentoMensalEstimado: Math.round(x.faturamentoMensal), motivo: x.motivo,
+    })),
+  };
+}
+
+async function buscarResumoIA(contexto) {
+  resumoIACarregando = true;
+  resumoIAErro = null;
+  renderizar();
+  try {
+    const resp = await fetch(WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ acao: 'resumo', contexto }),
+    });
+    const dados = await resp.json();
+    if (dados.ok) {
+      resumoIA = dados.texto;
+    } else {
+      resumoIAErro = dados.erro || 'Erro desconhecido ao gerar o resumo.';
+    }
+  } catch (err) {
+    resumoIAErro = String(err);
+  }
+  resumoIACarregando = false;
+  renderizar();
+}
+
+async function enviarPerguntaIA(contexto, pergunta) {
+  if (!pergunta.trim()) return;
+  chatIAHistorico.push({ papel: 'usuario', texto: pergunta });
+  chatIACarregando = true;
+  chatIAErro = null;
+  renderizar();
+  try {
+    const resp = await fetch(WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ acao: 'chat', contexto, pergunta, historico: chatIAHistorico.slice(0, -1) }),
+    });
+    const dados = await resp.json();
+    if (dados.ok) {
+      chatIAHistorico.push({ papel: 'assistente', texto: dados.texto });
+    } else {
+      chatIAErro = dados.erro || 'Erro desconhecido ao responder.';
+    }
+  } catch (err) {
+    chatIAErro = String(err);
+  }
+  chatIACarregando = false;
+  renderizar();
+}
+
 async function gerarPedidoSysemp(marca, itens) {
   const btn = document.getElementById('gerar-pedido-btn');
   const textoOriginalBtn = btn ? btn.textContent : null;
@@ -2348,6 +2432,15 @@ function renderizarAbaAtencao() {
   const criticos = itensAlerta.filter(x => x.urgencia === 'CRITICO');
   const atencao = itensAlerta.filter(x => x.urgencia === 'ATENCAO');
   const faturamentoTotalEmRisco = itensAlerta.reduce((s, x) => s + x.faturamentoMensal, 0);
+  const contextoIA = montarContextoIA(itensAlerta, marcasAlerta);
+
+  // Dispara o resumo automático uma vez só, na primeira vez que a aba é
+  // aberta nesta sessão (ou depois de "Atualizar análise") -- nunca em
+  // todo re-render, senão qualquer clique/filtro dispararia uma chamada
+  // nova à IA.
+  if (resumoIA === null && !resumoIACarregando && !resumoIAErro) {
+    buscarResumoIA(contextoIA);
+  }
 
   document.getElementById('app').innerHTML =
     barraAbas() +
@@ -2357,6 +2450,21 @@ function renderizarAbaAtencao() {
       '<div class="kpi-card accent-amber"><div class="label">Itens em atenção</div><div class="value">' + fmtNum(atencao.length) + '</div></div>' +
       '<div class="kpi-card hero"><div class="label">Faturamento mensal em risco</div><div class="value" title="' + fmtMoeda(faturamentoTotalEmRisco) + '">' + fmtMoedaCompacta(faturamentoTotalEmRisco) + '</div></div>' +
       '<div class="kpi-card hero"><div class="label">Marcas afetadas</div><div class="value">' + fmtNum(marcasAlerta.length) + '</div></div>' +
+    '</div>' +
+
+    '<div class="panel" style="margin-bottom:16px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
+        '<h2 style="margin:0;">' + icon('sirenIcon', 'icon-sm') + 'Análise da IA</h2>' +
+        '<button class="refresh-btn" id="atualizar-resumo-ia-btn"' + (resumoIACarregando ? ' disabled' : '') + '>' + icon('trendUp', 'icon-sm') + ' Atualizar análise</button>' +
+      '</div>' +
+      '<p class="hint" style="margin-top:10px;">Interpretação em texto dos dados abaixo (curva, cobertura, lead time) — a IA só analisa e prioriza, quem calcula os números é sempre o motor de regras.</p>' +
+      (resumoIACarregando
+        ? '<p class="hint" style="padding:12px 0;">Analisando… (pode levar alguns segundos)</p>'
+        : resumoIAErro
+          ? '<p class="hint" style="padding:12px 0;color:var(--red, #e66767);">Erro ao gerar a análise: ' + escapeHtml(resumoIAErro) + '</p>'
+          : resumoIA
+            ? '<div style="white-space:pre-wrap;line-height:1.6;padding:8px 0;">' + escapeHtml(resumoIA) + '</div>'
+            : '') +
     '</div>' +
 
     '<div class="panel" style="margin-bottom:16px;">' +
@@ -2399,7 +2507,43 @@ function renderizarAbaAtencao() {
               '</tr>';
             }).join('') +
           '</tbody></table>') +
+    '</div>' +
+
+    '<div class="panel" style="margin-top:16px;">' +
+      '<h2 style="margin:0;">Perguntar à IA</h2>' +
+      '<p class="hint" style="margin-top:10px;">Pergunte sobre os dados acima — ex. "o que eu compro essa semana com o dinheiro que eu tenho?" ou "por que a PYRAMID está crítica?". A IA só enxerga os dados desta aba, não o catálogo inteiro.</p>' +
+      '<div id="chat-ia-mensagens" style="display:flex;flex-direction:column;gap:10px;margin:14px 0;max-height:360px;overflow-y:auto;">' +
+        (chatIAHistorico.length === 0
+          ? '<p class="hint">Nenhuma pergunta ainda.</p>'
+          : chatIAHistorico.map(m =>
+              '<div style="align-self:' + (m.papel === 'usuario' ? 'flex-end' : 'flex-start') + ';max-width:80%;padding:10px 14px;border-radius:10px;white-space:pre-wrap;line-height:1.5;background:' +
+                (m.papel === 'usuario' ? 'var(--gold);color:#000;' : 'var(--bg-elevado, #1c1c21);color:var(--text-principal, #e5e5e5);') + '">' +
+                escapeHtml(m.texto) +
+              '</div>'
+            ).join('')) +
+        (chatIACarregando ? '<div style="align-self:flex-start;" class="hint">Pensando…</div>' : '') +
+      '</div>' +
+      (chatIAErro ? '<p class="hint" style="color:var(--red, #e66767);margin-bottom:10px;">Erro: ' + escapeHtml(chatIAErro) + '</p>' : '') +
+      '<form id="chat-ia-form" style="display:flex;gap:8px;">' +
+        '<input type="text" id="chat-ia-input" placeholder="Digite sua pergunta..." style="flex:1;" autocomplete="off"' + (chatIACarregando ? ' disabled' : '') + '>' +
+        '<button type="submit" class="refresh-btn"' + (chatIACarregando ? ' disabled' : '') + '>Enviar</button>' +
+      '</form>' +
     '</div>';
+
+  const atualizarResumoIABtn = document.getElementById('atualizar-resumo-ia-btn');
+  if (atualizarResumoIABtn) atualizarResumoIABtn.addEventListener('click', () => {
+    resumoIA = null;
+    resumoIAErro = null;
+    renderizar();
+  });
+
+  const chatIAForm = document.getElementById('chat-ia-form');
+  if (chatIAForm) chatIAForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const input = document.getElementById('chat-ia-input');
+    const pergunta = input ? input.value : '';
+    if (pergunta.trim()) enviarPerguntaIA(contextoIA, pergunta);
+  });
 
   const abaEstoqueEl3 = document.getElementById('aba-estoque');
   if (abaEstoqueEl3) abaEstoqueEl3.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
