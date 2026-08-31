@@ -747,6 +747,47 @@
     padding: 10px 14px; font-size: 12px; margin: 16px 0; line-height: 1.5;
   }
 
+  /* ---- Assistente de IA -- botão flutuante + painel, acessível de
+     qualquer aba (não fica dentro de #app, então sobrevive ao re-render
+     de qualquer aba). Mesmo padrão visual do modal de produto. ---- */
+  .fab-ia {
+    position: fixed; right: 24px; bottom: 24px; z-index: 45;
+    width: 56px; height: 56px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(155deg, var(--gold-bright), var(--gold)); color: #000;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow-elevation-2);
+    transition: transform 0.15s, background 0.15s, color 0.15s;
+  }
+  .fab-ia:hover { transform: scale(1.06); }
+  .fab-ia:active { transform: scale(0.96); }
+  .fab-ia .icon { width: 26px; height: 26px; }
+  .fab-ia.aberto { background: var(--glass); border: 1px solid var(--gold); color: var(--gold); }
+
+  .painel-ia-flutuante {
+    position: fixed; right: 24px; bottom: 92px; z-index: 45;
+    width: 380px; max-width: calc(100vw - 48px); max-height: min(560px, calc(100vh - 140px));
+    background: var(--glass); border: 1px solid var(--gold); border-radius: var(--radius-md);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column; overflow: hidden;
+    opacity: 0; pointer-events: none; transform: translateY(12px);
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .painel-ia-flutuante.aberto { opacity: 1; pointer-events: all; transform: translateY(0); }
+  .painel-ia-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 16px; border-bottom: 1px solid var(--glass-border-soft); flex-shrink: 0;
+  }
+  .painel-ia-titulo {
+    font-family: var(--font-display); font-size: 12px; font-weight: 600; color: var(--gold);
+    text-transform: uppercase; letter-spacing: 0.8px; display: flex; align-items: center; gap: 7px;
+  }
+  .painel-ia-corpo { padding: 14px 16px; overflow-y: auto; flex: 1; }
+
+  @media (max-width: 480px) {
+    .painel-ia-flutuante { right: 12px; left: 12px; width: auto; bottom: 84px; }
+    .fab-ia { right: 16px; bottom: 16px; }
+  }
+
   /* ---- Menu de navegação lateral: efeito 3D "porta abrindo" ---- */
   body { perspective: 1600px; }
   .scene-3d {

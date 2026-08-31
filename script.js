@@ -87,7 +87,7 @@ let buscaTexto = '';
 let ordemCol = 'valorRepor';
 let ordemDir = -1;
 let marcaExpandidaTabela = '';
-let abaSelecionada = 'estoque'; // 'estoque', 'vendas', 'atencao' ou 'ia'
+let abaSelecionada = 'estoque'; // 'estoque', 'vendas' ou 'atencao'
 
 // Estado da IA (aba Atenção) -- resumo automático + chat, ambos passando
 // pelo mesmo Worker que já fala com a Sysemp (WEBAPP_URL), rota nova via
@@ -100,6 +100,7 @@ let resumoIAErro = null;
 let chatIAHistorico = []; // [{ papel: 'usuario'|'assistente', texto }]
 let chatIACarregando = false;
 let chatIAErro = null;
+let painelIAFlutuanteAberto = false; // controla o painel do botão flutuante, fora de #app
 let mostrarItensNormaisMarca = false; // segunda seção (estoque normal/excesso) começa fechada
 let marcaRelatorioVendas = ''; // marca selecionada no relatório "itens mais vendidos por marca" (aba Vendas)
 let filtroGrupoVendas = ''; // filtro por grupo/linha de produto, exclusivo da aba Vendas
@@ -1531,6 +1532,16 @@ document.addEventListener('click', e => {
   }
 });
 
+// ---- Botão flutuante da IA (fora de #app -- acessível de qualquer aba) ----
+document.getElementById('fab-ia-btn').innerHTML = icon('robotIcon', 'icon-md');
+document.getElementById('fechar-painel-ia-btn').innerHTML = icon('x', 'icon-sm');
+document.getElementById('painel-ia-titulo-texto').innerHTML = icon('robotIcon', 'icon-sm') + 'Assistente de IA';
+document.getElementById('fab-ia-btn').addEventListener('click', alternarPainelIAFlutuante);
+document.getElementById('fechar-painel-ia-btn').addEventListener('click', alternarPainelIAFlutuante);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && painelIAFlutuanteAberto) alternarPainelIAFlutuante();
+});
+
 // ----------------------------------------------------------------------
 // Exportação no formato de importação de pedido do Sysemp
 // (tela "Pedido Importar Texto": separador ; , decimal com vírgula,
@@ -1677,7 +1688,7 @@ function montarContextoIA(itensAlerta, marcasAlerta) {
 async function buscarResumoIA(contexto) {
   resumoIACarregando = true;
   resumoIAErro = null;
-  renderizar();
+  renderizarPainelIAFlutuante();
   try {
     const resp = await fetch(WEBAPP_URL, {
       method: 'POST',
@@ -1694,7 +1705,7 @@ async function buscarResumoIA(contexto) {
     resumoIAErro = String(err);
   }
   resumoIACarregando = false;
-  renderizar();
+  renderizarPainelIAFlutuante();
 }
 
 async function enviarPerguntaIA(contexto, pergunta) {
@@ -1702,7 +1713,7 @@ async function enviarPerguntaIA(contexto, pergunta) {
   chatIAHistorico.push({ papel: 'usuario', texto: pergunta });
   chatIACarregando = true;
   chatIAErro = null;
-  renderizar();
+  renderizarPainelIAFlutuante();
   try {
     const resp = await fetch(WEBAPP_URL, {
       method: 'POST',
@@ -1719,7 +1730,7 @@ async function enviarPerguntaIA(contexto, pergunta) {
     chatIAErro = String(err);
   }
   chatIACarregando = false;
-  renderizar();
+  renderizarPainelIAFlutuante();
 }
 
 async function gerarPedidoSysemp(marca, itens) {
@@ -2378,8 +2389,6 @@ function renderizarAbaVendas() {
   if (abaVendasEl2) abaVendasEl2.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
   const abaAtencaoEl2 = document.getElementById('aba-atencao');
   if (abaAtencaoEl2) abaAtencaoEl2.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
-  const abaIaEl2 = document.getElementById('aba-ia');
-  if (abaIaEl2) abaIaEl2.addEventListener('click', () => { abaSelecionada = 'ia'; fecharNavSidebar(); renderizar(); });
 
   const selectMarcaVendas = document.getElementById('select-marca-vendas');
   if (selectMarcaVendas) selectMarcaVendas.addEventListener('change', e => { marcaRelatorioVendas = e.target.value; animarTabelasVendasNoProximoRender = true; renderizar(); });
@@ -2421,8 +2430,7 @@ function barraAbas() {
   document.getElementById('nav-sidebar-body').innerHTML =
     '<button class="nav-item' + (abaSelecionada === 'estoque' ? ' active' : '') + '" id="aba-estoque">' + icon('package', 'icon-md') + '<span>Estoque</span></button>' +
     '<button class="nav-item' + (abaSelecionada === 'vendas' ? ' active' : '') + '" id="aba-vendas">' + icon('chartBar', 'icon-md') + '<span>Vendas</span></button>' +
-    '<button class="nav-item' + (abaSelecionada === 'atencao' ? ' active' : '') + '" id="aba-atencao">' + icon('sirenIcon', 'icon-md') + '<span>Atenção</span></button>' +
-    '<button class="nav-item' + (abaSelecionada === 'ia' ? ' active' : '') + '" id="aba-ia">' + icon('robotIcon', 'icon-md') + '<span>IA</span></button>';
+    '<button class="nav-item' + (abaSelecionada === 'atencao' ? ' active' : '') + '" id="aba-atencao">' + icon('sirenIcon', 'icon-md') + '<span>Atenção</span></button>';
   return '';
 }
 
@@ -2495,8 +2503,6 @@ function renderizarAbaAtencao() {
   if (abaVendasEl3) abaVendasEl3.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
   const abaAtencaoEl3 = document.getElementById('aba-atencao');
   if (abaAtencaoEl3) abaAtencaoEl3.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
-  const abaIaEl3 = document.getElementById('aba-ia');
-  if (abaIaEl3) abaIaEl3.addEventListener('click', () => { abaSelecionada = 'ia'; fecharNavSidebar(); renderizar(); });
 
   document.querySelectorAll('tbody tr.clickable[data-idx-alerta]').forEach(tr => tr.addEventListener('click', () => {
     const item = itensAlerta[parseInt(tr.dataset.idxAlerta, 10)];
@@ -2512,76 +2518,77 @@ function renderizarAbaAtencao() {
   tornarClicaveisAcessiveis(document.getElementById('app'));
 }
 
-// Aba "IA" -- chat + resumo sob demanda, acessível pelo menu principal.
-// Diferente da aba Atenção (motor de regras, sempre visível, sem custo),
-// aqui a IA só fala quando o usuário pede -- nem o resumo dispara sozinho
-// ao abrir a aba, só quando clicado. Usa o mesmo contexto condensado
-// (montarContextoIA) calculado a partir do motor de regras -- a IA
-// continua só interpretando/priorizando, nunca recalculando números.
-function renderizarAbaIA() {
+// Painel flutuante da IA -- acessível de qualquer aba via botão fixo
+// (#fab-ia-btn), fora de #app, então sobrevive à troca de aba e ao
+// re-render normal do painel. Só fala quando o usuário pede: nem o resumo
+// nem o chat disparam sozinhos ao abrir o painel. Usa o mesmo contexto
+// condensado (montarContextoIA) calculado a partir do motor de regras da
+// aba Atenção -- a IA continua só interpretando/priorizando, nunca
+// recalculando números.
+function renderizarPainelIAFlutuante() {
+  const painel = document.getElementById('painel-ia-flutuante');
+  const fab = document.getElementById('fab-ia-btn');
+  painel.classList.toggle('aberto', painelIAFlutuanteAberto);
+  painel.setAttribute('aria-hidden', painelIAFlutuanteAberto ? 'false' : 'true');
+  fab.classList.toggle('aberto', painelIAFlutuanteAberto);
+  fab.setAttribute('aria-expanded', painelIAFlutuanteAberto ? 'true' : 'false');
+
+  if (!painelIAFlutuanteAberto) return;
+
   const { itensAlerta, marcasAlerta } = calcularAlertas(dadosCompletos);
   const contextoIA = montarContextoIA(itensAlerta, marcasAlerta);
 
-  document.getElementById('app').innerHTML =
-    barraAbas() +
-
-    '<div class="panel" style="margin-bottom:16px;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
-        '<h2 style="margin:0;">' + icon('robotIcon', 'icon-sm') + 'Análise da IA</h2>' +
-        '<button class="refresh-btn" id="gerar-resumo-ia-btn"' + (resumoIACarregando ? ' disabled' : '') + '>' + icon('trendUp', 'icon-sm') + ' ' + (resumoIA ? 'Atualizar análise' : 'Gerar resumo') + '</button>' +
+  document.getElementById('painel-ia-corpo').innerHTML =
+    '<div style="margin-bottom:16px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">' +
+        '<span class="hint" style="margin:0;">Resumo dos itens/marcas em atenção</span>' +
+        '<button class="refresh-btn" id="gerar-resumo-ia-btn"' + (resumoIACarregando ? ' disabled' : '') + '>' + (resumoIA ? 'Atualizar' : 'Gerar resumo') + '</button>' +
       '</div>' +
-      '<p class="hint" style="margin-top:10px;">Interpretação em texto dos dados da aba Atenção (curva, cobertura, lead time) — a IA só analisa e prioriza sob pedido, quem calcula os números é sempre o motor de regras.</p>' +
       (resumoIACarregando
-        ? '<p class="hint" style="padding:12px 0;">Analisando… (pode levar alguns segundos)</p>'
+        ? '<p class="hint" style="padding:6px 0;">Analisando… (pode levar alguns segundos)</p>'
         : resumoIAErro
-          ? '<p class="hint" style="padding:12px 0;color:var(--red, #e66767);">Erro ao gerar a análise: ' + escapeHtml(resumoIAErro) + '</p>'
+          ? '<p class="hint" style="padding:6px 0;color:var(--red-a);">Erro: ' + escapeHtml(resumoIAErro) + '</p>'
           : resumoIA
-            ? '<div style="white-space:pre-wrap;line-height:1.6;padding:8px 0;">' + escapeHtml(resumoIA) + '</div>'
-            : '<p class="hint" style="padding:12px 0;">Nenhum resumo gerado ainda — clique em "Gerar resumo".</p>') +
+            ? '<div style="white-space:pre-wrap;line-height:1.6;font-size:13px;padding:4px 0;">' + escapeHtml(resumoIA) + '</div>'
+            : '<p class="hint" style="padding:6px 0;">Nenhum resumo gerado ainda.</p>') +
     '</div>' +
 
-    '<div class="panel">' +
-      '<h2 style="margin:0;">Perguntar à IA</h2>' +
-      '<p class="hint" style="margin-top:10px;">Pergunte sobre os itens/marcas que precisam de atenção — ex. "o que eu compro essa semana com o dinheiro que eu tenho?" ou "por que a PYRAMID está crítica?". A IA só enxerga os dados da aba Atenção, não o catálogo inteiro.</p>' +
-      '<div id="chat-ia-mensagens" style="display:flex;flex-direction:column;gap:10px;margin:14px 0;max-height:420px;overflow-y:auto;">' +
-        (chatIAHistorico.length === 0
-          ? '<p class="hint">Nenhuma pergunta ainda.</p>'
-          : chatIAHistorico.map(m =>
-              '<div style="align-self:' + (m.papel === 'usuario' ? 'flex-end' : 'flex-start') + ';max-width:80%;padding:10px 14px;border-radius:10px;white-space:pre-wrap;line-height:1.5;background:' +
-                (m.papel === 'usuario' ? 'var(--gold);color:#000;' : 'var(--bg-elevado, #1c1c21);color:var(--text-principal, #e5e5e5);') + '">' +
-                escapeHtml(m.texto) +
-              '</div>'
-            ).join('')) +
-        (chatIACarregando ? '<div style="align-self:flex-start;" class="hint">Pensando…</div>' : '') +
-      '</div>' +
-      (chatIAErro ? '<p class="hint" style="color:var(--red, #e66767);margin-bottom:10px;">Erro: ' + escapeHtml(chatIAErro) + '</p>' : '') +
-      '<form id="chat-ia-form" style="display:flex;gap:8px;">' +
-        '<input type="text" id="chat-ia-input" placeholder="Digite sua pergunta..." style="flex:1;" autocomplete="off"' + (chatIACarregando ? ' disabled' : '') + '>' +
-        '<button type="submit" class="refresh-btn"' + (chatIACarregando ? ' disabled' : '') + '>Enviar</button>' +
-      '</form>' +
-    '</div>';
+    '<div id="chat-ia-mensagens" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;">' +
+      (chatIAHistorico.length === 0
+        ? '<p class="hint">Pergunte algo sobre os itens/marcas em atenção — ex. "o que eu compro essa semana?".</p>'
+        : chatIAHistorico.map(m =>
+            '<div style="align-self:' + (m.papel === 'usuario' ? 'flex-end' : 'flex-start') + ';max-width:88%;padding:8px 12px;border-radius:10px;white-space:pre-wrap;line-height:1.5;font-size:13px;background:' +
+              (m.papel === 'usuario' ? 'var(--gold);color:#000;' : 'var(--glass-hover);color:var(--text);') + '">' +
+              escapeHtml(m.texto) +
+            '</div>'
+          ).join('')) +
+      (chatIACarregando ? '<div style="align-self:flex-start;" class="hint">Pensando…</div>' : '') +
+    '</div>' +
+    (chatIAErro ? '<p class="hint" style="color:var(--red-a);margin-bottom:8px;">Erro: ' + escapeHtml(chatIAErro) + '</p>' : '') +
+    '<form id="chat-ia-form" style="display:flex;gap:8px;">' +
+      '<input type="text" id="chat-ia-input" placeholder="Digite sua pergunta..." style="flex:1;" autocomplete="off"' + (chatIACarregando ? ' disabled' : '') + '>' +
+      '<button type="submit" class="refresh-btn"' + (chatIACarregando ? ' disabled' : '') + '>Enviar</button>' +
+    '</form>';
 
-  const gerarResumoIABtn = document.getElementById('gerar-resumo-ia-btn');
-  if (gerarResumoIABtn) gerarResumoIABtn.addEventListener('click', () => buscarResumoIA(contextoIA));
-
-  const chatIAForm = document.getElementById('chat-ia-form');
-  if (chatIAForm) chatIAForm.addEventListener('submit', e => {
+  document.getElementById('gerar-resumo-ia-btn').addEventListener('click', () => buscarResumoIA(contextoIA));
+  document.getElementById('chat-ia-form').addEventListener('submit', e => {
     e.preventDefault();
     const input = document.getElementById('chat-ia-input');
     const pergunta = input ? input.value : '';
     if (pergunta.trim()) enviarPerguntaIA(contextoIA, pergunta);
   });
 
-  const abaEstoqueEl4 = document.getElementById('aba-estoque');
-  if (abaEstoqueEl4) abaEstoqueEl4.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
-  const abaVendasEl4 = document.getElementById('aba-vendas');
-  if (abaVendasEl4) abaVendasEl4.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
-  const abaAtencaoEl4 = document.getElementById('aba-atencao');
-  if (abaAtencaoEl4) abaAtencaoEl4.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
-  const abaIaEl4 = document.getElementById('aba-ia');
-  if (abaIaEl4) abaIaEl4.addEventListener('click', () => { abaSelecionada = 'ia'; fecharNavSidebar(); renderizar(); });
+  const chatMsgs = document.getElementById('chat-ia-mensagens');
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
 
-  tornarClicaveisAcessiveis(document.getElementById('app'));
+function alternarPainelIAFlutuante() {
+  painelIAFlutuanteAberto = !painelIAFlutuanteAberto;
+  renderizarPainelIAFlutuante();
+  if (painelIAFlutuanteAberto) {
+    const input = document.getElementById('chat-ia-input');
+    if (input) input.focus();
+  }
 }
 
 // Medalha (ouro/prata/bronze) só faz sentido visual pras 3 primeiras
@@ -2632,7 +2639,6 @@ function montarRankingMarcas(marcasOrdenadas, todasMarcasOrdenadas, totalGeral, 
 function renderizar() {
   if (abaSelecionada === 'vendas') { renderizarAbaVendas(); return; }
   if (abaSelecionada === 'atencao') { renderizarAbaAtencao(); return; }
-  if (abaSelecionada === 'ia') { renderizarAbaIA(); return; }
   if (diaRotinaSelecionado === null) diaRotinaSelecionado = diaSemanaAtual() || 'SEG';
 
   let dados = dadosCompletos.filter(d =>
@@ -2972,8 +2978,6 @@ function renderizar() {
   if (abaVendasEl) abaVendasEl.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
   const abaAtencaoEl = document.getElementById('aba-atencao');
   if (abaAtencaoEl) abaAtencaoEl.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
-  const abaIaEl = document.getElementById('aba-ia');
-  if (abaIaEl) abaIaEl.addEventListener('click', () => { abaSelecionada = 'ia'; fecharNavSidebar(); renderizar(); });
   document.getElementById('filtro-grupo').addEventListener('change', e => { filtroGrupo = e.target.value; renderizar(); });
   const aplicarBuscaProduto = debounce(e => {
     const cursorPos = e.target.selectionStart;
