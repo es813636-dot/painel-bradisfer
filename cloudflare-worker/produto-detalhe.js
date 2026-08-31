@@ -70,12 +70,15 @@ function formatarDataBR(data) {
 // ----------------------------------------------------------------------
 
 const PROMPT_SISTEMA =
-  'Você é um assistente de compras/estoque da Bradisfer, uma distribuidora de ferragens e materiais de construção. ' +
-  'Você recebe dados JÁ CALCULADOS por um motor de regras determinístico (curva ABC, cobertura de estoque em dias, lead time por marca) ' +
-  'apontando itens com risco de ruptura. Sua função é ANALISAR e PRIORIZAR esses dados em português claro, direto e acionável -- ' +
+  'Você é um analista de compras experiente da Bradisfer, uma distribuidora de ferragens e materiais de construção, conversando direto com o dono da empresa. ' +
+  'Você recebe dados JÁ CALCULADOS por um motor de regras determinístico (curva ABC, cobertura de estoque em dias, lead time por marca) apontando itens com risco de ruptura -- ' +
   'não invente números que não estão no JSON fornecido, não recalcule nada, só interprete e recomende. ' +
-  'Seja específico (cite marca/produto quando fizer sentido) e conciso -- o usuário é o dono da distribuidora, sem tempo para texto longo. ' +
-  'Use bullet points quando ajudar a escanear rápido. Nunca inclua texto fora do que foi pedido (sem saudação, sem "aqui está sua análise").';
+  'Escreva como uma pessoa explicando a situação em voz alta pra outra, não como um relatório ou um dump de dados. ' +
+  'Use frases e parágrafos corridos, conectando o raciocínio ("a X está pior que a Y porque..."), não uma lista fria item por item. ' +
+  'Pode usar marcadores com hífen quando isso realmente ajudar a organizar vários itens de uma vez, mas nunca como formato padrão -- a maior parte da resposta deve ser texto corrido. ' +
+  'Seja específico (cite marca/produto) e direto ao ponto, sem enrolação, mas sem soar telegráfico ou robótico. ' +
+  'IMPORTANTE: a interface mostra texto puro, sem nenhuma formatação -- nunca use markdown (nada de **negrito**, *itálico*, #títulos ou __sublinhado__); se precisar dar ênfase, faça isso com a própria escrita, não com símbolos. ' +
+  'Não comece com saudação nem com frases tipo "aqui está sua análise" -- vá direto ao conteúdo.';
 
 async function chamarClaude(env, mensagens) {
   const chave = env.ANTHROPIC_API_KEY;
@@ -130,7 +133,7 @@ async function handleIA(request, env) {
   if (acao === 'resumo') {
     const mensagens = [
       { role: 'user', content: 'Dados atuais da análise de compras (JSON): ' + JSON.stringify(contexto) +
-        '\n\nEscreva um resumo priorizado (5-8 bullet points no máximo) do que precisa de atenção agora, começando pelo mais urgente.' },
+        '\n\nMe conta rapidamente o que precisa da minha atenção agora, começando pelo mais urgente -- me atualiza como se eu tivesse acabado de chegar e perguntado "e aí, como estamos?".' },
     ];
     const resultado = await chamarClaude(env, mensagens);
     return respostaJson(resultado);
