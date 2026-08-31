@@ -788,8 +788,18 @@
     .fab-ia { right: 16px; bottom: 16px; }
   }
 
-  /* ---- Menu de navegação lateral: efeito 3D "porta abrindo" ---- */
-  body { perspective: 1600px; }
+  /* ---- Menu de navegação lateral: efeito 3D "porta abrindo" ----
+     perspective fica num wrapper dedicado (.cena-perspectiva), não em
+     body -- perspective/transform/filter/will-change num ancestral cria
+     um novo "containing block" pra qualquer position:fixed descendente
+     (ver CONTEXTO.md). Em body isso vazava pra TODO fixed da página
+     (modal, nav-sidebar, botão flutuante da IA...), fazendo o botão
+     flutuante ficar preso no fim do body (perto do rodapé) em vez de
+     fixo no canto da tela -- só não quebrava os outros porque todos
+     usam inset:0/top:0;bottom:0 (cobrem a altura toda de qualquer jeito,
+     escondendo o bug). Corrigido isolando o perspective só pro que
+     realmente precisa dele (o "tombo" 3D do menu). */
+  .cena-perspectiva { perspective: 1600px; }
   .scene-3d {
     transform-style: preserve-3d; transform-origin: 50% 50%;
     transition: transform 0.55s var(--ease-porta), filter 0.5s ease;
@@ -1003,7 +1013,7 @@
        perspective, sem backdrop-filter. Isso é 100% estável em qualquer
        engine mobile, ao custo de perder o slide (ela só aparece/desaparece
        com um fade curto), o que é uma troca aceitável em tela pequena. */
-    body { perspective: none; }
+    .cena-perspectiva { perspective: none; }
     .scene-3d { transform: none; filter: none; }
     .nav-sidebar {
       width: 260px; max-width: 78vw;
@@ -1021,7 +1031,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
-    body { perspective: none; }
+    .cena-perspectiva { perspective: none; }
     .scene-3d, .scene-3d.nav-open { transform: none !important; filter: none !important; }
     .nav-sidebar { transform: translateX(-100%) !important; }
     .nav-sidebar.open { transform: translateX(0) !important; }
