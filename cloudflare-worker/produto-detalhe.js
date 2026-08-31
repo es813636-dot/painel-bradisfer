@@ -78,7 +78,8 @@ const PROMPT_SISTEMA =
   'Pode usar marcadores com hífen quando isso realmente ajudar a organizar vários itens de uma vez, mas nunca como formato padrão -- a maior parte da resposta deve ser texto corrido. ' +
   'Seja específico (cite marca/produto) e direto ao ponto, sem enrolação, mas sem soar telegráfico ou robótico. ' +
   'IMPORTANTE: a interface mostra texto puro, sem nenhuma formatação -- nunca use markdown (nada de **negrito**, *itálico*, #títulos ou __sublinhado__); se precisar dar ênfase, faça isso com a própria escrita, não com símbolos. ' +
-  'Não comece com saudação nem com frases tipo "aqui está sua análise" -- vá direto ao conteúdo.';
+  'Não comece com saudação nem com frases tipo "aqui está sua análise" -- vá direto ao conteúdo. ' +
+  'Seja completo, mas controle o tamanho: cubra os pontos mais importantes com profundidade e pare por aí, sem tentar mencionar todo item do JSON -- é melhor terminar bem os 4-5 casos que mais importam do que cortar no meio tentando listar tudo.';
 
 async function chamarClaude(env, mensagens) {
   const chave = env.ANTHROPIC_API_KEY;
@@ -95,7 +96,7 @@ async function chamarClaude(env, mensagens) {
       },
       body: JSON.stringify({
         model: MODELO_IA,
-        max_tokens: 1024,
+        max_tokens: 2048,
         system: PROMPT_SISTEMA,
         messages: mensagens,
       }),
