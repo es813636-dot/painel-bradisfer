@@ -2,7 +2,7 @@
 
 > Referência técnica: cada API que o projeto consome hoje, como autenticar, o que mandar, e o que ela devolve (campo a campo, com exemplo real). Para saber **de onde vem cada dado / quem atualiza / validade**, ver `LINHAGEM-DE-DADOS.md` — este arquivo é sobre as APIs em si, aquele é sobre o fluxo de dados.
 >
-> Última revisão: 28/08/2026.
+> Última revisão: 31/08/2026.
 
 ## 1. API da Sysemp (ERP)
 
@@ -173,7 +173,27 @@ GET /?codBarra=<codigo>&tipo=vendas
 
 **Quem chama**: `script.js`, função `buscarComprasVendasReais()`, ao clicar num produto no painel. Substituiu o `doGet` do Apps Script em 25/08/2026 (ver `CONTEXTO.md`).
 
-## 5. Google Identity Services (login)
+## 5. API da Anthropic (Claude) — aba "Atenção"
+
+**Base URL**: `https://api.anthropic.com/v1/messages`
+**Autenticação**: header `x-api-key: <chave>` + `anthropic-version: 2023-06-01`. Chave gerada em console.anthropic.com, guardada como Secret `ANTHROPIC_API_KEY` só no Cloudflare Worker — nunca chega no navegador.
+**Modelo**: `claude-sonnet-5`.
+
+**Quem chama**: o mesmo Cloudflare Worker (`cloudflare-worker/produto-detalhe.js`) que já fala com a Sysemp, numa rota nova via `POST` (as rotas antigas de compras/vendas continuam só em `GET`). `script.js` manda o corpo:
+```json
+{ "acao": "resumo", "contexto": { /* saída condensada de calcularAlertas(), ver montarContextoIA() */ } }
+```
+ou
+```json
+{ "acao": "chat", "contexto": {...}, "pergunta": "...", "historico": [{ "papel": "usuario", "texto": "..." }] }
+```
+e recebe de volta `{ "ok": true, "texto": "..." }` (mesmo formato uniforme das outras rotas do Worker).
+
+**O que entrega**: só texto interpretando/priorizando os dados que `calcularAlertas()` já calculou — a IA nunca recalcula número nenhum, é sempre o motor de regras determinístico quem decide o que é CRÍTICO/ATENÇÃO. Usada em dois lugares na aba Atenção: resumo automático (dispara 1x por sessão ao abrir a aba, ou ao clicar "Atualizar análise") e chat livre (dispara 1x por pergunta enviada).
+
+**Controle de custo**: `contexto` é sempre condensado (top 15 marcas + top 25 itens mais urgentes, não o catálogo inteiro) antes de sair do navegador — o tamanho (e custo) de cada chamada não escala com o tamanho do estoque. No chat, o Worker é stateless, então cada pergunta reenvia o `contexto` + o histórico da conversa guardado no navegador (`chatIAHistorico`) — o custo cresce com o tamanho da conversa, não do catálogo.
+
+## 6. Google Identity Services (login)
 
 **Script**: `https://accounts.google.com/gsi/client`
 **Uso**: botão "Entrar com o Google" na tela de login do painel (`#login-overlay`). Client ID OAuth do projeto GCP `bradisfer-automacao-vendas`, restrito à origem `https://es813636-dot.github.io`.
@@ -187,5 +207,5 @@ GET /?codBarra=<codigo>&tipo=vendas
 | `automacao-vendas/atualizar-estoque.js` | Sysemp `listaProdutosComEstoquePrecoVendaCusto` + Google Sheets API (escrita) |
 | `automacao-vendas/atualizar-vendas.js` | Sysemp `listarVendasMediaPorProduto` (modo lote) + Google Sheets API (escrita) |
 | `automacao-vendas/relatorio-comparativo.js` | Sysemp `listaProdutosComEstoquePrecoVendaCusto` + `listarVendasMediaPorProduto` (modo lote, 2x — julho e agosto) + Google Sheets API (escrita) |
-| `cloudflare-worker/produto-detalhe.js` | Sysemp `listarComprasPorProduto` + `listarVendasMediaPorProduto` (modo 1 produto) |
+| `cloudflare-worker/produto-detalhe.js` | Sysemp `listarComprasPorProduto` + `listarVendasMediaPorProduto` (modo 1 produto) + Anthropic `/v1/messages` (rota POST, aba Atenção) |
 | `script.js` (navegador) | Google Sheets gviz CSV (leitura, 3 abas) + Cloudflare Worker + Google Identity Services |
