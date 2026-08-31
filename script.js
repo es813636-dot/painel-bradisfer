@@ -1537,6 +1537,106 @@ function calcularSugestaoSemPlanilha(produto, mediaMensal12M) {
   return ajustarParaLoteDoNome(bruto, produto);
 }
 
+// ----------------------------------------------------------------------
+// Motor de regras — aba "Atenção": itens/marcas que precisam de atenção,
+// cruzando Curva ABC (calculada ao vivo, por faturamento estimado) + lead
+// time da marca + cobertura de estoque em dias. Determinístico, sem IA:
+// mesma entrada sempre dá a mesma saída, sem custo de API.
+// ----------------------------------------------------------------------
+
+// Ranqueia o catálogo por faturamento mensal estimado (média de venda ×
+// preço de venda) e classifica em A (soma até 80% do faturamento total,
+// acumulado do maior pro menor), B (até 95%) ou C (resto) — curva ABC
+// clássica por importância de faturamento. Produtos sem média de venda OU
+// sem preço de venda (~3% do catálogo, fora da TABELA_PRECOS) ficam de
+// fora do ranking — não têm curva "ao vivo" calculável, só a da planilha
+// (se houver).
+function calcularCurvaAoVivo(dados) {
+  const comDado = dados
+    .map(d => {
+      const media = d.vendasAoVivoLote ? d.vendasAoVivoLote.mediaMensal : (d.analise ? d.analise.mediaMensal : 0);
+      const faturamento = (media || 0) * (d.precoVenda || 0);
+      return { codigoBarras: d.codigoBarras, faturamento };
+    })
+    .filter(x => x.codigoBarras && x.faturamento > 0)
+    .sort((a, b) => b.faturamento - a.faturamento);
+
+  const totalFaturamento = comDado.reduce((s, x) => s + x.faturamento, 0);
+  const curvaPorCodigo = new Map();
+  let acumulado = 0;
+  comDado.forEach(x => {
+    acumulado += x.faturamento;
+    const pctAcumulado = totalFaturamento > 0 ? acumulado / totalFaturamento : 1;
+    curvaPorCodigo.set(x.codigoBarras, pctAcumulado <= 0.8 ? 'A' : (pctAcumulado <= 0.95 ? 'B' : 'C'));
+  });
+  return curvaPorCodigo;
+}
+
+// Pra cada produto, cruza curva (ao vivo e da planilha, lado a lado),
+// cobertura de estoque em dias (estoque ÷ venda média diária) e lead time
+// da marca — sinaliza CRITICO quando o estoque vai acabar ANTES da
+// reposição chegar (ruptura previsível, não só abaixo do mínimo estático),
+// e ATENCAO quando a folga é curta (<30%) ou já está em ruptura sendo item
+// relevante. Só entra na lista quem é curva A/B — item C não gera alerta
+// aqui mesmo que fique sem estoque, por definição já é baixa relevância.
+function calcularAlertas(dados) {
+  const curvaAoVivoPorCodigo = calcularCurvaAoVivo(dados);
+
+  const itens = dados.map(d => {
+    const mediaMensal = d.vendasAoVivoLote ? d.vendasAoVivoLote.mediaMensal : (d.analise ? d.analise.mediaMensal : 0);
+    const vendaMediaDia = (mediaMensal || 0) / DIAS_POR_MES_SYSEMP;
+    const coberturaDias = vendaMediaDia > 0 ? d.estoque / vendaMediaDia : null; // null = sem venda recente pra estimar
+    const marcaNormalizada = normalizarFornecedor(d.marca);
+    const leadTimeDias = LEAD_TIME_POR_MARCA[marcaNormalizada] ?? null;
+    const curvaAoVivo = curvaAoVivoPorCodigo.get(d.codigoBarras) || null;
+    const curvaPlanilha = d.analise ? (d.analise.curva || null) : null;
+    const curvaImportante = curvaAoVivo === 'A' || curvaAoVivo === 'B' || curvaPlanilha === 'A' || curvaPlanilha === 'B';
+
+    let urgencia = null; // 'CRITICO' | 'ATENCAO' | null
+    let motivo = '';
+
+    if (curvaImportante && coberturaDias !== null && leadTimeDias !== null) {
+      if (coberturaDias < leadTimeDias) {
+        urgencia = 'CRITICO';
+        motivo = 'Estoque acaba em ' + Math.round(coberturaDias) + ' dia(s), mas a reposição dessa marca leva ' + leadTimeDias + ' dias — ruptura antes de repor.';
+      } else if (coberturaDias < leadTimeDias * 1.3) {
+        urgencia = 'ATENCAO';
+        motivo = 'Margem apertada: estoque cobre ' + Math.round(coberturaDias) + ' dia(s), reposição leva ' + leadTimeDias + ' — folga menor que 30%.';
+      }
+    }
+    if (!urgencia && curvaImportante && d.situacao === 'RUPTURA') {
+      urgencia = 'CRITICO';
+      motivo = 'Já está com estoque zerado e é item relevante nas vendas (curva ' + (curvaAoVivo || curvaPlanilha) + ').';
+    }
+    if (!urgencia && curvaAoVivo === 'A' && d.situacao === 'BAIXO') {
+      urgencia = 'ATENCAO';
+      motivo = 'Abaixo do mínimo e é item de alta relevância nas vendas (curva A).';
+    }
+
+    const faturamentoMensal = (mediaMensal || 0) * (d.precoVenda || 0);
+    return { produtoRef: d, curvaAoVivo, curvaPlanilha, coberturaDias, leadTimeDias, mediaMensalUsada: mediaMensal, faturamentoMensal, urgencia, motivo };
+  });
+
+  const itensAlerta = itens
+    .filter(x => x.urgencia)
+    .sort((a, b) => {
+      if (a.urgencia !== b.urgencia) return a.urgencia === 'CRITICO' ? -1 : 1;
+      return b.faturamentoMensal - a.faturamentoMensal;
+    });
+
+  const porMarca = new Map();
+  itensAlerta.forEach(x => {
+    const chave = x.produtoRef.marca || '(sem marca)';
+    if (!porMarca.has(chave)) porMarca.set(chave, { marca: chave, criticos: 0, atencao: 0, faturamentoEmRisco: 0 });
+    const acc = porMarca.get(chave);
+    if (x.urgencia === 'CRITICO') acc.criticos++; else acc.atencao++;
+    acc.faturamentoEmRisco += x.faturamentoMensal;
+  });
+  const marcasAlerta = [...porMarca.values()].sort((a, b) => (b.criticos * 1000 + b.atencao) - (a.criticos * 1000 + a.atencao));
+
+  return { itensAlerta, marcasAlerta };
+}
+
 async function gerarPedidoSysemp(marca, itens) {
   const btn = document.getElementById('gerar-pedido-btn');
   const textoOriginalBtn = btn ? btn.textContent : null;
@@ -2191,6 +2291,8 @@ function renderizarAbaVendas() {
   if (abaEstoqueEl2) abaEstoqueEl2.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
   const abaVendasEl2 = document.getElementById('aba-vendas');
   if (abaVendasEl2) abaVendasEl2.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
+  const abaAtencaoEl2 = document.getElementById('aba-atencao');
+  if (abaAtencaoEl2) abaAtencaoEl2.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
 
   const selectMarcaVendas = document.getElementById('select-marca-vendas');
   if (selectMarcaVendas) selectMarcaVendas.addEventListener('change', e => { marcaRelatorioVendas = e.target.value; animarTabelasVendasNoProximoRender = true; renderizar(); });
@@ -2231,8 +2333,93 @@ function renderizarAbaVendas() {
 function barraAbas() {
   document.getElementById('nav-sidebar-body').innerHTML =
     '<button class="nav-item' + (abaSelecionada === 'estoque' ? ' active' : '') + '" id="aba-estoque">' + icon('package', 'icon-md') + '<span>Estoque</span></button>' +
-    '<button class="nav-item' + (abaSelecionada === 'vendas' ? ' active' : '') + '" id="aba-vendas">' + icon('chartBar', 'icon-md') + '<span>Vendas</span></button>';
+    '<button class="nav-item' + (abaSelecionada === 'vendas' ? ' active' : '') + '" id="aba-vendas">' + icon('chartBar', 'icon-md') + '<span>Vendas</span></button>' +
+    '<button class="nav-item' + (abaSelecionada === 'atencao' ? ' active' : '') + '" id="aba-atencao">' + icon('sirenIcon', 'icon-md') + '<span>Atenção</span></button>';
   return '';
+}
+
+// Aba "Atenção" — mostra a saída do motor de regras (calcularAlertas):
+// itens/marcas onde o estoque vai acabar antes (ou pouco antes) da
+// reposição chegar, considerando só quem é relevante nas vendas (curva
+// A/B). Segue o mesmo sistema visual escuro da aba Estoque (kpi-grid/
+// panel/table) — a aba Vendas é a única exceção de tema claro do painel.
+function renderizarAbaAtencao() {
+  const { itensAlerta, marcasAlerta } = calcularAlertas(dadosCompletos);
+  const criticos = itensAlerta.filter(x => x.urgencia === 'CRITICO');
+  const atencao = itensAlerta.filter(x => x.urgencia === 'ATENCAO');
+  const faturamentoTotalEmRisco = itensAlerta.reduce((s, x) => s + x.faturamentoMensal, 0);
+
+  document.getElementById('app').innerHTML =
+    barraAbas() +
+
+    '<div class="kpi-grid">' +
+      '<div class="kpi-card accent-red"><div class="label">Itens críticos</div><div class="value">' + fmtNum(criticos.length) + '</div></div>' +
+      '<div class="kpi-card accent-amber"><div class="label">Itens em atenção</div><div class="value">' + fmtNum(atencao.length) + '</div></div>' +
+      '<div class="kpi-card hero"><div class="label">Faturamento mensal em risco</div><div class="value" title="' + fmtMoeda(faturamentoTotalEmRisco) + '">' + fmtMoedaCompacta(faturamentoTotalEmRisco) + '</div></div>' +
+      '<div class="kpi-card hero"><div class="label">Marcas afetadas</div><div class="value">' + fmtNum(marcasAlerta.length) + '</div></div>' +
+    '</div>' +
+
+    '<div class="panel" style="margin-bottom:16px;">' +
+      '<h2 style="margin:0;">' + icon('sirenIcon', 'icon-sm') + 'Marcas em alerta</h2>' +
+      '<p class="hint" style="margin-top:10px;">Curva ABC calculada ao vivo (média de venda × preço) cruzada com o lead time de cada marca — sinaliza item que corre risco de faltar antes da reposição chegar.</p>' +
+      (marcasAlerta.length === 0
+        ? '<p class="hint" style="text-align:center;padding:20px 0;">Nenhuma marca em alerta no momento.</p>'
+        : '<table><thead><tr><th>Marca</th><th class="num">Críticos</th><th class="num">Atenção</th><th class="num">Faturamento mensal em risco</th></tr></thead><tbody>' +
+            marcasAlerta.map(m =>
+              '<tr class="clickable" data-marca-alerta="' + escapeHtml(m.marca) + '">' +
+                '<td>' + escapeHtml(m.marca) + '</td>' +
+                '<td class="num">' + (m.criticos > 0 ? '<span class="badge badge-ruptura">' + fmtNum(m.criticos) + '</span>' : '—') + '</td>' +
+                '<td class="num">' + (m.atencao > 0 ? '<span class="badge badge-baixo">' + fmtNum(m.atencao) + '</span>' : '—') + '</td>' +
+                '<td class="num">' + fmtMoeda(m.faturamentoEmRisco) + '</td>' +
+              '</tr>'
+            ).join('') +
+          '</tbody></table>') +
+    '</div>' +
+
+    '<div class="panel">' +
+      '<h2 style="margin:0;">Itens que precisam de atenção (' + fmtNum(itensAlerta.length) + ')</h2>' +
+      '<p class="hint" style="margin-top:10px;">Ordenado por urgência, depois por faturamento mensal estimado. As duas colunas de curva mostram a classificação calculada ao vivo (média × preço atual) e a da planilha de análise (congelada) lado a lado.</p>' +
+      (itensAlerta.length === 0
+        ? '<p class="hint" style="text-align:center;padding:20px 0;">Nenhum item crítico ou em atenção no momento.</p>'
+        : '<table><thead><tr>' +
+            '<th>Produto</th><th>Marca</th><th class="num">Curva (ao vivo)</th><th class="num">Curva (planilha)</th>' +
+            '<th class="num">Estoque</th><th class="num">Cobertura</th><th class="num">Lead time</th><th>Motivo</th>' +
+          '</tr></thead><tbody>' +
+            itensAlerta.map((x, i) => {
+              const d = x.produtoRef;
+              return '<tr class="clickable" data-idx-alerta="' + i + '">' +
+                '<td>' + escapeHtml(d.produto) + '</td>' +
+                '<td>' + escapeHtml(d.marca) + '</td>' +
+                '<td class="num">' + (x.urgencia === 'CRITICO' ? '<span class="badge badge-ruptura">' + (x.curvaAoVivo || '—') + '</span>' : (x.curvaAoVivo || '—')) + '</td>' +
+                '<td class="num">' + (x.curvaPlanilha || '—') + '</td>' +
+                '<td class="num">' + fmtNum(d.estoque) + '</td>' +
+                '<td class="num">' + (x.coberturaDias !== null ? Math.round(x.coberturaDias) + 'd' : '—') + '</td>' +
+                '<td class="num">' + (x.leadTimeDias !== null ? x.leadTimeDias + 'd' : '—') + '</td>' +
+                '<td style="font-size:12.5px;color:var(--text-muted);">' + escapeHtml(x.motivo) + '</td>' +
+              '</tr>';
+            }).join('') +
+          '</tbody></table>') +
+    '</div>';
+
+  const abaEstoqueEl3 = document.getElementById('aba-estoque');
+  if (abaEstoqueEl3) abaEstoqueEl3.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
+  const abaVendasEl3 = document.getElementById('aba-vendas');
+  if (abaVendasEl3) abaVendasEl3.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
+  const abaAtencaoEl3 = document.getElementById('aba-atencao');
+  if (abaAtencaoEl3) abaAtencaoEl3.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
+
+  document.querySelectorAll('tbody tr.clickable[data-idx-alerta]').forEach(tr => tr.addEventListener('click', () => {
+    const item = itensAlerta[parseInt(tr.dataset.idxAlerta, 10)];
+    if (item) abrirDetalheProduto(item.produtoRef);
+  }));
+  document.querySelectorAll('tbody tr.clickable[data-marca-alerta]').forEach(tr => tr.addEventListener('click', () => {
+    filtroMarca = tr.dataset.marcaAlerta;
+    marcaExpandidaTabela = tr.dataset.marcaAlerta;
+    abaSelecionada = 'estoque';
+    renderizar();
+  }));
+
+  tornarClicaveisAcessiveis(document.getElementById('app'));
 }
 
 // Medalha (ouro/prata/bronze) só faz sentido visual pras 3 primeiras
@@ -2282,6 +2469,7 @@ function montarRankingMarcas(marcasOrdenadas, todasMarcasOrdenadas, totalGeral, 
 
 function renderizar() {
   if (abaSelecionada === 'vendas') { renderizarAbaVendas(); return; }
+  if (abaSelecionada === 'atencao') { renderizarAbaAtencao(); return; }
   if (diaRotinaSelecionado === null) diaRotinaSelecionado = diaSemanaAtual() || 'SEG';
 
   let dados = dadosCompletos.filter(d =>
@@ -2619,6 +2807,8 @@ function renderizar() {
   if (abaEstoqueEl) abaEstoqueEl.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
   const abaVendasEl = document.getElementById('aba-vendas');
   if (abaVendasEl) abaVendasEl.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
+  const abaAtencaoEl = document.getElementById('aba-atencao');
+  if (abaAtencaoEl) abaAtencaoEl.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
   document.getElementById('filtro-grupo').addEventListener('change', e => { filtroGrupo = e.target.value; renderizar(); });
   const aplicarBuscaProduto = debounce(e => {
     const cursorPos = e.target.selectionStart;
