@@ -66,6 +66,7 @@ const SVG_ICONS = {
   downloadSimple: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><line x1="128" y1="144" x2="128" y2="32"/><polyline points="88 104 128 144 168 104"/><path d="M208,152v40a8,8,0,0,1-8,8H56a8,8,0,0,1-8-8V152"/></svg>',
   uploadSimple: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><line x1="128" y1="144" x2="128" y2="32"/><polyline points="88 72 128 32 168 72"/><path d="M208,152v40a8,8,0,0,1-8,8H56a8,8,0,0,1-8-8V152"/></svg>',
   sirenIcon: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><path d="M32,216V152a96,96,0,0,1,192,0v64Z"/><line x1="128" y1="56" x2="128" y2="32"/><line x1="180" y1="72" x2="196" y2="56"/><line x1="76" y1="72" x2="60" y2="56"/><line x1="16" y1="216" x2="240" y2="216"/></svg>',
+  robotIcon: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><rect x="48" y="88" width="160" height="120" rx="16"/><line x1="128" y1="88" x2="128" y2="48"/><circle cx="128" cy="32" r="12" fill="currentColor" stroke="none"/><circle cx="92" cy="140" r="12" fill="currentColor" stroke="none"/><circle cx="164" cy="140" r="12" fill="currentColor" stroke="none"/><line x1="88" y1="180" x2="168" y2="180"/><line x1="16" y1="128" x2="48" y2="128"/><line x1="208" y1="128" x2="240" y2="128"/></svg>',
   checkCircle: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><circle cx="128" cy="128" r="96"/><polyline points="92 140 116 164 168 100"/></svg>',
   xCircle: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><circle cx="128" cy="128" r="96"/><line x1="160" y1="96" x2="96" y2="160"/><line x1="160" y1="160" x2="96" y2="96"/></svg>',
 };
@@ -86,7 +87,7 @@ let buscaTexto = '';
 let ordemCol = 'valorRepor';
 let ordemDir = -1;
 let marcaExpandidaTabela = '';
-let abaSelecionada = 'estoque'; // 'estoque', 'vendas' ou 'atencao'
+let abaSelecionada = 'estoque'; // 'estoque', 'vendas', 'atencao' ou 'ia'
 
 // Estado da IA (aba Atenção) -- resumo automático + chat, ambos passando
 // pelo mesmo Worker que já fala com a Sysemp (WEBAPP_URL), rota nova via
@@ -2377,6 +2378,8 @@ function renderizarAbaVendas() {
   if (abaVendasEl2) abaVendasEl2.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
   const abaAtencaoEl2 = document.getElementById('aba-atencao');
   if (abaAtencaoEl2) abaAtencaoEl2.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
+  const abaIaEl2 = document.getElementById('aba-ia');
+  if (abaIaEl2) abaIaEl2.addEventListener('click', () => { abaSelecionada = 'ia'; fecharNavSidebar(); renderizar(); });
 
   const selectMarcaVendas = document.getElementById('select-marca-vendas');
   if (selectMarcaVendas) selectMarcaVendas.addEventListener('change', e => { marcaRelatorioVendas = e.target.value; animarTabelasVendasNoProximoRender = true; renderizar(); });
@@ -2418,7 +2421,8 @@ function barraAbas() {
   document.getElementById('nav-sidebar-body').innerHTML =
     '<button class="nav-item' + (abaSelecionada === 'estoque' ? ' active' : '') + '" id="aba-estoque">' + icon('package', 'icon-md') + '<span>Estoque</span></button>' +
     '<button class="nav-item' + (abaSelecionada === 'vendas' ? ' active' : '') + '" id="aba-vendas">' + icon('chartBar', 'icon-md') + '<span>Vendas</span></button>' +
-    '<button class="nav-item' + (abaSelecionada === 'atencao' ? ' active' : '') + '" id="aba-atencao">' + icon('sirenIcon', 'icon-md') + '<span>Atenção</span></button>';
+    '<button class="nav-item' + (abaSelecionada === 'atencao' ? ' active' : '') + '" id="aba-atencao">' + icon('sirenIcon', 'icon-md') + '<span>Atenção</span></button>' +
+    '<button class="nav-item' + (abaSelecionada === 'ia' ? ' active' : '') + '" id="aba-ia">' + icon('robotIcon', 'icon-md') + '<span>IA</span></button>';
   return '';
 }
 
@@ -2432,15 +2436,6 @@ function renderizarAbaAtencao() {
   const criticos = itensAlerta.filter(x => x.urgencia === 'CRITICO');
   const atencao = itensAlerta.filter(x => x.urgencia === 'ATENCAO');
   const faturamentoTotalEmRisco = itensAlerta.reduce((s, x) => s + x.faturamentoMensal, 0);
-  const contextoIA = montarContextoIA(itensAlerta, marcasAlerta);
-
-  // Dispara o resumo automático uma vez só, na primeira vez que a aba é
-  // aberta nesta sessão (ou depois de "Atualizar análise") -- nunca em
-  // todo re-render, senão qualquer clique/filtro dispararia uma chamada
-  // nova à IA.
-  if (resumoIA === null && !resumoIACarregando && !resumoIAErro) {
-    buscarResumoIA(contextoIA);
-  }
 
   document.getElementById('app').innerHTML =
     barraAbas() +
@@ -2450,21 +2445,6 @@ function renderizarAbaAtencao() {
       '<div class="kpi-card accent-amber"><div class="label">Itens em atenção</div><div class="value">' + fmtNum(atencao.length) + '</div></div>' +
       '<div class="kpi-card hero"><div class="label">Faturamento mensal em risco</div><div class="value" title="' + fmtMoeda(faturamentoTotalEmRisco) + '">' + fmtMoedaCompacta(faturamentoTotalEmRisco) + '</div></div>' +
       '<div class="kpi-card hero"><div class="label">Marcas afetadas</div><div class="value">' + fmtNum(marcasAlerta.length) + '</div></div>' +
-    '</div>' +
-
-    '<div class="panel" style="margin-bottom:16px;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
-        '<h2 style="margin:0;">' + icon('sirenIcon', 'icon-sm') + 'Análise da IA</h2>' +
-        '<button class="refresh-btn" id="atualizar-resumo-ia-btn"' + (resumoIACarregando ? ' disabled' : '') + '>' + icon('trendUp', 'icon-sm') + ' Atualizar análise</button>' +
-      '</div>' +
-      '<p class="hint" style="margin-top:10px;">Interpretação em texto dos dados abaixo (curva, cobertura, lead time) — a IA só analisa e prioriza, quem calcula os números é sempre o motor de regras.</p>' +
-      (resumoIACarregando
-        ? '<p class="hint" style="padding:12px 0;">Analisando… (pode levar alguns segundos)</p>'
-        : resumoIAErro
-          ? '<p class="hint" style="padding:12px 0;color:var(--red, #e66767);">Erro ao gerar a análise: ' + escapeHtml(resumoIAErro) + '</p>'
-          : resumoIA
-            ? '<div style="white-space:pre-wrap;line-height:1.6;padding:8px 0;">' + escapeHtml(resumoIA) + '</div>'
-            : '') +
     '</div>' +
 
     '<div class="panel" style="margin-bottom:16px;">' +
@@ -2507,12 +2487,63 @@ function renderizarAbaAtencao() {
               '</tr>';
             }).join('') +
           '</tbody></table>') +
+    '</div>';
+
+  const abaEstoqueEl3 = document.getElementById('aba-estoque');
+  if (abaEstoqueEl3) abaEstoqueEl3.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
+  const abaVendasEl3 = document.getElementById('aba-vendas');
+  if (abaVendasEl3) abaVendasEl3.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
+  const abaAtencaoEl3 = document.getElementById('aba-atencao');
+  if (abaAtencaoEl3) abaAtencaoEl3.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
+  const abaIaEl3 = document.getElementById('aba-ia');
+  if (abaIaEl3) abaIaEl3.addEventListener('click', () => { abaSelecionada = 'ia'; fecharNavSidebar(); renderizar(); });
+
+  document.querySelectorAll('tbody tr.clickable[data-idx-alerta]').forEach(tr => tr.addEventListener('click', () => {
+    const item = itensAlerta[parseInt(tr.dataset.idxAlerta, 10)];
+    if (item) abrirDetalheProduto(item.produtoRef);
+  }));
+  document.querySelectorAll('tbody tr.clickable[data-marca-alerta]').forEach(tr => tr.addEventListener('click', () => {
+    filtroMarca = tr.dataset.marcaAlerta;
+    marcaExpandidaTabela = tr.dataset.marcaAlerta;
+    abaSelecionada = 'estoque';
+    renderizar();
+  }));
+
+  tornarClicaveisAcessiveis(document.getElementById('app'));
+}
+
+// Aba "IA" -- chat + resumo sob demanda, acessível pelo menu principal.
+// Diferente da aba Atenção (motor de regras, sempre visível, sem custo),
+// aqui a IA só fala quando o usuário pede -- nem o resumo dispara sozinho
+// ao abrir a aba, só quando clicado. Usa o mesmo contexto condensado
+// (montarContextoIA) calculado a partir do motor de regras -- a IA
+// continua só interpretando/priorizando, nunca recalculando números.
+function renderizarAbaIA() {
+  const { itensAlerta, marcasAlerta } = calcularAlertas(dadosCompletos);
+  const contextoIA = montarContextoIA(itensAlerta, marcasAlerta);
+
+  document.getElementById('app').innerHTML =
+    barraAbas() +
+
+    '<div class="panel" style="margin-bottom:16px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
+        '<h2 style="margin:0;">' + icon('robotIcon', 'icon-sm') + 'Análise da IA</h2>' +
+        '<button class="refresh-btn" id="gerar-resumo-ia-btn"' + (resumoIACarregando ? ' disabled' : '') + '>' + icon('trendUp', 'icon-sm') + ' ' + (resumoIA ? 'Atualizar análise' : 'Gerar resumo') + '</button>' +
+      '</div>' +
+      '<p class="hint" style="margin-top:10px;">Interpretação em texto dos dados da aba Atenção (curva, cobertura, lead time) — a IA só analisa e prioriza sob pedido, quem calcula os números é sempre o motor de regras.</p>' +
+      (resumoIACarregando
+        ? '<p class="hint" style="padding:12px 0;">Analisando… (pode levar alguns segundos)</p>'
+        : resumoIAErro
+          ? '<p class="hint" style="padding:12px 0;color:var(--red, #e66767);">Erro ao gerar a análise: ' + escapeHtml(resumoIAErro) + '</p>'
+          : resumoIA
+            ? '<div style="white-space:pre-wrap;line-height:1.6;padding:8px 0;">' + escapeHtml(resumoIA) + '</div>'
+            : '<p class="hint" style="padding:12px 0;">Nenhum resumo gerado ainda — clique em "Gerar resumo".</p>') +
     '</div>' +
 
-    '<div class="panel" style="margin-top:16px;">' +
+    '<div class="panel">' +
       '<h2 style="margin:0;">Perguntar à IA</h2>' +
-      '<p class="hint" style="margin-top:10px;">Pergunte sobre os dados acima — ex. "o que eu compro essa semana com o dinheiro que eu tenho?" ou "por que a PYRAMID está crítica?". A IA só enxerga os dados desta aba, não o catálogo inteiro.</p>' +
-      '<div id="chat-ia-mensagens" style="display:flex;flex-direction:column;gap:10px;margin:14px 0;max-height:360px;overflow-y:auto;">' +
+      '<p class="hint" style="margin-top:10px;">Pergunte sobre os itens/marcas que precisam de atenção — ex. "o que eu compro essa semana com o dinheiro que eu tenho?" ou "por que a PYRAMID está crítica?". A IA só enxerga os dados da aba Atenção, não o catálogo inteiro.</p>' +
+      '<div id="chat-ia-mensagens" style="display:flex;flex-direction:column;gap:10px;margin:14px 0;max-height:420px;overflow-y:auto;">' +
         (chatIAHistorico.length === 0
           ? '<p class="hint">Nenhuma pergunta ainda.</p>'
           : chatIAHistorico.map(m =>
@@ -2530,12 +2561,8 @@ function renderizarAbaAtencao() {
       '</form>' +
     '</div>';
 
-  const atualizarResumoIABtn = document.getElementById('atualizar-resumo-ia-btn');
-  if (atualizarResumoIABtn) atualizarResumoIABtn.addEventListener('click', () => {
-    resumoIA = null;
-    resumoIAErro = null;
-    renderizar();
-  });
+  const gerarResumoIABtn = document.getElementById('gerar-resumo-ia-btn');
+  if (gerarResumoIABtn) gerarResumoIABtn.addEventListener('click', () => buscarResumoIA(contextoIA));
 
   const chatIAForm = document.getElementById('chat-ia-form');
   if (chatIAForm) chatIAForm.addEventListener('submit', e => {
@@ -2545,23 +2572,14 @@ function renderizarAbaAtencao() {
     if (pergunta.trim()) enviarPerguntaIA(contextoIA, pergunta);
   });
 
-  const abaEstoqueEl3 = document.getElementById('aba-estoque');
-  if (abaEstoqueEl3) abaEstoqueEl3.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
-  const abaVendasEl3 = document.getElementById('aba-vendas');
-  if (abaVendasEl3) abaVendasEl3.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
-  const abaAtencaoEl3 = document.getElementById('aba-atencao');
-  if (abaAtencaoEl3) abaAtencaoEl3.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
-
-  document.querySelectorAll('tbody tr.clickable[data-idx-alerta]').forEach(tr => tr.addEventListener('click', () => {
-    const item = itensAlerta[parseInt(tr.dataset.idxAlerta, 10)];
-    if (item) abrirDetalheProduto(item.produtoRef);
-  }));
-  document.querySelectorAll('tbody tr.clickable[data-marca-alerta]').forEach(tr => tr.addEventListener('click', () => {
-    filtroMarca = tr.dataset.marcaAlerta;
-    marcaExpandidaTabela = tr.dataset.marcaAlerta;
-    abaSelecionada = 'estoque';
-    renderizar();
-  }));
+  const abaEstoqueEl4 = document.getElementById('aba-estoque');
+  if (abaEstoqueEl4) abaEstoqueEl4.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
+  const abaVendasEl4 = document.getElementById('aba-vendas');
+  if (abaVendasEl4) abaVendasEl4.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
+  const abaAtencaoEl4 = document.getElementById('aba-atencao');
+  if (abaAtencaoEl4) abaAtencaoEl4.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
+  const abaIaEl4 = document.getElementById('aba-ia');
+  if (abaIaEl4) abaIaEl4.addEventListener('click', () => { abaSelecionada = 'ia'; fecharNavSidebar(); renderizar(); });
 
   tornarClicaveisAcessiveis(document.getElementById('app'));
 }
@@ -2614,6 +2632,7 @@ function montarRankingMarcas(marcasOrdenadas, todasMarcasOrdenadas, totalGeral, 
 function renderizar() {
   if (abaSelecionada === 'vendas') { renderizarAbaVendas(); return; }
   if (abaSelecionada === 'atencao') { renderizarAbaAtencao(); return; }
+  if (abaSelecionada === 'ia') { renderizarAbaIA(); return; }
   if (diaRotinaSelecionado === null) diaRotinaSelecionado = diaSemanaAtual() || 'SEG';
 
   let dados = dadosCompletos.filter(d =>
@@ -2953,6 +2972,8 @@ function renderizar() {
   if (abaVendasEl) abaVendasEl.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
   const abaAtencaoEl = document.getElementById('aba-atencao');
   if (abaAtencaoEl) abaAtencaoEl.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
+  const abaIaEl = document.getElementById('aba-ia');
+  if (abaIaEl) abaIaEl.addEventListener('click', () => { abaSelecionada = 'ia'; fecharNavSidebar(); renderizar(); });
   document.getElementById('filtro-grupo').addEventListener('change', e => { filtroGrupo = e.target.value; renderizar(); });
   const aplicarBuscaProduto = debounce(e => {
     const cursorPos = e.target.selectionStart;
