@@ -78,6 +78,14 @@ function icon(nome, cls) {
 let dadosCompletos = [];
 let elementoFocoAntesDoModal = null; // pra devolver o foco ao fechar o modal
 let donutChartInstance = null;
+// Estado do modal "Resumo do pedido" -- cópia editável das linhas
+// (calculadas pela sugestão) que o usuário pode ajustar quantidade,
+// remover ou adicionar item antes de baixar o CSV. Ver mostrarResumoPedido()/
+// renderizarResumoPedido().
+let linhasPedidoAtual = [];
+let marcaPedidoAtual = '';
+let buscaProdutoPedidoTexto = '';
+let mostrarSugestoesProdutoPedido = false;
 let filtroGrupo = '';
 let filtroSituacao = '';
 let filtroMarca = '';
@@ -1332,6 +1340,7 @@ function fecharDetalheProduto() {
   document.getElementById('modal-backdrop').classList.remove('open');
   if (elementoFocoAntesDoModal && elementoFocoAntesDoModal.isConnected) elementoFocoAntesDoModal.focus();
   elementoFocoAntesDoModal = null;
+  mostrarSugestoesProdutoPedido = false; // evita re-render órfão do modal de pedido depois de fechado
 }
 
 document.getElementById('modal-backdrop').addEventListener('click', e => {
@@ -1529,6 +1538,15 @@ document.addEventListener('click', e => {
   if (mostrarSugestoesMarca && !e.target.closest('.autocomplete-wrap')) {
     mostrarSugestoesMarca = false;
     renderizar();
+  }
+});
+
+// Mesma ideia, pro autocomplete de "adicionar produto" dentro do modal de
+// resumo do pedido -- re-render local (renderizarResumoPedido), não o app.
+document.addEventListener('click', e => {
+  if (mostrarSugestoesProdutoPedido && !e.target.closest('.autocomplete-wrap')) {
+    mostrarSugestoesProdutoPedido = false;
+    renderizarResumoPedido();
   }
 });
 
@@ -1779,43 +1797,147 @@ async function gerarPedidoSysemp(marca, itens) {
 // Mostra o pedido calculado (itens, quantidades, valor) num modal ANTES de
 // baixar o CSV -- reaproveita o mesmo modal-backdrop/modal-panel do
 // detalhe de produto (fecharDetalheProduto/Esc/click-fora já funcionam).
+// A partir daqui o pedido é editável: linhasPedidoAtual é uma cópia (não
+// mexe no array original) que o usuário pode ajustar antes de baixar.
 function mostrarResumoPedido(marca, linhas) {
-  const painel = document.getElementById('modal-panel');
   elementoFocoAntesDoModal = document.activeElement;
-  const valorTotal = linhas.reduce((s, l) => s + l.qtd * l.custo, 0);
+  marcaPedidoAtual = marca;
+  linhasPedidoAtual = linhas.map(l => ({ ...l }));
+  buscaProdutoPedidoTexto = '';
+  mostrarSugestoesProdutoPedido = false;
+  renderizarResumoPedido();
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+
+// Redesenha só o modal do pedido a partir de linhasPedidoAtual -- chamado
+// depois de editar quantidade, remover ou adicionar item, sem fechar/
+// reabrir o modal (mesma ideia de renderizarPainelIAFlutuante: re-render
+// local, não o app inteiro).
+function renderizarResumoPedido() {
+  const painel = document.getElementById('modal-panel');
+  const valorTotal = linhasPedidoAtual.reduce((s, l) => s + l.qtd * l.custo, 0);
+
+  const codigosJaAdicionados = new Set(linhasPedidoAtual.map(l => l.codigo));
+  const buscaLower = buscaProdutoPedidoTexto.toLowerCase();
+  const sugestoesProduto = buscaProdutoPedidoTexto
+    ? dadosCompletos
+        .filter(d => d.codigoBarras && !codigosJaAdicionados.has(d.codigoBarras) &&
+          (d.produto.toLowerCase().includes(buscaLower) || d.codigoBarras.includes(buscaProdutoPedidoTexto)))
+        .slice(0, 8)
+    : [];
 
   painel.innerHTML =
     '<div class="modal-header">' +
-      '<div><div class="modal-title">Resumo do pedido — ' + escapeHtml(marca) + '</div>' +
-      '<div class="modal-sub">' + fmtNum(linhas.length) + ' item(ns) · ' + fmtMoeda(valorTotal) + '</div></div>' +
+      '<div><div class="modal-title">Resumo do pedido — ' + escapeHtml(marcaPedidoAtual) + '</div>' +
+      '<div class="modal-sub">' + fmtNum(linhasPedidoAtual.length) + ' item(ns) · ' + fmtMoeda(valorTotal) + '</div></div>' +
       '<button class="modal-close" id="modal-close-btn" aria-label="Fechar">' + icon('x', 'icon-sm') + '</button>' +
     '</div>' +
     '<div class="modal-section">' +
-      '<table class="modal-table"><thead><tr><th>Produto</th><th class="num">Qtd</th><th class="num">Custo unit.</th><th class="num">Subtotal</th></tr></thead><tbody>' +
-        linhas.map(l =>
-          '<tr><td>' + escapeHtml(l.produto) + '</td><td class="num">' + fmtNum(l.qtd) + '</td>' +
-          '<td class="num">' + fmtMoeda(l.custo) + '</td><td class="num">' + fmtMoeda(l.qtd * l.custo) + '</td></tr>'
-        ).join('') +
-      '</tbody></table>' +
+      (linhasPedidoAtual.length === 0
+        ? '<p class="hint" style="text-align:center;padding:16px 0;">Nenhum item no pedido — adicione algum abaixo.</p>'
+        : '<table class="modal-table"><thead><tr><th>Produto</th><th class="num">Qtd</th><th class="num">Custo unit.</th><th class="num">Subtotal</th><th></th></tr></thead><tbody>' +
+            linhasPedidoAtual.map((l, i) =>
+              '<tr>' +
+                '<td>' + escapeHtml(l.produto) + '</td>' +
+                '<td class="num"><input type="number" min="0" step="1" class="input-qtd-pedido" data-idx-pedido="' + i + '" value="' + l.qtd + '" style="width:70px;text-align:right;"></td>' +
+                '<td class="num">' + fmtMoeda(l.custo) + '</td>' +
+                '<td class="num">' + fmtMoeda(l.qtd * l.custo) + '</td>' +
+                '<td><button class="modal-close" data-remover-idx="' + i + '" aria-label="Remover ' + escapeHtml(l.produto) + '" title="Remover" style="width:24px;height:24px;">' + icon('x', 'icon-sm') + '</button></td>' +
+              '</tr>'
+            ).join('') +
+          '</tbody></table>') +
+    '</div>' +
+    '<div class="modal-section" style="padding-top:0;">' +
+      '<div class="autocomplete-wrap" style="position:relative;">' +
+        '<input type="search" id="busca-produto-pedido" placeholder="Adicionar produto ao pedido..." aria-label="Adicionar produto ao pedido" autocomplete="off" value="' + escapeHtml(buscaProdutoPedidoTexto) + '">' +
+        (mostrarSugestoesProdutoPedido ? (
+          '<div class="autocomplete-list">' +
+            (sugestoesProduto.length
+              ? sugestoesProduto.map(d => '<div class="autocomplete-item" data-codigo-produto="' + escapeHtml(d.codigoBarras) + '">' + escapeHtml(d.produto) + ' <span style="color:var(--text-faint);">(' + escapeHtml(d.marca) + ')</span></div>').join('')
+              : '<div class="autocomplete-empty">Nenhum produto encontrado</div>') +
+          '</div>'
+        ) : '') +
+      '</div>' +
     '</div>' +
     '<div style="display:flex;justify-content:flex-end;padding:16px 20px 4px;">' +
-      '<button class="refresh-btn" id="baixar-pedido-csv-btn" style="background:var(--gold);border:1px solid var(--gold);color:#000;font-weight:700;">' +
+      '<button class="refresh-btn" id="baixar-pedido-csv-btn"' + (linhasPedidoAtual.length === 0 ? ' disabled' : '') + ' style="background:var(--gold);border:1px solid var(--gold);color:#000;font-weight:700;">' +
         icon('downloadSimple', 'icon-sm') + ' Baixar CSV (' + fmtMoeda(valorTotal) + ')' +
       '</button>' +
     '</div>';
 
   document.getElementById('modal-close-btn').addEventListener('click', fecharDetalheProduto);
-  document.getElementById('baixar-pedido-csv-btn').addEventListener('click', () => baixarCsvPedido(marca, linhas));
-  document.getElementById('modal-backdrop').classList.add('open');
+  const baixarBtn = document.getElementById('baixar-pedido-csv-btn');
+  if (baixarBtn) baixarBtn.addEventListener('click', () => baixarCsvPedido(marcaPedidoAtual, linhasPedidoAtual));
+
+  document.querySelectorAll('.input-qtd-pedido').forEach(inp => {
+    inp.addEventListener('change', e => {
+      const idx = parseInt(inp.dataset.idxPedido, 10);
+      linhasPedidoAtual[idx].qtd = Math.max(0, Math.round(parseFloat(e.target.value) || 0));
+      renderizarResumoPedido();
+    });
+  });
+  document.querySelectorAll('[data-remover-idx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      linhasPedidoAtual.splice(parseInt(btn.dataset.removerIdx, 10), 1);
+      renderizarResumoPedido();
+    });
+  });
+
+  const inputProduto = document.getElementById('busca-produto-pedido');
+  const aplicarBuscaProdutoPedido = debounce(e => {
+    const cursorPos = e.target.selectionStart;
+    buscaProdutoPedidoTexto = e.target.value;
+    mostrarSugestoesProdutoPedido = true;
+    renderizarResumoPedido();
+    const novoInput = document.getElementById('busca-produto-pedido');
+    if (novoInput) { novoInput.focus(); novoInput.setSelectionRange(cursorPos, cursorPos); }
+  }, 250);
+  if (inputProduto) {
+    inputProduto.addEventListener('input', aplicarBuscaProdutoPedido);
+    inputProduto.addEventListener('focus', () => {
+      if (!mostrarSugestoesProdutoPedido) {
+        mostrarSugestoesProdutoPedido = true;
+        renderizarResumoPedido();
+        const novoInput = document.getElementById('busca-produto-pedido');
+        if (novoInput) novoInput.focus();
+      }
+    });
+  }
+  document.querySelectorAll('[data-codigo-produto]').forEach(item => item.addEventListener('click', () => {
+    const produto = dadosCompletos.find(d => d.codigoBarras === item.dataset.codigoProduto);
+    if (produto) {
+      linhasPedidoAtual.push({
+        codigo: produto.codigoBarras,
+        produto: produto.produto,
+        qtd: 1,
+        custo: produto.custo || 0,
+        custoFormatado: (produto.custo || 0).toFixed(2).replace('.', ','),
+      });
+    }
+    buscaProdutoPedidoTexto = '';
+    mostrarSugestoesProdutoPedido = false;
+    renderizarResumoPedido();
+  }));
+
   painel.focus({ preventScroll: true });
 }
 
 function baixarCsvPedido(marca, linhas) {
+  // Quantidade pode ter sido editada pro usuário até zero (ou o item pode
+  // ter ficado com custo zerado ao ser adicionado manualmente) -- filtra
+  // antes de exportar, mesma regra de sempre (zero não faz sentido pro
+  // Sysemp, e custo zero já travou o importador dele no passado, ver
+  // CONTEXTO.md).
+  const linhasValidas = linhas.filter(l => l.codigo && l.qtd > 0);
+  if (linhasValidas.length === 0) {
+    alert('Nenhum item com quantidade maior que zero — nada para exportar.');
+    return;
+  }
   // Sem BOM aqui de proposito -- o arquivo so tem codigo de barras/numero,
   // sem acento nenhum, e o importador de pedido do Sysemp nao remove o
   // BOM: ele gruda no codigo de barras da primeira linha, corrompendo so
   // esse item na hora de importar (as demais linhas ficam intactas).
-  const conteudo = linhas.map(l => l.codigo + ';' + l.qtd + ';' + l.custoFormatado).join('\n');
+  const conteudo = linhasValidas.map(l => l.codigo + ';' + l.qtd + ';' + l.custoFormatado).join('\n');
   const blob = new Blob([conteudo], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
