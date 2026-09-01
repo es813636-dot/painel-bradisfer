@@ -119,6 +119,11 @@ let chatIAHistorico = []; // [{ papel: 'usuario'|'assistente', texto }]
 let chatIACarregando = false;
 let chatIAErro = null;
 let painelIAFlutuanteAberto = false; // controla o painel do botão flutuante, fora de #app
+// Resumo automático dispara sozinho só na 1ª vez que o painel é aberto em
+// cada dia (geralmente de manhã) -- guardado em localStorage pra não
+// repetir de novo no mesmo dia mesmo fechando/reabrindo a aba ou dando
+// F5. Fora isso, chat e "Atualizar análise" continuam só sob pedido.
+const CHAVE_LOCALSTORAGE_RESUMO_IA_DATA = 'bradisfer_resumo_ia_ultima_data';
 let mostrarItensNormaisMarca = false; // segunda seção (estoque normal/excesso) começa fechada
 let marcaRelatorioVendas = ''; // marca selecionada no relatório "itens mais vendidos por marca" (aba Vendas)
 let filtroGrupoVendas = ''; // filtro por grupo/linha de produto, exclusivo da aba Vendas
@@ -2755,6 +2760,16 @@ function renderizarPainelIAFlutuante() {
 
   const { itensAlerta, marcasAlerta } = calcularAlertas(dadosCompletos);
   const contextoIA = montarContextoIA(itensAlerta, marcasAlerta);
+
+  // Dispara o resumo sozinho na 1ª vez que o painel é aberto no dia (seja
+  // de manhã, seja em qualquer outro clique que seja o primeiro do dia).
+  // Grava a data ANTES do fetch terminar pra não reenviar em caso de erro
+  // ou de o usuário reabrir o painel rapidamente.
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  if (!resumoIA && !resumoIACarregando && localStorage.getItem(CHAVE_LOCALSTORAGE_RESUMO_IA_DATA) !== hojeISO) {
+    localStorage.setItem(CHAVE_LOCALSTORAGE_RESUMO_IA_DATA, hojeISO);
+    buscarResumoIA(contextoIA);
+  }
 
   document.getElementById('painel-ia-corpo').innerHTML =
     '<div style="margin-bottom:16px;">' +
