@@ -752,16 +752,16 @@
      de qualquer aba). Mesmo padrão visual do modal de produto. ---- */
   .fab-ia {
     position: fixed; right: 24px; bottom: 24px; z-index: 45;
-    width: 56px; height: 56px; border-radius: 50%; border: none; cursor: pointer;
-    background: linear-gradient(155deg, var(--gold-bright), var(--gold)); color: #000;
+    width: 56px; height: 56px; border-radius: 50%; border: 2px solid transparent; cursor: pointer;
+    background: #05080c; color: #000; overflow: hidden; padding: 0;
     display: flex; align-items: center; justify-content: center;
     box-shadow: var(--shadow-elevation-2);
-    transition: transform 0.15s, background 0.15s, color 0.15s;
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
   }
   .fab-ia:hover { transform: scale(1.06); }
   .fab-ia:active { transform: scale(0.96); }
-  .fab-ia .icon { width: 26px; height: 26px; }
-  .fab-ia.aberto { background: var(--glass); border: 1px solid var(--gold); color: var(--gold); }
+  .fab-ia-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .fab-ia.aberto { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(0,0,0,0), var(--shadow-elevation-2), 0 0 14px var(--gold); }
 
   .painel-ia-flutuante {
     position: fixed; right: 24px; bottom: 92px; z-index: 45;

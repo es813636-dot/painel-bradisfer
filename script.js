@@ -1645,7 +1645,7 @@ document.addEventListener('click', e => {
 });
 
 // ---- Botão flutuante da IA (fora de #app -- acessível de qualquer aba) ----
-document.getElementById('fab-ia-btn').innerHTML = icon('robotIcon', 'icon-md');
+document.getElementById('fab-ia-btn').innerHTML = '<img src="assets/jarvis-icon.png" alt="" class="fab-ia-img">';
 document.getElementById('fechar-painel-ia-btn').innerHTML = icon('x', 'icon-sm');
 document.getElementById('painel-ia-titulo-texto').innerHTML = icon('robotIcon', 'icon-sm') + 'Assistente de IA';
 document.getElementById('fab-ia-btn').addEventListener('click', alternarPainelIAFlutuante);
