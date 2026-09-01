@@ -752,19 +752,31 @@
      de qualquer aba). Mesmo padrão visual do modal de produto. ---- */
   .fab-ia {
     position: fixed; right: 24px; bottom: 24px; z-index: 45;
-    width: 56px; height: 56px; border-radius: 50%; border: 2px solid transparent; cursor: pointer;
-    background: #05080c; color: #000; overflow: hidden; padding: 0;
+    width: 76px; height: 76px; border-radius: 50%; border: 2px solid transparent; cursor: pointer;
+    background: transparent; color: #000; overflow: hidden; padding: 0;
     display: flex; align-items: center; justify-content: center;
-    box-shadow: var(--shadow-elevation-2);
+    box-shadow: var(--shadow-elevation-2), 0 0 18px rgba(95, 212, 232, 0.35);
     transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
   }
   .fab-ia:hover { transform: scale(1.06); }
   .fab-ia:active { transform: scale(0.96); }
-  .fab-ia-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .fab-ia.aberto { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(0,0,0,0), var(--shadow-elevation-2), 0 0 14px var(--gold); }
+  .fab-ia-svg { width: 100%; height: 100%; display: block; }
+  .fab-ia.aberto { border-color: var(--gold); box-shadow: var(--shadow-elevation-2), 0 0 16px var(--gold); }
+  /* Anéis/arco/pontos animados (estilo HUD) do ícone do botão flutuante --
+     transform-box:fill-box faz o transform-origin em % funcionar nesses
+     elementos SVG (giram/pulsam em volta do próprio centro, não do canto
+     do viewBox). */
+  .fab-ia-anel-externo { transform-box: fill-box; transform-origin: 50% 50%; animation: fabIaGirar 22s linear infinite; }
+  .fab-ia-arco { transform-box: fill-box; transform-origin: 50% 50%; animation: fabIaGirarInverso 5s linear infinite; }
+  .fab-ia-nucleo { transform-box: fill-box; transform-origin: 50% 50%; animation: fabIaPulsar 2.4s ease-in-out infinite; }
+  .fab-ia-ponto { transform-box: fill-box; transform-origin: 50% 50%; animation: fabIaPiscar 1.8s ease-in-out infinite; }
+  @keyframes fabIaGirar { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes fabIaGirarInverso { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+  @keyframes fabIaPulsar { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.1); } }
+  @keyframes fabIaPiscar { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
 
   .painel-ia-flutuante {
-    position: fixed; right: 24px; bottom: 92px; z-index: 45;
+    position: fixed; right: 24px; bottom: 114px; z-index: 45;
     width: 380px; max-width: calc(100vw - 48px); max-height: min(560px, calc(100vh - 140px));
     background: var(--glass); border: 1px solid var(--gold); border-radius: var(--radius-md);
     box-shadow: 0 16px 48px rgba(0,0,0,0.5);
@@ -784,8 +796,8 @@
   .painel-ia-corpo { padding: 14px 16px; overflow-y: auto; flex: 1; }
 
   @media (max-width: 480px) {
-    .painel-ia-flutuante { right: 12px; left: 12px; width: auto; bottom: 84px; }
-    .fab-ia { right: 16px; bottom: 16px; }
+    .painel-ia-flutuante { right: 12px; left: 12px; width: auto; bottom: 92px; }
+    .fab-ia { right: 16px; bottom: 16px; width: 64px; height: 64px; }
   }
 
   /* ---- Menu de navegação lateral: efeito 3D "porta abrindo" ----
@@ -1035,6 +1047,7 @@
     .scene-3d, .scene-3d.nav-open { transform: none !important; filter: none !important; }
     .nav-sidebar { transform: translateX(-100%) !important; }
     .nav-sidebar.open { transform: translateX(0) !important; }
+    .fab-ia-anel-externo, .fab-ia-arco, .fab-ia-nucleo, .fab-ia-ponto { animation: none !important; }
   }
 
   /* ---- Overlay de login (Google, Nivel A -- ver CONTEXTO.md) ---- */

@@ -1645,7 +1645,27 @@ document.addEventListener('click', e => {
 });
 
 // ---- Botão flutuante da IA (fora de #app -- acessível de qualquer aba) ----
-document.getElementById('fab-ia-btn').innerHTML = '<img src="assets/jarvis-icon.png" alt="" class="fab-ia-img">';
+document.getElementById('fab-ia-btn').innerHTML =
+  '<svg class="fab-ia-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<defs>' +
+      '<radialGradient id="fabIaNucleoGrad" cx="50%" cy="50%" r="50%">' +
+        '<stop offset="0%" stop-color="#eac873" stop-opacity="0.95"/>' +
+        '<stop offset="100%" stop-color="#eac873" stop-opacity="0"/>' +
+      '</radialGradient>' +
+    '</defs>' +
+    '<circle cx="50" cy="50" r="48" fill="#050b12"/>' +
+    '<circle class="fab-ia-anel-externo" cx="50" cy="50" r="44" fill="none" stroke="#5fd4e8" stroke-width="1" stroke-dasharray="1.2 4.4" opacity="0.55"/>' +
+    '<circle cx="50" cy="50" r="36" fill="none" stroke="#5fd4e8" stroke-width="1" opacity="0.3"/>' +
+    '<circle class="fab-ia-arco" cx="50" cy="50" r="36" fill="none" stroke="var(--gold-bright)" stroke-width="3" stroke-linecap="round" stroke-dasharray="34 226"/>' +
+    '<circle cx="50" cy="50" r="27" fill="none" stroke="#5fd4e8" stroke-width="1" opacity="0.4"/>' +
+    '<g class="fab-ia-pontos">' +
+      '<circle class="fab-ia-ponto" cx="50" cy="14" r="1.6" fill="var(--gold-bright)"/>' +
+      '<circle class="fab-ia-ponto" style="animation-delay:.4s" cx="66" cy="18" r="1.4" fill="var(--gold-bright)"/>' +
+      '<circle class="fab-ia-ponto" style="animation-delay:.8s" cx="34" cy="18" r="1.4" fill="var(--gold-bright)"/>' +
+    '</g>' +
+    '<circle class="fab-ia-nucleo" cx="50" cy="50" r="16" fill="url(#fabIaNucleoGrad)"/>' +
+    '<circle cx="50" cy="50" r="6" fill="#eac873"/>' +
+  '</svg>';
 document.getElementById('fechar-painel-ia-btn').innerHTML = icon('x', 'icon-sm');
 document.getElementById('painel-ia-titulo-texto').innerHTML = icon('robotIcon', 'icon-sm') + 'Assistente de IA';
 document.getElementById('fab-ia-btn').addEventListener('click', alternarPainelIAFlutuante);
