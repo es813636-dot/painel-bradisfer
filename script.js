@@ -215,6 +215,18 @@ let buscaProdutoCotacaoTexto = '';
 let mostrarSugestoesProdutoCotacao = false;
 let produtoSelecionadoCotacao = null; // { codigoBarras, produto, marca } -- escolhido no form antes de adicionar
 
+// Estado da importação de planilha de cotação (upload em lote, casando
+// por código em vez de nome -- ver renderizarAbaCotacoes/processarPlanilha
+// CotacoesSelecionada). Casamento por código de barras/interno/fabricante/
+// auxiliar é exato (ao contrário do casamento por nome, que testamos e
+// errou ~30% das vezes com um orçamento real da COMPEL).
+let importCotacoesArquivoNome = '';
+let importCotacoesLinhasBrutas = []; // linhas cruas da planilha (um objeto por linha, chave = cabeçalho original)
+let importCotacoesColunas = []; // cabeçalhos detectados na planilha
+let importCotacoesMapeamento = { produto: '', preco: '', codBarras: '', codInterno: '', codFabricante: '', codAuxiliar: '' };
+let importCotacoesFornecedor = '';
+let importCotacoesResultado = null; // { casados: [...], naoCasados: [...] } depois de processar
+
 // Dados da planilha de análise (Média, Desvio, Ponto de Pedido, etc.) —
 // persiste entre atualizações. Se uma busca vier vazia ou muito menor que
 // a anterior (Google Sheets sendo editado bem na hora da consulta, por
@@ -2840,14 +2852,196 @@ function montarRankingMarcas(marcasOrdenadas, todasMarcasOrdenadas, totalGeral, 
   '</div>';
 }
 
+// ----------------------------------------------------------------------
+// Importação de planilha de cotação (upload em lote) -- casa por CÓDIGO
+// (barras/interno/fabricante/auxiliar), não por nome. Casamento por nome
+// já foi testado com um orçamento real da COMPEL e errou ~30% das vezes
+// (ver aviso na aba); código é exato, sem ambiguidade.
+// ----------------------------------------------------------------------
+
+// Excel guarda código numérico como float ("1626.0") às vezes -- limpa
+// isso antes de comparar. Não mexe em código alfanumérico (ex. "AB-123").
+function normalizarCodigoComparacao(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).trim().replace(/\.0+$/, '');
+}
+
+function construirIndicesCodigosProduto() {
+  const porBarras = new Map(), porInterno = new Map(), porFabricante = new Map(), porAuxiliar = new Map();
+  dadosCompletos.forEach(d => {
+    if (d.codigoBarras) porBarras.set(d.codigoBarras, d);
+    if (d.codigoInterno) porInterno.set(normalizarCodigoComparacao(d.codigoInterno), d);
+    if (d.codigoFabricante) porFabricante.set(normalizarCodigoComparacao(d.codigoFabricante), d);
+    if (d.codigoAuxiliar) porAuxiliar.set(normalizarCodigoComparacao(d.codigoAuxiliar), d);
+  });
+  return { porBarras, porInterno, porFabricante, porAuxiliar };
+}
+
+// Sugestão inicial de mapeamento por palavra-chave no cabeçalho -- só um
+// ponto de partida, o usuário sempre confere/troca antes de processar.
+function autoMapearColunasCotacao(colunas) {
+  const achar = regex => colunas.find(c => regex.test(String(c).toLowerCase())) || '';
+  return {
+    produto: achar(/produto|descri/),
+    preco: achar(/pre[çc]o|valor|vl\.?\s*un|unit/),
+    codBarras: achar(/barra|ean|gtin/),
+    codInterno: achar(/interno/),
+    codFabricante: achar(/fabric/),
+    codAuxiliar: achar(/auxiliar/),
+  };
+}
+
+function parseNumeroPlanilhaImportada(v) {
+  if (typeof v === 'number') return v;
+  return parseNumeroBR(v);
+}
+
+function processarArquivoCotacoesSelecionado(arquivo) {
+  const leitor = new FileReader();
+  leitor.onload = evt => {
+    try {
+      const dados = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(dados, { type: 'array' });
+      const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      if (linhas.length === 0) { alert('Planilha vazia ou sem dados na primeira aba.'); return; }
+      importCotacoesLinhasBrutas = linhas;
+      importCotacoesColunas = Object.keys(linhas[0]);
+      importCotacoesArquivoNome = arquivo.name;
+      importCotacoesMapeamento = autoMapearColunasCotacao(importCotacoesColunas);
+      importCotacoesResultado = null;
+      renderizarAbaCotacoes();
+    } catch (erro) {
+      alert('Não consegui ler essa planilha (' + erro.message + '). Confirme que é um .xlsx ou .csv válido.');
+    }
+  };
+  leitor.readAsArrayBuffer(arquivo);
+}
+
+function rodarMatchImportacaoCotacoes() {
+  const { produto: colProduto, preco: colPreco, codBarras: colCodBarras, codInterno: colCodInterno, codFabricante: colCodFabricante, codAuxiliar: colCodAuxiliar } = importCotacoesMapeamento;
+  if (!colPreco) { alert('Selecione qual coluna é o preço.'); return; }
+  if (!colCodBarras && !colCodInterno && !colCodFabricante && !colCodAuxiliar) {
+    alert('Selecione pelo menos uma coluna de código pra casar os produtos.');
+    return;
+  }
+  const indices = construirIndicesCodigosProduto();
+  const casados = [], naoCasados = [];
+  importCotacoesLinhasBrutas.forEach(linha => {
+    let produtoAchado = null, codigoUsado = '';
+    if (colCodBarras && linha[colCodBarras] !== '') {
+      const alvo = normalizarCodigoComparacao(linha[colCodBarras]);
+      const alvoPadded = /^\d+$/.test(alvo) && alvo.length < 13 ? alvo.padStart(13, '0') : alvo;
+      produtoAchado = indices.porBarras.get(alvo) || indices.porBarras.get(alvoPadded) || null;
+      if (produtoAchado) codigoUsado = 'barras: ' + alvo;
+    }
+    if (!produtoAchado && colCodInterno && linha[colCodInterno] !== '') {
+      const alvo = normalizarCodigoComparacao(linha[colCodInterno]);
+      produtoAchado = indices.porInterno.get(alvo) || null;
+      if (produtoAchado) codigoUsado = 'interno: ' + alvo;
+    }
+    if (!produtoAchado && colCodFabricante && linha[colCodFabricante] !== '') {
+      const alvo = normalizarCodigoComparacao(linha[colCodFabricante]);
+      produtoAchado = indices.porFabricante.get(alvo) || null;
+      if (produtoAchado) codigoUsado = 'fabricante: ' + alvo;
+    }
+    if (!produtoAchado && colCodAuxiliar && linha[colCodAuxiliar] !== '') {
+      const alvo = normalizarCodigoComparacao(linha[colCodAuxiliar]);
+      produtoAchado = indices.porAuxiliar.get(alvo) || null;
+      if (produtoAchado) codigoUsado = 'auxiliar: ' + alvo;
+    }
+
+    const precoCotado = parseNumeroPlanilhaImportada(linha[colPreco]);
+    const descricao = colProduto ? String(linha[colProduto] || '') : '';
+
+    if (produtoAchado && precoCotado > 0) {
+      casados.push({ produto: produtoAchado, codigoUsado, precoCotado });
+    } else {
+      naoCasados.push({ descricao, motivo: !produtoAchado ? 'código não encontrado' : 'preço inválido' });
+    }
+  });
+  importCotacoesResultado = { casados, naoCasados };
+  renderizarAbaCotacoes();
+}
+
+function confirmarImportacaoCotacoes() {
+  if (!importCotacoesResultado) return;
+  const fornecedor = importCotacoesFornecedor.trim();
+  if (!fornecedor) { alert('Informe o fornecedor antes de confirmar.'); return; }
+  const dataHoje = new Date().toLocaleDateString('pt-BR');
+  importCotacoesResultado.casados.forEach(c => {
+    cotacoes.push({
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      codigoBarras: c.produto.codigoBarras,
+      produto: c.produto.produto,
+      marca: c.produto.marca,
+      fornecedor,
+      precoCotado: c.precoCotado,
+      data: dataHoje,
+    });
+  });
+  salvarCotacoesNoLocalStorage();
+  cancelarImportacaoCotacoes();
+}
+
+function cancelarImportacaoCotacoes() {
+  importCotacoesArquivoNome = '';
+  importCotacoesLinhasBrutas = [];
+  importCotacoesColunas = [];
+  importCotacoesMapeamento = { produto: '', preco: '', codBarras: '', codInterno: '', codFabricante: '', codAuxiliar: '' };
+  importCotacoesResultado = null;
+  renderizarAbaCotacoes();
+}
+
+function montarFormularioMapeamentoCotacoes() {
+  const opcoesColuna = selecionado =>
+    '<option value="">(nenhuma)</option>' +
+    importCotacoesColunas.map(c => '<option value="' + escapeHtml(c) + '"' + (c === selecionado ? ' selected' : '') + '>' + escapeHtml(c) + '</option>').join('');
+  const campo = (label, chave) =>
+    '<label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-muted);">' + escapeHtml(label) +
+      '<select data-mapeamento-cotacao="' + chave + '">' + opcoesColuna(importCotacoesMapeamento[chave]) + '</select>' +
+    '</label>';
+  return '<p class="hint">Arquivo: <b style="color:var(--text);">' + escapeHtml(importCotacoesArquivoNome) + '</b> (' + fmtNum(importCotacoesLinhasBrutas.length) + ' linhas) — indique qual coluna é cada coisa:</p>' +
+    '<input type="text" id="fornecedor-importacao-cotacao" placeholder="Fornecedor (aplica pra todas as linhas)" aria-label="Fornecedor" value="' + escapeHtml(importCotacoesFornecedor) + '" style="max-width:320px;margin-bottom:12px;display:block;">' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;max-width:720px;">' +
+      campo('Produto/Descrição (só referência)', 'produto') +
+      campo('Preço *', 'preco') +
+      campo('Código de Barras', 'codBarras') +
+      campo('Código Interno', 'codInterno') +
+      campo('Código Fabricante', 'codFabricante') +
+      campo('Código Auxiliar', 'codAuxiliar') +
+    '</div>' +
+    '<p class="hint" style="margin-top:10px;">Preencha ao menos um código — linha sem nenhum bater fica pra você resolver manualmente na busca acima.</p>' +
+    '<div style="display:flex;gap:8px;margin-top:12px;">' +
+      '<button class="refresh-btn" id="processar-importacao-cotacao-btn" style="background:var(--gold);border:1px solid var(--gold);color:#000;font-weight:700;">Processar</button>' +
+      '<button class="refresh-btn" id="cancelar-importacao-cotacao-btn">Cancelar</button>' +
+    '</div>';
+}
+
+function montarResultadoImportacaoCotacoes() {
+  const { casados, naoCasados } = importCotacoesResultado;
+  return '<p class="hint">' + fmtNum(casados.length) + ' linha(s) casada(s) por código, ' + fmtNum(naoCasados.length) + ' não encontrada(s).</p>' +
+    (casados.length > 0
+      ? '<table style="margin-bottom:16px;"><thead><tr><th>Produto (casado)</th><th>Código usado</th><th class="num">Preço cotado</th></tr></thead><tbody>' +
+          casados.map(c => '<tr><td>' + escapeHtml(c.produto.produto) + '</td><td>' + escapeHtml(c.codigoUsado) + '</td><td class="num">' + fmtMoeda(c.precoCotado) + '</td></tr>').join('') +
+        '</tbody></table>'
+      : '') +
+    (naoCasados.length > 0
+      ? '<p class="hint" style="color:var(--red-a);">Não encontrados (resolva manualmente na busca acima se precisar): ' + naoCasados.map(n => escapeHtml(n.descricao || '(sem descrição)') + ' (' + n.motivo + ')').join(', ') + '</p>'
+      : '') +
+    '<div style="display:flex;gap:8px;margin-top:12px;">' +
+      (casados.length > 0 ? '<button class="refresh-btn" id="confirmar-importacao-cotacao-btn" style="background:var(--gold);border:1px solid var(--gold);color:#000;font-weight:700;">Confirmar e adicionar ' + fmtNum(casados.length) + ' cotação(ões)</button>' : '') +
+      '<button class="refresh-btn" id="cancelar-importacao-cotacao-btn">Cancelar</button>' +
+    '</div>';
+}
+
 // Aba "Cotações" -- compara preço cotado por fornecedor com o custo atual
-// (Sysemp). Casamento produto sempre manual (busca + confirma), nunca
-// automático por nome -- testado com um orçamento real da COMPEL e o
-// casamento automático errou ~30% das vezes (confundiu "Rolo Espuma POP"
-// com "Rolo Espuma POLIESTER", "Trincha 1½" com "2½", etc.), então não é
-// confiável o bastante pra decisão de compra. Persistido em localStorage
-// (mesmo padrão de pedidosEmAberto) -- não tem backend pra gravar isso
-// na planilha.
+// (Sysemp). Casamento manual (busca + confirma) pra cadastro avulso, ou
+// importação em lote por código pra planilha de fornecedor (ver funções
+// acima) -- nunca casamento automático por NOME, que testamos com um
+// orçamento real da COMPEL e errou ~30% das vezes (confundiu "Rolo Espuma
+// POP" com "Rolo Espuma POLIESTER", "Trincha 1½" com "2½", etc.).
+// Persistido em localStorage (mesmo padrão de pedidosEmAberto) -- não tem
+// backend pra gravar isso na planilha.
 function renderizarAbaCotacoes() {
   const buscaLower = buscaProdutoCotacaoTexto.toLowerCase();
   const sugestoesProduto = buscaProdutoCotacaoTexto
@@ -2903,6 +3097,16 @@ function renderizarAbaCotacoes() {
         '<input type="number" id="preco-cotacao" placeholder="Preço cotado (R$)" min="0" step="0.01" aria-label="Preço cotado">' +
         '<button class="refresh-btn" id="adicionar-cotacao-btn" style="align-self:flex-start;background:var(--gold);border:1px solid var(--gold);color:#000;font-weight:700;">' + icon('tagIcon', 'icon-sm') + ' Adicionar cotação</button>' +
       '</div>' +
+    '</div>' +
+
+    '<div class="panel" style="margin-bottom:16px;">' +
+      '<h2 style="margin:0;">' + icon('uploadSimple', 'icon-sm') + 'Importar planilha de cotação</h2>' +
+      '<p class="hint" style="margin-top:10px;">Casa por código (barras, interno, fabricante ou auxiliar) em vez de nome — muito mais confiável. Aceita .xlsx ou .csv.</p>' +
+      (!importCotacoesArquivoNome
+        ? '<input type="file" id="input-planilha-cotacao" accept=".xlsx,.xls,.csv" style="display:none;">' +
+          '<button class="refresh-btn" id="selecionar-planilha-cotacao-btn">' + icon('uploadSimple', 'icon-sm') + ' Escolher planilha</button>'
+        : (!importCotacoesResultado ? montarFormularioMapeamentoCotacoes() : montarResultadoImportacaoCotacoes())
+      ) +
     '</div>' +
 
     '<div class="panel">' +
@@ -2987,6 +3191,29 @@ function renderizarAbaCotacoes() {
     salvarCotacoesNoLocalStorage();
     renderizarAbaCotacoes();
   }));
+
+  const selecionarPlanilhaCotacaoBtn = document.getElementById('selecionar-planilha-cotacao-btn');
+  const inputPlanilhaCotacao = document.getElementById('input-planilha-cotacao');
+  if (selecionarPlanilhaCotacaoBtn && inputPlanilhaCotacao) {
+    selecionarPlanilhaCotacaoBtn.addEventListener('click', () => inputPlanilhaCotacao.click());
+    inputPlanilhaCotacao.addEventListener('change', e => {
+      const arquivo = e.target.files[0];
+      if (arquivo) processarArquivoCotacoesSelecionado(arquivo);
+    });
+  }
+  const processarImportacaoCotacaoBtn = document.getElementById('processar-importacao-cotacao-btn');
+  if (processarImportacaoCotacaoBtn) processarImportacaoCotacaoBtn.addEventListener('click', () => {
+    const inputFornecedor = document.getElementById('fornecedor-importacao-cotacao');
+    importCotacoesFornecedor = inputFornecedor ? inputFornecedor.value : '';
+    document.querySelectorAll('[data-mapeamento-cotacao]').forEach(sel => {
+      importCotacoesMapeamento[sel.dataset.mapeamentoCotacao] = sel.value;
+    });
+    rodarMatchImportacaoCotacoes();
+  });
+  const confirmarImportacaoCotacaoBtn = document.getElementById('confirmar-importacao-cotacao-btn');
+  if (confirmarImportacaoCotacaoBtn) confirmarImportacaoCotacaoBtn.addEventListener('click', confirmarImportacaoCotacoes);
+  const cancelarImportacaoCotacaoBtn = document.getElementById('cancelar-importacao-cotacao-btn');
+  if (cancelarImportacaoCotacaoBtn) cancelarImportacaoCotacaoBtn.addEventListener('click', cancelarImportacaoCotacoes);
 
   const abaEstoqueEl4 = document.getElementById('aba-estoque');
   if (abaEstoqueEl4) abaEstoqueEl4.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
