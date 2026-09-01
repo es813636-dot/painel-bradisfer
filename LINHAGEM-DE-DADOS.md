@@ -49,7 +49,7 @@ flowchart LR
 
 | Aba | Como é preenchida | Dono / atualizador | Validade | Consumida por |
 |---|---|---|---|---|
-| **Produtos** | Escrita direta (`values.clear` + `values.update`, RAW) por `atualizar-estoque.js` | Automação (GitHub Actions) | Sempre fresca (~10 min) | Aba `Base` (fórmula) |
+| **Produtos** | Escrita direta (`values.clear` + `values.update`, RAW) por `atualizar-estoque.js` | Automação (GitHub Actions) | Sempre fresca (~10 min) | Aba `Base` (fórmula) **e, desde 01/09/2026, também `script.js` diretamente** (só pra `Código Interno`/`Código Fabricante`/`Código Auxiliar` — ver nota abaixo) |
 | **Base** | Fórmula `=SE(Produtos!Bxxxx="";"";Produtos!Bxxxx)` célula a célula, referenciando `Produtos` | Ninguém edita manualmente — nota na própria aba: *"BASE — calculada automaticamente a partir da aba Produtos. Não editar manualmente."* | Reflete `Produtos` quase em tempo real (recálculo de fórmula do Sheets) | Aba `BaseLooker` (fórmula) |
 | **BaseLooker** | Fórmula `={Base!A2:O5502}` (array, espelha `Base` inteira) | Idem — não editar manualmente | Idem `Base` | **`script.js`** (fonte principal do painel, via CSV público) |
 | **AnaliseMinMax** | Import manual único (Excel → Sheets), feito uma vez | Ninguém — **congelada desde a importação original** (~meados de agosto/2026) | ⚠️ **Estática, não atualiza sozinha.** Só fallback pra produtos ainda não cobertos por `VendasAoVivo` | `script.js` (fallback + Curva ABC/Nível de Atendimento informativos) |
@@ -60,6 +60,13 @@ flowchart LR
 ### Nota sobre a coluna "Código Barras"
 
 Grava com uma aspa simples como parte literal do conteúdo (`'0074468051034`), não como dica de formatação — é a única forma que resistiu a reformatação automática do Google Sheets (ver `CONTEXTO.md`, investigação de 25/08/2026). `script.js` remove essa aspa ao ler (`limparCodigoBarras()`). Qualquer novo lugar que grave ou leia essa coluna precisa seguir o mesmo padrão, senão o cruzamento entre `Produtos`/`VendasAoVivo` quebra silenciosamente.
+
+### Nota sobre `script.js` ler `Produtos` direto (01/09/2026)
+
+Até 01/09/2026, `script.js` só lia `BaseLooker`/`AnaliseMinMax`/`VendasAoVivo` — nunca `Produtos` direto. Passou a buscar `Produtos` também, só pra 3 campos que a `BaseLooker` não carrega (`Código Interno`, `Código Fabricante`, `Código Auxiliar`, usados pra cruzar cotação de fornecedor com o catálogo). **Decisão deliberada de não estender `Base`/`BaseLooker`** — essas duas têm fórmulas fixas em 5500 linhas que ninguém edita mais e ninguém consegue inspecionar/testar ao vivo com segurança (ver lacunas conhecidas abaixo); buscar `Produtos` à parte e casar por código de barras no navegador evitou esse risco.
+
+- **`Código Interno` tem que ser lido por posição, não por nome** — a célula de cabeçalho dessa coluna na planilha tem uma anotação antiga colada no mesmo texto ("COLE AQUI o CSV... Código Interno", tudo numa célula só), então `r['Código Interno']` sempre vem vazio; `script.js` lê `Object.values(r)[0]` (1ª coluna) em vez do nome. Confirmado direto no CSV público antes de escrever o código, não é suposição.
+- **`Código Auxiliar` foi adicionado na automação (`atualizar-estoque.js`) mas ainda não tem dado** — precisa de duas coisas pra popular: (1) a automação rodar de novo com o mapeamento novo (~10 min depois do deploy), e (2) alguém digitar `Código Auxiliar` na célula de cabeçalho correspondente na planilha (hoje está em branco, na coluna logo depois de "Preço") — sem esse cabeçalho, o valor chega na planilha mas o painel não sabe em qual coluna procurar.
 
 ## Dados embutidos no código (fora da planilha)
 
