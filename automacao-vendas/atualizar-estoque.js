@@ -38,7 +38,7 @@ const MAX_LINHAS_RESERVADAS = 5500; // mesmo teto usado nas fórmulas da aba Bas
 const COLUNAS_PLANILHA = [
   'Código Interno', 'Código Barras', 'Código Fabricante', 'Produto',
   'Marca', 'Grupo', 'SubGrupo', 'Unidade', 'Estoque Bradisfer',
-  'EstMinimo1', 'EstMaximo1', 'Custo Atual', 'Preço',
+  'EstMinimo1', 'EstMaximo1', 'Custo Atual', 'Preço', 'Código Auxiliar',
 ];
 
 const MAPEAMENTO_CAMPOS = {
@@ -55,6 +55,7 @@ const MAPEAMENTO_CAMPOS = {
   'EstMaximo1': 'estoque_maximo',
   'Custo Atual': 'custo',
   'Preço': 'preço_venda',
+  'Código Auxiliar': 'codigo_auxiliar',
 };
 
 const COLUNAS_NUMERICAS = new Set([

@@ -8,6 +8,15 @@ const ANALISE_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '
 // pra todo o catálogo, sem precisar clicar item por item.
 const VENDAS_VIVO_SHEET_NAME = 'VendasAoVivo';
 const VENDAS_VIVO_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(VENDAS_VIVO_SHEET_NAME);
+// Aba "Produtos" (gravada direto pela automação, ver automacao-vendas/
+// atualizar-estoque.js) buscada à parte, só pelos códigos que a BaseLooker
+// não carrega (Interno/Fabricante/Auxiliar) -- casa por código de barras
+// depois. Escolhido em vez de estender Base/BaseLooker porque a aba Base
+// tem fórmulas manuais fixas em 5500 linhas que ninguém edita mais (ver
+// LINHAGEM-DE-DADOS.md) -- mexer no número de colunas ali sem poder
+// inspecionar/testar ao vivo é risco alto demais pra pouco ganho.
+const PRODUTOS_SHEET_NAME = 'Produtos';
+const PRODUTOS_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(PRODUTOS_SHEET_NAME);
 // Ponte (Cloudflare Worker, ver cloudflare-worker/produto-detalhe.js) que
 // busca compras/vendas reais na Sysemp, um produto por vez, sob demanda
 // (ao clicar num item). Substituiu o Apps Script Web App em 25/08/2026 --
@@ -722,10 +731,11 @@ async function carregarDados() {
   document.getElementById('subtitle').textContent = 'conectando...';
 
   try {
-    const [respBase, respAnalise, respVendasVivo] = await Promise.all([
+    const [respBase, respAnalise, respVendasVivo, respProdutos] = await Promise.all([
       fetch(CSV_URL + '&t=' + Date.now()),
       fetch(ANALISE_CSV_URL + '&t=' + Date.now()).catch(() => null), // fonte opcional — não trava o painel se falhar
       fetch(VENDAS_VIVO_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem
+      fetch(PRODUTOS_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem — só pra Código Interno/Fabricante/Auxiliar
     ]);
     if (!respBase.ok) throw new Error('HTTP ' + respBase.status);
     const textoBase = await respBase.text();
@@ -801,6 +811,31 @@ async function carregarDados() {
       vendasVivoPersistente = vendasVivo;
     }
 
+    // ---- fonte 4 (opcional): Código Interno/Fabricante/Auxiliar (aba Produtos) ----
+    // Buscada à parte da BaseLooker de propósito -- ver comentário na
+    // declaração de PRODUTOS_CSV_URL. Casa por código de barras.
+    const codigosExtras = new Map();
+    if (respProdutos && respProdutos.ok) {
+      const textoProdutos = await respProdutos.text();
+      const linhasProdutos = parseCSV(textoProdutos);
+      linhasProdutos.forEach(r => {
+        const codBarra = limparCodigoBarras(r['Código Barras']);
+        if (!codBarra) return;
+        // "Código Interno" lido por posição (1ª coluna), não por nome -- a
+        // célula de cabeçalho dessa coluna na planilha tem uma anotação
+        // antiga colada junto ("COLE AQUI o CSV... Código Interno" tudo
+        // na mesma célula), então o nome da chave não bate com o texto
+        // exato "Código Interno". Confirmado direto no CSV público antes
+        // de escrever isso -- não é suposição.
+        const valores = Object.values(r);
+        codigosExtras.set(codBarra, {
+          codigoInterno: valores[0] || '',
+          codigoFabricante: r['Código Fabricante'] || '',
+          codigoAuxiliar: r['Código Auxiliar'] || '',
+        });
+      });
+    }
+
     let qtdComOverride = 0;
 
     dadosCompletos = linhas.map(r => {
@@ -825,7 +860,9 @@ async function carregarDados() {
       const codigoBarras = limparCodigoBarras(r['Código Barras']);
       const precoMargem = precoMargemDoProduto(codigoBarras); // [margemLiquida, precoVenda] ou null se não achou na tabela de preços
       const vendasAoVivoLote = codigoBarras ? (vendasVivoPersistente.get(codigoBarras) || null) : null;
-      return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras, estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null, margemLucro: precoMargem ? precoMargem[0] : null, precoVenda: precoMargem ? precoMargem[1] : null, vendasAoVivoLote };
+      const extras = codigoBarras ? codigosExtras.get(codigoBarras) : null;
+      return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras, estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null, margemLucro: precoMargem ? precoMargem[0] : null, precoVenda: precoMargem ? precoMargem[1] : null, vendasAoVivoLote,
+        codigoInterno: extras ? extras.codigoInterno : '', codigoFabricante: extras ? extras.codigoFabricante : '', codigoAuxiliar: extras ? extras.codigoAuxiliar : '' };
     });
 
     const totalAntesExclusao = dadosCompletos.length;
