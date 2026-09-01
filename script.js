@@ -1868,7 +1868,7 @@ async function gerarPedidoSysemp(marca, itens) {
       }
     }
     const custoFormatado = (d.custo || 0).toFixed(2).replace('.', ',');
-    return { codigo: d.codigoBarras, produto: d.produto, qtd, custo: d.custo || 0, custoFormatado };
+    return { codigo: d.codigoBarras, produto: d.produto, qtd, custo: d.custo || 0, custoFormatado, curva: d.analise && d.analise.curva ? d.analise.curva : '' };
   }));
 
   if (btn && textoOriginalBtn !== null) { btn.disabled = false; btn.textContent = textoOriginalBtn; }
@@ -1924,10 +1924,11 @@ function renderizarResumoPedido() {
     '<div class="modal-section">' +
       (linhasPedidoAtual.length === 0
         ? '<p class="hint" style="text-align:center;padding:16px 0;">Nenhum item no pedido — adicione algum abaixo.</p>'
-        : '<table class="modal-table"><thead><tr><th>Produto</th><th class="num">Qtd</th><th class="num">Custo unit.</th><th class="num">Subtotal</th><th></th></tr></thead><tbody>' +
+        : '<table class="modal-table"><thead><tr><th>Produto</th><th class="num">Curva</th><th class="num">Qtd</th><th class="num">Custo unit.</th><th class="num">Subtotal</th><th></th></tr></thead><tbody>' +
             linhasPedidoAtual.map((l, i) =>
               '<tr>' +
                 '<td>' + escapeHtml(l.produto) + '</td>' +
+                '<td class="num">' + (l.curva || '—') + '</td>' +
                 '<td class="num"><input type="number" min="0" step="1" class="input-qtd-pedido" data-idx-pedido="' + i + '" value="' + l.qtd + '" style="width:70px;text-align:right;"></td>' +
                 '<td class="num">' + fmtMoeda(l.custo) + '</td>' +
                 '<td class="num">' + fmtMoeda(l.qtd * l.custo) + '</td>' +
@@ -2001,6 +2002,7 @@ function renderizarResumoPedido() {
         qtd: 1,
         custo: produto.custo || 0,
         custoFormatado: (produto.custo || 0).toFixed(2).replace('.', ','),
+        curva: produto.analise && produto.analise.curva ? produto.analise.curva : '',
       });
     }
     buscaProdutoPedidoTexto = '';
@@ -2225,9 +2227,9 @@ function renderizarAbaVendas() {
   const qtdSemGiro = dadosCompletos.filter(d => d.estoque > 0 && (!d.analise || !d.analise.mediaMensal || d.analise.mediaMensal === 0) && !(d.analise && d.analise.descontinuada)).length;
 
   const tabelaProdutos = (lista, colunaValor, attrNome) =>
-    '<table class="' + (animarTabelasVendasAgora ? 'tabela-animada' : '') + '"><thead><tr><th>Produto</th><th>Marca</th><th class="num">' + colunaValor + '</th></tr></thead><tbody>' +
-      (lista.map((d, i) => '<tr class="clickable" data-' + attrNome + '="' + i + '"><td>' + escapeHtml(d.produto) + '</td><td>' + escapeHtml(d.marca) + '</td><td class="num">' + d.analise.mediaMensal.toFixed(1) + ' un/mês</td></tr>').join('')
-        || '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);">Sem dados suficientes.</td></tr>') +
+    '<table class="' + (animarTabelasVendasAgora ? 'tabela-animada' : '') + '"><thead><tr><th>Produto</th><th>Marca</th><th class="num">Curva</th><th class="num">' + colunaValor + '</th></tr></thead><tbody>' +
+      (lista.map((d, i) => '<tr class="clickable" data-' + attrNome + '="' + i + '"><td>' + escapeHtml(d.produto) + '</td><td>' + escapeHtml(d.marca) + '</td><td class="num">' + (d.analise.curva || '—') + '</td><td class="num">' + d.analise.mediaMensal.toFixed(1) + ' un/mês</td></tr>').join('')
+        || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">Sem dados suficientes.</td></tr>') +
     '</tbody></table>';
 
   // Guarda os <canvas> dos gráficos de marca ANTES de reescrever o
@@ -2378,9 +2380,9 @@ function renderizarAbaVendas() {
     '<div class="panel">' +
       '<h2>' + icon('hourglass', 'icon-sm') + ' Produtos sem giro de estoque (' + fmtNum(qtdSemGiro) + ')</h2>' +
       '<p class="hint">Têm estoque físico mas média de venda zero — ' + fmtMoeda(valorTotalSemGiro) + ' de capital parado no total. Mostrando os 20 de maior valor.</p>' +
-      '<table class="' + (animarTabelasVendasAgora ? 'tabela-animada' : '') + '"><thead><tr><th>Produto</th><th>Marca</th><th class="num">Estoque</th><th class="num">Valor parado</th></tr></thead><tbody>' +
-        (semGiro.map((d, i) => '<tr class="clickable" data-idx-semgiro="' + i + '"><td>' + escapeHtml(d.produto) + '</td><td>' + escapeHtml(d.marca) + '</td><td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtMoeda(d.valorEstoque) + '</td></tr>').join('')
-          || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">Nenhum produto parado encontrado.</td></tr>') +
+      '<table class="' + (animarTabelasVendasAgora ? 'tabela-animada' : '') + '"><thead><tr><th>Produto</th><th>Marca</th><th class="num">Curva</th><th class="num">Estoque</th><th class="num">Valor parado</th></tr></thead><tbody>' +
+        (semGiro.map((d, i) => '<tr class="clickable" data-idx-semgiro="' + i + '"><td>' + escapeHtml(d.produto) + '</td><td>' + escapeHtml(d.marca) + '</td><td class="num">' + (d.analise && d.analise.curva ? d.analise.curva : '—') + '</td><td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtMoeda(d.valorEstoque) + '</td></tr>').join('')
+          || '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Nenhum produto parado encontrado.</td></tr>') +
       '</tbody></table>' +
     '</div>' +
 
@@ -3021,8 +3023,8 @@ function montarResultadoImportacaoCotacoes() {
   const { casados, naoCasados } = importCotacoesResultado;
   return '<p class="hint">' + fmtNum(casados.length) + ' linha(s) casada(s) por código, ' + fmtNum(naoCasados.length) + ' não encontrada(s).</p>' +
     (casados.length > 0
-      ? '<table style="margin-bottom:16px;"><thead><tr><th>Produto (casado)</th><th>Código usado</th><th class="num">Preço cotado</th></tr></thead><tbody>' +
-          casados.map(c => '<tr><td>' + escapeHtml(c.produto.produto) + '</td><td>' + escapeHtml(c.codigoUsado) + '</td><td class="num">' + fmtMoeda(c.precoCotado) + '</td></tr>').join('') +
+      ? '<table style="margin-bottom:16px;"><thead><tr><th>Produto (casado)</th><th class="num">Curva</th><th>Código usado</th><th class="num">Preço cotado</th></tr></thead><tbody>' +
+          casados.map(c => '<tr><td>' + escapeHtml(c.produto.produto) + '</td><td class="num">' + (c.produto.analise && c.produto.analise.curva ? c.produto.analise.curva : '—') + '</td><td>' + escapeHtml(c.codigoUsado) + '</td><td class="num">' + fmtMoeda(c.precoCotado) + '</td></tr>').join('') +
         '</tbody></table>'
       : '') +
     (naoCasados.length > 0
@@ -3055,7 +3057,8 @@ function renderizarAbaCotacoes() {
     const custoAtual = produtoAtual ? (produtoAtual.custo || 0) : null;
     const diferenca = custoAtual !== null ? custoAtual - c.precoCotado : null;
     const diferencaPct = (custoAtual !== null && custoAtual > 0) ? (diferenca / custoAtual) * 100 : null;
-    return Object.assign({}, c, { custoAtual, diferenca, diferencaPct });
+    const curva = produtoAtual && produtoAtual.analise && produtoAtual.analise.curva ? produtoAtual.analise.curva : '';
+    return Object.assign({}, c, { custoAtual, diferenca, diferencaPct, curva });
   }).sort((a, b) => {
     if (a.diferencaPct === null) return 1;
     if (b.diferencaPct === null) return -1;
@@ -3114,10 +3117,11 @@ function renderizarAbaCotacoes() {
       '<p class="hint" style="margin-top:10px;">Ordenado da maior economia pro maior aumento.</p>' +
       (linhas.length === 0
         ? '<p class="hint" style="text-align:center;padding:20px 0;">Nenhuma cotação registrada ainda.</p>'
-        : '<table><thead><tr><th>Produto</th><th>Fornecedor</th><th class="num">Preço cotado</th><th class="num">Custo atual</th><th class="num">Diferença</th><th>Data</th><th></th></tr></thead><tbody>' +
+        : '<table><thead><tr><th>Produto</th><th class="num">Curva</th><th>Fornecedor</th><th class="num">Preço cotado</th><th class="num">Custo atual</th><th class="num">Diferença</th><th>Data</th><th></th></tr></thead><tbody>' +
             linhas.map(l =>
               '<tr>' +
                 '<td>' + escapeHtml(l.produto) + '</td>' +
+                '<td class="num">' + (l.curva || '—') + '</td>' +
                 '<td>' + escapeHtml(l.fornecedor) + '</td>' +
                 '<td class="num">' + fmtMoeda(l.precoCotado) + '</td>' +
                 '<td class="num">' + (l.custoAtual !== null ? fmtMoeda(l.custoAtual) : '<span class="hint">não encontrado</span>') + '</td>' +
@@ -3478,6 +3482,7 @@ function renderizar() {
         '<table><thead><tr>' +
           '<th data-col="produto">Produto<span class="arrow">' + (ordemCol === 'produto' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
           '<th data-col="marca">Marca<span class="arrow">' + (ordemCol === 'marca' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
+          '<th class="num">Curva</th>' +
           '<th data-col="situacao">Situação<span class="arrow">' + (ordemCol === 'situacao' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
           '<th class="num" data-col="estoque">Estoque<span class="arrow">' + (ordemCol === 'estoque' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
           '<th class="num" data-col="minimo">Mínimo<span class="arrow">' + (ordemCol === 'minimo' ? (ordemDir > 0 ? '▲' : '▼') : '') + '</span></th>' +
@@ -3486,11 +3491,12 @@ function renderizar() {
         '</tr></thead><tbody>' +
           (listaTabela.map((d, i) =>
             '<tr class="clickable" data-idx="' + i + '"><td>' + escapeHtml(d.produto) + '</td><td>' + escapeHtml(d.marca) + '</td>' +
+            '<td class="num">' + (d.analise && d.analise.curva ? d.analise.curva : '—') + '</td>' +
             '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
             '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
             '<td class="num">' + (d.valorEstoque > 0 ? fmtMoeda(d.valorEstoque) : '—') + '</td>' +
             '<td class="num">' + (d.valorRepor > 0 ? fmtMoeda(d.valorRepor) : '—') + '</td></tr>'
-          ).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Nenhum item para os filtros escolhidos.</td></tr>') +
+          ).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Nenhum item para os filtros escolhidos.</td></tr>') +
         '</tbody></table>' +
       '</div>'
     :
@@ -3511,7 +3517,7 @@ function renderizar() {
               (totalEmAberto > 0 ? ' · ' + fmtNum(totalEmAberto) + ' un já em pedido aberto (descontadas da sugestão)' : '') +
             '</p>' +
             '<input type="text" id="busca-itens-criticos" placeholder="Buscar item nesta lista..." aria-label="Buscar item nesta lista" autocomplete="off" value="' + escapeHtml(buscaItensCriticosTexto) + '" style="margin-bottom:12px;width:280px;">' +
-            '<table><thead><tr><th>Produto</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mín.</th><th class="num">Pedido</th><th class="num">A repor</th></tr></thead><tbody>' +
+            '<table><thead><tr><th>Produto</th><th class="num">Curva</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mín.</th><th class="num">Pedido</th><th class="num">A repor</th></tr></thead><tbody>' +
               (itensDaMarca.map((d, i) => {
                 const emAberto = pedidosEmAberto.get(normalizarProduto(d.produto)) || 0;
                 // Itens que só entram aqui pela sugestão AO VIVO (situação
@@ -3521,11 +3527,12 @@ function renderizar() {
                 const valorReporExibido = d.valorRepor > 0 ? d.valorRepor
                   : (d.vendasAoVivoLote ? calcularSugestaoSemPlanilha(d, d.vendasAoVivoLote.mediaMensal) * (d.custo || 0) : 0);
                 return '<tr class="clickable" data-idx-marca="' + i + '"><td>' + escapeHtml(d.produto) + '</td>' +
+                '<td class="num">' + (d.analise && d.analise.curva ? d.analise.curva : '—') + '</td>' +
                 '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
                 '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
                 '<td class="num"><input type="number" class="input-pedido-aberto" data-idx-marca-pedido="' + i + '" min="0" step="1" placeholder="—" value="' + (emAberto > 0 ? emAberto : '') + '" style="width:80px;text-align:right;"></td>' +
                 '<td class="num">' + fmtMoeda(valorReporExibido) + '</td></tr>';
-              }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Nenhum item encontrado.</td></tr>') +
+              }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Nenhum item encontrado.</td></tr>') +
             '</tbody></table>' +
           '</div>' +
           '<div class="panel" style="margin-top:16px;">' +
@@ -3535,13 +3542,14 @@ function renderizar() {
             (mostrarItensNormaisMarca ? (
               '<p class="hint">Estoque normal ou em excesso — sem necessidade de compra no momento</p>' +
               '<input type="text" id="busca-itens-normais" placeholder="Buscar item nesta lista..." aria-label="Buscar item nesta lista" autocomplete="off" value="' + escapeHtml(buscaItensNormaisTexto) + '" style="margin-bottom:12px;width:280px;">' +
-              '<table><thead><tr><th>Produto</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mínimo</th><th class="num">Valor em estoque</th></tr></thead><tbody>' +
+              '<table><thead><tr><th>Produto</th><th class="num">Curva</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mínimo</th><th class="num">Valor em estoque</th></tr></thead><tbody>' +
                 (itensNormaisDaMarca.map((d, i) =>
                   '<tr class="clickable" data-idx-normal="' + i + '"><td>' + escapeHtml(d.produto) + '</td>' +
+                  '<td class="num">' + (d.analise && d.analise.curva ? d.analise.curva : '—') + '</td>' +
                   '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
                   '<td class="num">' + fmtNum(d.estoque) + '</td><td class="num">' + fmtNum(d.minimo) + '</td>' +
                   '<td class="num">' + (d.valorEstoque > 0 ? fmtMoeda(d.valorEstoque) : '—') + '</td></tr>'
-                ).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Nenhum item encontrado.</td></tr>') +
+                ).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Nenhum item encontrado.</td></tr>') +
               '</tbody></table>'
             ) : '<p class="hint">Clique para expandir</p>') +
           '</div>';
