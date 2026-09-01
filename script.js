@@ -67,6 +67,7 @@ const SVG_ICONS = {
   uploadSimple: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><line x1="128" y1="144" x2="128" y2="32"/><polyline points="88 72 128 32 168 72"/><path d="M208,152v40a8,8,0,0,1-8,8H56a8,8,0,0,1-8-8V152"/></svg>',
   sirenIcon: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><path d="M32,216V152a96,96,0,0,1,192,0v64Z"/><line x1="128" y1="56" x2="128" y2="32"/><line x1="180" y1="72" x2="196" y2="56"/><line x1="76" y1="72" x2="60" y2="56"/><line x1="16" y1="216" x2="240" y2="216"/></svg>',
   robotIcon: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><rect x="48" y="88" width="160" height="120" rx="16"/><line x1="128" y1="88" x2="128" y2="48"/><circle cx="128" cy="32" r="12" fill="currentColor" stroke="none"/><circle cx="92" cy="140" r="12" fill="currentColor" stroke="none"/><circle cx="164" cy="140" r="12" fill="currentColor" stroke="none"/><line x1="88" y1="180" x2="168" y2="180"/><line x1="16" y1="128" x2="48" y2="128"/><line x1="208" y1="128" x2="240" y2="128"/></svg>',
+  tagIcon: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><path d="M226.53,136.11,136.1,226.53a16,16,0,0,1-22.63,0L38.34,151.4a16,16,0,0,1,0-22.63L128.77,38.34a16,16,0,0,1,11.31-4.69H216a8,8,0,0,1,8,8v75.15A16,16,0,0,1,226.53,136.11Z"/><circle cx="172" cy="84" r="16" fill="currentColor" stroke="none"/></svg>',
   checkCircle: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><circle cx="128" cy="128" r="96"/><polyline points="92 140 116 164 168 100"/></svg>',
   xCircle: '<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><circle cx="128" cy="128" r="96"/><line x1="160" y1="96" x2="96" y2="160"/><line x1="160" y1="160" x2="96" y2="96"/></svg>',
 };
@@ -95,7 +96,7 @@ let buscaTexto = '';
 let ordemCol = 'valorRepor';
 let ordemDir = -1;
 let marcaExpandidaTabela = '';
-let abaSelecionada = 'estoque'; // 'estoque', 'vendas' ou 'atencao'
+let abaSelecionada = 'estoque'; // 'estoque', 'vendas', 'atencao' ou 'cotacoes'
 
 // Estado da IA (aba Atenção) -- resumo automático + chat, ambos passando
 // pelo mesmo Worker que já fala com a Sysemp (WEBAPP_URL), rota nova via
@@ -174,6 +175,37 @@ function carregarPedidosEmAbertoDoLocalStorage() {
   }
 }
 carregarPedidosEmAbertoDoLocalStorage();
+
+// ----------------------------------------------------------------------
+// Cotações de fornecedor -- comparação manual entre o preço cotado e o
+// custo atual (Sysemp). Casamento por nome é sempre manual (usuário busca
+// e confirma o produto): testado com um orçamento real da COMPEL e o
+// casamento automático por palavra errou ~30% das vezes (ex. confundiu
+// "Rolo Espuma POP" com "Rolo Espuma POLIESTER", "Trincha 1½" com "2½")
+// -- automático não é confiável o bastante pra decisão de compra.
+// ----------------------------------------------------------------------
+let cotacoes = []; // [{ id, codigoBarras, produto, marca, fornecedor, precoCotado, data }]
+const CHAVE_LOCALSTORAGE_COTACOES = 'bradisfer_cotacoes';
+function salvarCotacoesNoLocalStorage() {
+  try {
+    localStorage.setItem(CHAVE_LOCALSTORAGE_COTACOES, JSON.stringify(cotacoes));
+  } catch (erro) {
+    console.warn('Nao consegui salvar cotacoes no localStorage:', erro);
+  }
+}
+function carregarCotacoesDoLocalStorage() {
+  try {
+    const salvo = localStorage.getItem(CHAVE_LOCALSTORAGE_COTACOES);
+    if (salvo) cotacoes = JSON.parse(salvo);
+  } catch (erro) {
+    console.warn('Nao consegui carregar cotacoes do localStorage:', erro);
+  }
+}
+carregarCotacoesDoLocalStorage();
+let buscaProdutoCotacaoTexto = '';
+let mostrarSugestoesProdutoCotacao = false;
+let produtoSelecionadoCotacao = null; // { codigoBarras, produto, marca } -- escolhido no form antes de adicionar
+
 // Dados da planilha de análise (Média, Desvio, Ponto de Pedido, etc.) —
 // persiste entre atualizações. Se uma busca vier vazia ou muito menor que
 // a anterior (Google Sheets sendo editado bem na hora da consulta, por
@@ -1550,6 +1582,14 @@ document.addEventListener('click', e => {
   }
 });
 
+// Mesma ideia, pro autocomplete de produto na aba Cotações.
+document.addEventListener('click', e => {
+  if (mostrarSugestoesProdutoCotacao && !e.target.closest('.autocomplete-wrap') && abaSelecionada === 'cotacoes') {
+    mostrarSugestoesProdutoCotacao = false;
+    renderizarAbaCotacoes();
+  }
+});
+
 // ---- Botão flutuante da IA (fora de #app -- acessível de qualquer aba) ----
 document.getElementById('fab-ia-btn').innerHTML = icon('robotIcon', 'icon-md');
 document.getElementById('fechar-painel-ia-btn').innerHTML = icon('x', 'icon-sm');
@@ -2511,6 +2551,8 @@ function renderizarAbaVendas() {
   if (abaVendasEl2) abaVendasEl2.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
   const abaAtencaoEl2 = document.getElementById('aba-atencao');
   if (abaAtencaoEl2) abaAtencaoEl2.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
+  const abaCotacoesEl2 = document.getElementById('aba-cotacoes');
+  if (abaCotacoesEl2) abaCotacoesEl2.addEventListener('click', () => { abaSelecionada = 'cotacoes'; fecharNavSidebar(); renderizar(); });
 
   const selectMarcaVendas = document.getElementById('select-marca-vendas');
   if (selectMarcaVendas) selectMarcaVendas.addEventListener('change', e => { marcaRelatorioVendas = e.target.value; animarTabelasVendasNoProximoRender = true; renderizar(); });
@@ -2552,7 +2594,8 @@ function barraAbas() {
   document.getElementById('nav-sidebar-body').innerHTML =
     '<button class="nav-item' + (abaSelecionada === 'estoque' ? ' active' : '') + '" id="aba-estoque">' + icon('package', 'icon-md') + '<span>Estoque</span></button>' +
     '<button class="nav-item' + (abaSelecionada === 'vendas' ? ' active' : '') + '" id="aba-vendas">' + icon('chartBar', 'icon-md') + '<span>Vendas</span></button>' +
-    '<button class="nav-item' + (abaSelecionada === 'atencao' ? ' active' : '') + '" id="aba-atencao">' + icon('sirenIcon', 'icon-md') + '<span>Atenção</span></button>';
+    '<button class="nav-item' + (abaSelecionada === 'atencao' ? ' active' : '') + '" id="aba-atencao">' + icon('sirenIcon', 'icon-md') + '<span>Atenção</span></button>' +
+    '<button class="nav-item' + (abaSelecionada === 'cotacoes' ? ' active' : '') + '" id="aba-cotacoes">' + icon('tagIcon', 'icon-md') + '<span>Cotações</span></button>';
   return '';
 }
 
@@ -2625,6 +2668,8 @@ function renderizarAbaAtencao() {
   if (abaVendasEl3) abaVendasEl3.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
   const abaAtencaoEl3 = document.getElementById('aba-atencao');
   if (abaAtencaoEl3) abaAtencaoEl3.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
+  const abaCotacoesEl3 = document.getElementById('aba-cotacoes');
+  if (abaCotacoesEl3) abaCotacoesEl3.addEventListener('click', () => { abaSelecionada = 'cotacoes'; fecharNavSidebar(); renderizar(); });
 
   document.querySelectorAll('tbody tr.clickable[data-idx-alerta]').forEach(tr => tr.addEventListener('click', () => {
     const item = itensAlerta[parseInt(tr.dataset.idxAlerta, 10)];
@@ -2758,9 +2803,170 @@ function montarRankingMarcas(marcasOrdenadas, todasMarcasOrdenadas, totalGeral, 
   '</div>';
 }
 
+// Aba "Cotações" -- compara preço cotado por fornecedor com o custo atual
+// (Sysemp). Casamento produto sempre manual (busca + confirma), nunca
+// automático por nome -- testado com um orçamento real da COMPEL e o
+// casamento automático errou ~30% das vezes (confundiu "Rolo Espuma POP"
+// com "Rolo Espuma POLIESTER", "Trincha 1½" com "2½", etc.), então não é
+// confiável o bastante pra decisão de compra. Persistido em localStorage
+// (mesmo padrão de pedidosEmAberto) -- não tem backend pra gravar isso
+// na planilha.
+function renderizarAbaCotacoes() {
+  const buscaLower = buscaProdutoCotacaoTexto.toLowerCase();
+  const sugestoesProduto = buscaProdutoCotacaoTexto
+    ? dadosCompletos
+        .filter(d => d.codigoBarras && (d.produto.toLowerCase().includes(buscaLower) || d.codigoBarras.includes(buscaProdutoCotacaoTexto)))
+        .slice(0, 8)
+    : [];
+
+  const linhas = cotacoes.map(c => {
+    const produtoAtual = dadosCompletos.find(d => d.codigoBarras === c.codigoBarras);
+    const custoAtual = produtoAtual ? (produtoAtual.custo || 0) : null;
+    const diferenca = custoAtual !== null ? custoAtual - c.precoCotado : null;
+    const diferencaPct = (custoAtual !== null && custoAtual > 0) ? (diferenca / custoAtual) * 100 : null;
+    return Object.assign({}, c, { custoAtual, diferenca, diferencaPct });
+  }).sort((a, b) => {
+    if (a.diferencaPct === null) return 1;
+    if (b.diferencaPct === null) return -1;
+    return b.diferencaPct - a.diferencaPct; // maior economia primeiro
+  });
+
+  const comEconomia = linhas.filter(l => l.diferenca !== null && l.diferenca > 0);
+  const maisCaras = linhas.filter(l => l.diferenca !== null && l.diferenca < 0);
+  const economiaTotalUnitaria = comEconomia.reduce((s, l) => s + l.diferenca, 0);
+
+  document.getElementById('app').innerHTML =
+    barraAbas() +
+
+    '<div class="kpi-grid">' +
+      '<div class="kpi-card hero"><div class="label">Cotações registradas</div><div class="value">' + fmtNum(linhas.length) + '</div></div>' +
+      '<div class="kpi-card accent-blue"><div class="label">Mais baratas que o custo atual</div><div class="value">' + fmtNum(comEconomia.length) + '</div></div>' +
+      '<div class="kpi-card accent-red"><div class="label">Mais caras que o custo atual</div><div class="value">' + fmtNum(maisCaras.length) + '</div></div>' +
+      '<div class="kpi-card hero"><div class="label">Economia potencial (por unidade)</div><div class="value" title="' + fmtMoeda(economiaTotalUnitaria) + '">' + fmtMoedaCompacta(economiaTotalUnitaria) + '</div></div>' +
+    '</div>' +
+
+    '<div class="panel" style="margin-bottom:16px;">' +
+      '<h2 style="margin:0;">' + icon('tagIcon', 'icon-sm') + 'Registrar cotação</h2>' +
+      '<p class="hint" style="margin-top:10px;">Busque o produto e confirme qual é antes de salvar — casamento automático por nome não é confiável o bastante (testado com orçamento real, errou ~30% das vezes).</p>' +
+      '<div style="display:flex;flex-direction:column;gap:10px;max-width:520px;">' +
+        '<div class="autocomplete-wrap" style="position:relative;">' +
+          '<input type="search" id="busca-produto-cotacao" placeholder="Buscar produto..." aria-label="Buscar produto" autocomplete="off" value="' + escapeHtml(produtoSelecionadoCotacao ? produtoSelecionadoCotacao.produto : buscaProdutoCotacaoTexto) + '">' +
+          (mostrarSugestoesProdutoCotacao ? (
+            '<div class="autocomplete-list">' +
+              (sugestoesProduto.length
+                ? sugestoesProduto.map(d => '<div class="autocomplete-item" data-codigo-cotacao="' + escapeHtml(d.codigoBarras) + '">' + escapeHtml(d.produto) + ' <span style="color:var(--text-faint);">(' + escapeHtml(d.marca) + ')</span></div>').join('')
+                : '<div class="autocomplete-empty">Nenhum produto encontrado</div>') +
+            '</div>'
+          ) : '') +
+        '</div>' +
+        (produtoSelecionadoCotacao
+          ? '<p class="hint">Selecionado: <b style="color:var(--text);">' + escapeHtml(produtoSelecionadoCotacao.produto) + '</b> — custo atual ' + fmtMoeda(produtoSelecionadoCotacao.custo || 0) + '</p>'
+          : '') +
+        '<input type="text" id="fornecedor-cotacao" placeholder="Fornecedor (ex. COMPEL)" aria-label="Fornecedor">' +
+        '<input type="number" id="preco-cotacao" placeholder="Preço cotado (R$)" min="0" step="0.01" aria-label="Preço cotado">' +
+        '<button class="refresh-btn" id="adicionar-cotacao-btn" style="align-self:flex-start;background:var(--gold);border:1px solid var(--gold);color:#000;font-weight:700;">' + icon('tagIcon', 'icon-sm') + ' Adicionar cotação</button>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="panel">' +
+      '<h2 style="margin:0;">Cotações x custo atual (' + fmtNum(linhas.length) + ')</h2>' +
+      '<p class="hint" style="margin-top:10px;">Ordenado da maior economia pro maior aumento.</p>' +
+      (linhas.length === 0
+        ? '<p class="hint" style="text-align:center;padding:20px 0;">Nenhuma cotação registrada ainda.</p>'
+        : '<table><thead><tr><th>Produto</th><th>Fornecedor</th><th class="num">Preço cotado</th><th class="num">Custo atual</th><th class="num">Diferença</th><th>Data</th><th></th></tr></thead><tbody>' +
+            linhas.map(l =>
+              '<tr>' +
+                '<td>' + escapeHtml(l.produto) + '</td>' +
+                '<td>' + escapeHtml(l.fornecedor) + '</td>' +
+                '<td class="num">' + fmtMoeda(l.precoCotado) + '</td>' +
+                '<td class="num">' + (l.custoAtual !== null ? fmtMoeda(l.custoAtual) : '<span class="hint">não encontrado</span>') + '</td>' +
+                '<td class="num">' + (l.diferencaPct !== null
+                  ? (l.diferenca > 0
+                      ? '<span class="badge badge-ok">' + Math.abs(l.diferencaPct).toFixed(1) + '% mais barato</span>'
+                      : (l.diferenca < 0
+                          ? '<span class="badge badge-ruptura">' + Math.abs(l.diferencaPct).toFixed(1) + '% mais caro</span>'
+                          : '<span class="badge badge-baixo">igual</span>'))
+                  : '—') + '</td>' +
+                '<td>' + escapeHtml(l.data || '') + '</td>' +
+                '<td><button class="modal-close" data-remover-cotacao="' + l.id + '" aria-label="Remover cotação" title="Remover" style="width:24px;height:24px;">' + icon('x', 'icon-sm') + '</button></td>' +
+              '</tr>'
+            ).join('') +
+          '</tbody></table>') +
+    '</div>';
+
+  const adicionarCotacaoBtn = document.getElementById('adicionar-cotacao-btn');
+  if (adicionarCotacaoBtn) adicionarCotacaoBtn.addEventListener('click', () => {
+    const fornecedor = document.getElementById('fornecedor-cotacao').value.trim();
+    const preco = parseFloat(document.getElementById('preco-cotacao').value);
+    if (!produtoSelecionadoCotacao) { alert('Busque e selecione um produto antes de adicionar.'); return; }
+    if (!fornecedor) { alert('Informe o fornecedor.'); return; }
+    if (!preco || preco <= 0) { alert('Informe um preço cotado válido.'); return; }
+    cotacoes.push({
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      codigoBarras: produtoSelecionadoCotacao.codigoBarras,
+      produto: produtoSelecionadoCotacao.produto,
+      marca: produtoSelecionadoCotacao.marca,
+      fornecedor,
+      precoCotado: preco,
+      data: new Date().toLocaleDateString('pt-BR'),
+    });
+    salvarCotacoesNoLocalStorage();
+    produtoSelecionadoCotacao = null;
+    buscaProdutoCotacaoTexto = '';
+    mostrarSugestoesProdutoCotacao = false;
+    renderizarAbaCotacoes();
+  });
+
+  const inputProdutoCotacao = document.getElementById('busca-produto-cotacao');
+  const aplicarBuscaProdutoCotacao = debounce(e => {
+    const cursorPos = e.target.selectionStart;
+    buscaProdutoCotacaoTexto = e.target.value;
+    produtoSelecionadoCotacao = null; // digitar de novo invalida a seleção anterior
+    mostrarSugestoesProdutoCotacao = true;
+    renderizarAbaCotacoes();
+    const novoInput = document.getElementById('busca-produto-cotacao');
+    if (novoInput) { novoInput.focus(); novoInput.setSelectionRange(cursorPos, cursorPos); }
+  }, 250);
+  if (inputProdutoCotacao) {
+    inputProdutoCotacao.addEventListener('input', aplicarBuscaProdutoCotacao);
+    inputProdutoCotacao.addEventListener('focus', () => {
+      if (!mostrarSugestoesProdutoCotacao && !produtoSelecionadoCotacao) {
+        mostrarSugestoesProdutoCotacao = true;
+        renderizarAbaCotacoes();
+        const novoInput = document.getElementById('busca-produto-cotacao');
+        if (novoInput) novoInput.focus();
+      }
+    });
+  }
+  document.querySelectorAll('[data-codigo-cotacao]').forEach(item => item.addEventListener('click', () => {
+    const produto = dadosCompletos.find(d => d.codigoBarras === item.dataset.codigoCotacao);
+    if (produto) produtoSelecionadoCotacao = { codigoBarras: produto.codigoBarras, produto: produto.produto, marca: produto.marca, custo: produto.custo };
+    buscaProdutoCotacaoTexto = '';
+    mostrarSugestoesProdutoCotacao = false;
+    renderizarAbaCotacoes();
+  }));
+  document.querySelectorAll('[data-remover-cotacao]').forEach(btn => btn.addEventListener('click', () => {
+    cotacoes = cotacoes.filter(c => c.id !== btn.dataset.removerCotacao);
+    salvarCotacoesNoLocalStorage();
+    renderizarAbaCotacoes();
+  }));
+
+  const abaEstoqueEl4 = document.getElementById('aba-estoque');
+  if (abaEstoqueEl4) abaEstoqueEl4.addEventListener('click', () => { abaSelecionada = 'estoque'; fecharNavSidebar(); renderizar(); });
+  const abaVendasEl4 = document.getElementById('aba-vendas');
+  if (abaVendasEl4) abaVendasEl4.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
+  const abaAtencaoEl4 = document.getElementById('aba-atencao');
+  if (abaAtencaoEl4) abaAtencaoEl4.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
+  const abaCotacoesEl4 = document.getElementById('aba-cotacoes');
+  if (abaCotacoesEl4) abaCotacoesEl4.addEventListener('click', () => { abaSelecionada = 'cotacoes'; fecharNavSidebar(); renderizar(); });
+
+  tornarClicaveisAcessiveis(document.getElementById('app'));
+}
+
 function renderizar() {
   if (abaSelecionada === 'vendas') { renderizarAbaVendas(); return; }
   if (abaSelecionada === 'atencao') { renderizarAbaAtencao(); return; }
+  if (abaSelecionada === 'cotacoes') { renderizarAbaCotacoes(); return; }
   if (diaRotinaSelecionado === null) diaRotinaSelecionado = diaSemanaAtual() || 'SEG';
 
   let dados = dadosCompletos.filter(d =>
@@ -3100,6 +3306,8 @@ function renderizar() {
   if (abaVendasEl) abaVendasEl.addEventListener('click', () => { abaSelecionada = 'vendas'; fecharNavSidebar(); renderizar(); });
   const abaAtencaoEl = document.getElementById('aba-atencao');
   if (abaAtencaoEl) abaAtencaoEl.addEventListener('click', () => { abaSelecionada = 'atencao'; fecharNavSidebar(); renderizar(); });
+  const abaCotacoesEl = document.getElementById('aba-cotacoes');
+  if (abaCotacoesEl) abaCotacoesEl.addEventListener('click', () => { abaSelecionada = 'cotacoes'; fecharNavSidebar(); renderizar(); });
   document.getElementById('filtro-grupo').addEventListener('change', e => { filtroGrupo = e.target.value; renderizar(); });
   const aplicarBuscaProduto = debounce(e => {
     const cursorPos = e.target.selectionStart;
