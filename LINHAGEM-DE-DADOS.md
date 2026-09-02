@@ -39,11 +39,14 @@ flowchart LR
 | `listaProdutosComEstoquePrecoVendaCusto` | `automacao-vendas/atualizar-estoque.js` (GitHub Actions) | A cada 10 min (5h–23h59 e 0h–2h Brasília) | Catálogo inteiro: estoque, mín/máx, custo, preço de venda, código de barras |
 | `listarVendasMediaPorProduto` (sem `cod_barra`) | `automacao-vendas/atualizar-vendas.js` (GitHub Actions) | A cada 20 min (mesma janela) | Catálogo inteiro: média mensal e total vendido (12 meses), por produto |
 | `listarComprasPorProduto` / `listarVendasMediaPorProduto` (1 produto) | **Cloudflare Worker** `cloudflare-worker/produto-detalhe.js` (`rough-dust-49b2.bradisferdistribuuidora.workers.dev`) | Sob demanda, a cada clique no modal de produto | Últimas compras e venda AO VIVO de 1 produto só |
-| (endpoint de venda por vendedor/meta) | — não implementado | — | Pedido enviado à Sysemp, resposta pendente — ver `CONTEXTO.md` |
+| `listarPedidoCompras` | — não implementado ainda | — | Pedidos de compra em aberto (candidato a substituir a importação manual) — ver `CONTEXTO.md` |
+| `listarVendasPorVendedor` | `automacao-vendas/atualizar-vendas-online.js` (GitHub Actions, só empresas 3/4 — marketplace) | Mensal | Vendas por vendedor/canal/período — ver `CONTEXTO.md` |
 
 **Autenticação**: header `Token` (não `Authorization: Bearer`), enviado em toda chamada. Token guardado como secret `SYSEMP_TOKEN` no GitHub (para as automações) e como Secret nas variáveis do Cloudflare Worker (para o clique individual). Sem endpoint de login separado — é um valor estático fornecido pela Sysemp.
 
 **Nota de performance (25/08/2026)**: migrar do Apps Script `doGet` pro Worker deixou a busca de "compras" ~8x mais rápida (2,9s → 0,36s, eliminando o redirecionamento interno do Google). A busca de "vendas" continuou parecida (5–15s) — o gargalo é a própria Sysemp calculando 1 ano de histórico por produto, não infraestrutura de transporte; não dá pra resolver trocando de servidor de novo.
+
+**Nota sobre `estoque` vs. `estoque_disponivel` (02/09/2026)**: `listaProdutosComEstoquePrecoVendaCusto` tinha só o campo `estoque` (físico bruto), que divergia da tela do Sysemp pro mesmo produto no mesmo instante — achado com um caso real (FITA ADESIVA ALLTAPE) e reportado à Sysemp. A Sysemp corrigiu no mesmo dia acrescentando o campo `estoque_disponivel` (físico menos reservado p/ pedido de venda em aberto), que é o que a tela mostra. Confirmado numa amostra de 2.000 produtos: os dois campos divergem em **~14% do catálogo**, de 0,15 até 62 unidades, sempre `estoque` ≥ `estoque_disponivel`. `atualizar-estoque.js` passou a gravar `estoque_disponivel` na coluna "Estoque Bradisfer" (com fallback pro `estoque` físico se o campo novo não vier num produto específico) — usar o bruto superestimava disponibilidade e podia mascarar item que já devia estar BAIXO/RUPTURA.
 
 ## Planilha Google (`Bradisfer_Painel_Estoque_v2`, ID `1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A`)
 

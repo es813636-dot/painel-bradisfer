@@ -50,7 +50,7 @@ const MAPEAMENTO_CAMPOS = {
   'Grupo': 'descricao_grupo',
   'SubGrupo': 'descricao_subgrupo',
   'Unidade': 'unidade',
-  'Estoque Bradisfer': 'estoque',
+  'Estoque Bradisfer': 'estoque_disponivel',
   'EstMinimo1': 'estoque_minimo',
   'EstMaximo1': 'estoque_maximo',
   'Custo Atual': 'custo',
@@ -200,6 +200,21 @@ async function main() {
   console.log('Buscando produtos na API do Sysemp...');
   const registros = await buscarTodosProdutos(sysempToken);
   console.log('Total de produtos extraídos: ' + registros.length);
+
+  // 'estoque' (físico bruto) e 'estoque_disponivel' (físico menos reservado
+  // p/ pedido de venda em aberto) divergem em ~14% do catálogo, de 0,15 até
+  // 62 unidades — confirmado em 02/09/2026 depois de um caso real (FITA
+  // ADESIVA ALLTAPE mostrando estoque errado no painel vs. a tela do
+  // Sysemp). 'estoque_disponivel' é o que a tela do Sysemp mostra, então é
+  // o que passou a alimentar a coluna "Estoque Bradisfer" — usar o físico
+  // bruto superestima disponibilidade e mascara item que já devia estar
+  // BAIXO/RUPTURA. Fallback pro físico se o campo novo não vier (produto
+  // muito antigo, ou a Sysemp tirar o campo de novo).
+  registros.forEach((reg) => {
+    if (reg.estoque_disponivel === undefined || reg.estoque_disponivel === null || reg.estoque_disponivel === '') {
+      reg.estoque_disponivel = reg.estoque;
+    }
+  });
 
   if (registros.length === 0) {
     console.log('AVISO: a API não retornou nenhum produto. Nada foi alterado na planilha, para evitar apagar dados válidos.');
