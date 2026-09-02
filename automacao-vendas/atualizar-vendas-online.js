@@ -174,17 +174,22 @@ async function lerChavesExistentes(sheets) {
   return new Set(valores.map((l) => l[0]).filter(Boolean));
 }
 
+// Sempre reescreve a linha 1 com o cabeçalho atual -- não fica checando
+// "já tem cabeçalho?" antes. Um bug real aconteceu aqui: a v1 (schema de
+// 12 colunas) tinha deixado um cabeçalho de 12 colunas gravado; a v1ª
+// rodada da v2 (14 colunas) só checava "a linha 1 tem ALGUMA coisa?" —
+// via que sim (as 12 colunas antigas) e pulava a atualização, deixando
+// "DataEmissao"/"ChaveDedup" sem rótulo em M1/N1 mesmo com o dado certo
+// nas células de baixo. Reescrever sempre é idempotente (rótulo nunca
+// muda) e custa 1 chamada pequena — mais barato que arriscar esse bug de
+// novo se o schema crescer de novo no futuro.
 async function garantirCabecalho(sheets) {
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: NOME_ABA + '!A1:N1' }).catch(() => null);
-  const temCabecalho = resp && resp.data.values && resp.data.values.length > 0;
-  if (!temCabecalho) {
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
-      range: NOME_ABA + '!A1',
-      valueInputOption: 'RAW',
-      resource: { values: [CABECALHO] },
-    });
-  }
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: NOME_ABA + '!A1',
+    valueInputOption: 'RAW',
+    resource: { values: [CABECALHO] },
+  });
 }
 
 async function main() {
