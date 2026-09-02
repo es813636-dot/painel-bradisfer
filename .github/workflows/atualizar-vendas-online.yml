@@ -2,13 +2,18 @@ name: Atualizar Vendas Online (Marketplace)
 
 on:
   schedule:
-    # Mensal, dia 2 às 6h UTC (~3h em Brasília) -- roda alguns dias depois
-    # do mês fechar pra dar folga de sobra à Sysemp processar tudo, e de
-    # madrugada pra não competir com atualizar-estoque/atualizar-vendas.
-    # periodoMesAnterior() em atualizar-vendas-online.js sempre calcula o
-    # mês anterior fechado, então não importa exatamente que dia do mês
-    # isso roda -- só precisa ser depois do mês virar.
-    - cron: '0 6 2 * *'
+    # v2 (02/09/2026): trocado de mensal pra incremental frequente, depois
+    # que a Sysemp acrescentou "data de emissão" por venda (permite
+    # checkpoint real). Pedido era a cada 3 min, mas o GitHub Actions não
+    # garante isso -- a documentação do GitHub é explícita que o piso real
+    # de schedule é 5 minutos, e mesmo isso pode atrasar sob carga (viu-se
+    # isso na prática com o atualizar-estoque, "a cada 10 min" rodando às
+    # vezes a 17 min). 5 min é o mais frequente que dá pra prometer aqui;
+    # se precisar de cadência mais curta que isso de verdade, precisa de
+    # um chamador externo (cron-job.org etc.) disparando workflow_dispatch,
+    # não dá pra confiar só no `schedule` do GitHub.
+    # Mesma janela horária das outras automações (5h-23h59 Brasília).
+    - cron: '*/5 8-23,0-2 * * *'
   workflow_dispatch: {}
 
 jobs:
