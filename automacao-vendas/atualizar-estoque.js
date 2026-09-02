@@ -144,6 +144,51 @@ async function buscarTodosProdutos(token) {
   return todos;
 }
 
+// Converte número de coluna (1-based) na letra do A1 notation: 1 -> A,
+// 26 -> Z, 27 -> AA. O código antigo usava String.fromCharCode(64 + n),
+// que só funciona até 26 colunas — na 27ª geraria '[' e produziria um
+// range inválido.
+function letraColuna(n) {
+  let letra = '';
+  while (n > 0) {
+    const resto = (n - 1) % 26;
+    letra = String.fromCharCode(65 + resto) + letra;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letra;
+}
+
+// A aba tem um número fixo de colunas na grade; escrever fora dela devolve
+// 400 "exceeds grid limits" em vez de expandir sozinho. Como o aviso de
+// "Última atualização" fica 2 colunas depois da última coluna de dados,
+// cada coluna nova em COLUNAS_PLANILHA empurra esse aviso pra direita e
+// pode estourar a grade — foi o que aconteceu ao adicionar 'Código
+// Auxiliar' em 01/09/2026 (aviso foi de O1 pra P1, numa aba de 15
+// colunas, e o job passou a falhar toda rodada). Em vez de só ajustar o
+// número, garante a largura antes de escrever.
+async function garantirLarguraDaAba(sheets, colunasNecessarias) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID, fields: 'sheets(properties)' });
+  const aba = (meta.data.sheets || []).find((s) => s.properties && s.properties.title === NOME_ABA);
+  if (!aba) throw new Error('Aba "' + NOME_ABA + '" não encontrada na planilha.');
+
+  const colunasAtuais = aba.properties.gridProperties.columnCount;
+  if (colunasAtuais >= colunasNecessarias) return;
+
+  const faltando = colunasNecessarias - colunasAtuais;
+  console.log(
+    'Aba "' + NOME_ABA + '" tem ' + colunasAtuais + ' colunas e são necessárias ' +
+    colunasNecessarias + '. Acrescentando ' + faltando + ' coluna(s) no fim...'
+  );
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    resource: {
+      requests: [{
+        appendDimension: { sheetId: aba.properties.sheetId, dimension: 'COLUMNS', length: faltando },
+      }],
+    },
+  });
+}
+
 async function main() {
   const sysempToken = process.env.SYSEMP_TOKEN;
   if (!sysempToken) throw new Error('SYSEMP_TOKEN não configurado (variável de ambiente/secret).');
@@ -175,8 +220,13 @@ async function main() {
 
   // Limpa a área reservada inteira antes de escrever (mesmo comportamento
   // do Apps Script) — evita sobrar linha antiga de produto removido.
+  // Coluna do aviso de "Última atualização": 2 colunas depois da última de
+  // dados (1 coluna em branco de espaço), mesmo layout do Apps Script antigo.
+  const colunaAvisoNum = COLUNAS_PLANILHA.length + 2;
+  await garantirLarguraDaAba(sheets, colunaAvisoNum);
+
   console.log('Limpando área reservada e gravando ' + linhas.length + ' produtos...');
-  const ultimaColuna = String.fromCharCode(64 + COLUNAS_PLANILHA.length); // 13 colunas = 'M'
+  const ultimaColuna = letraColuna(COLUNAS_PLANILHA.length); // 14 colunas = 'N'
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
     range: NOME_ABA + '!A' + LINHA_INICIO_DADOS + ':' + ultimaColuna + (LINHA_INICIO_DADOS + MAX_LINHAS_RESERVADAS - 1),
@@ -190,7 +240,7 @@ async function main() {
   });
 
   const dataHora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-  const colunaAviso = String.fromCharCode(64 + COLUNAS_PLANILHA.length + 2); // +2 colunas de espaço, igual Apps Script
+  const colunaAviso = letraColuna(colunaAvisoNum);
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
     range: NOME_ABA + '!' + colunaAviso + '1',
