@@ -1,19 +1,23 @@
 name: Atualizar Vendas Online (Marketplace)
 
 on:
-  schedule:
-    # v2 (02/09/2026): trocado de mensal pra incremental frequente, depois
-    # que a Sysemp acrescentou "data de emissão" por venda (permite
-    # checkpoint real). Pedido era a cada 3 min, mas o GitHub Actions não
-    # garante isso -- a documentação do GitHub é explícita que o piso real
-    # de schedule é 5 minutos, e mesmo isso pode atrasar sob carga (viu-se
-    # isso na prática com o atualizar-estoque, "a cada 10 min" rodando às
-    # vezes a 17 min). 5 min é o mais frequente que dá pra prometer aqui;
-    # se precisar de cadência mais curta que isso de verdade, precisa de
-    # um chamador externo (cron-job.org etc.) disparando workflow_dispatch,
-    # não dá pra confiar só no `schedule` do GitHub.
-    # Mesma janela horária das outras automações (5h-23h59 Brasília).
-    - cron: '*/5 8-23,0-2 * * *'
+  # `schedule` DESLIGADO DE PROPÓSITO em 02/09/2026 -- a run #4 (incremental,
+  # janela de só 1-2 dias) gravou ~61 mil linhas novas de uma vez, muito
+  # mais do que uma janela curta deveria trazer. Suspeita: o ChaveDedup das
+  # linhas gravadas na carga inicial (run #2) usa o formato ANTIGO de 6
+  # campos, mas o código já estava no formato NOVO de 8 campos (commit
+  # 2361029) quando a incremental rodou -- toda chave nova ficou diferente
+  # de toda chave antiga, então o dedup não reconheceu nada como repetido e
+  # reprocessou tudo que voltou como "novo". Ainda não confirmado se o
+  # endpoint também não respeita a janela de data pedida (segunda causa
+  # possível, agravando o problema). Religar só depois de:
+  #   1. Confirmar/descartar se a API ignora datainicial/datafinal;
+  #   2. Migrar o ChaveDedup de todas as linhas já gravadas pro formato
+  #      novo (ou voltar o código pro formato antigo, o que for decidido);
+  #   3. Rodar 1x via workflow_dispatch e conferir que o incremento real
+  #      bate com o volume esperado antes de religar o cron.
+  # schedule:
+  #   - cron: '*/5 8-23,0-2 * * *'
   workflow_dispatch: {}
 
 jobs:
