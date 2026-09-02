@@ -56,6 +56,7 @@ flowchart LR
 | **VendasAoVivo** | Escrita direta por `atualizar-vendas.js` (upsert por código de barras) | Automação (GitHub Actions) | Fresca (~20 min) | `script.js` (fonte principal de sugestão de compra) |
 | **Relatorio Comparativo** | Escrita direta por `automacao-vendas/relatorio-comparativo.js` | Manual — só quando alguém dispara o workflow `Relatorio Comparativo (Julho x Agosto)` | Só reflete o momento em que foi gerado, não atualiza sozinha | Ninguém automaticamente — leitura manual na planilha |
 | **Painel** | ⚠️ **Não mapeado.** Existe na planilha (visível na lista de abas), mas nenhum script deste repositório (nem `script.js`, nem as automações) lê ou escreve nela | Desconhecido | Desconhecido | Desconhecido — **investigar antes de assumir que está em uso ou que pode ser removida** |
+| **VendasOnline** | Escrita direta (`values.clear` + `values.update`, RAW, aba inteira sobrescrita a cada rodada) por `atualizar-vendas-online.js` — aba criada automaticamente pelo script na 1ª execução, se ainda não existir | Automação (GitHub Actions, mensal) | Reflete o mês fechado anterior à última rodada (não atualiza sozinha entre rodadas) | **Nenhum consumidor no painel HTML.** Alimenta um **Power BI separado** (vendas de marketplace — Shopee, TikTok — das empresas CONSTRUBRAG e SS CONSTRUCASA); `script.js` nunca lê essa aba |
 
 ### Nota sobre a coluna "Código Barras"
 

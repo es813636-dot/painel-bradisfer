@@ -1,0 +1,32 @@
+name: Atualizar Vendas Online (Marketplace)
+
+on:
+  schedule:
+    # Mensal, dia 2 às 6h UTC (~3h em Brasília) -- roda alguns dias depois
+    # do mês fechar pra dar folga de sobra à Sysemp processar tudo, e de
+    # madrugada pra não competir com atualizar-estoque/atualizar-vendas.
+    # periodoMesAnterior() em atualizar-vendas-online.js sempre calcula o
+    # mês anterior fechado, então não importa exatamente que dia do mês
+    # isso roda -- só precisa ser depois do mês virar.
+    - cron: '0 6 2 * *'
+  workflow_dispatch: {}
+
+jobs:
+  atualizar-vendas-online:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: automacao-vendas
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      - run: node atualizar-vendas-online.js
+        env:
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
