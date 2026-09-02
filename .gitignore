@@ -5,3 +5,8 @@
 .codex/
 .impeccable/
 skills-lock.json
+
+# Amostras de resposta da API da Sysemp geradas por
+# automacao-vendas/testar-apis-novas.js — contêm dado real de pedido/venda,
+# não devem ir pro repositório público.
+amostra_*.json
