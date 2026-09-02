@@ -94,8 +94,15 @@ function separarCidadeUf(texto) {
   return [valor.slice(0, i), valor.slice(i + 1)];
 }
 
-function montarChaveDedup(idVendedor, vendedor, marca, cliente, dataEmissao, valorFaturado) {
-  return [idVendedor, vendedor, marca, cliente, dataEmissao, valorFaturado].join('|');
+// Vendedor+Marca+Cliente+Data+Valor colidiu de verdade no teste ao vivo
+// (02/09/2026): mesmo vendedor/cliente/marca/data/valor, mas 1 venda pelo
+// APLICATIVO e outra por VENDAS INTERNA no mesmo dia -- duas vendas reais
+// e diferentes com a mesma chave. Não perdeu linha (dedup só age entre
+// rodadas diferentes, não dentro da mesma), mas ficaria ambíguo numa
+// rodada futura que reprocessasse esse dia pela margem de segurança.
+// Reforçado com Quantidade+Canal, que já estavam disponíveis mas de fora.
+function montarChaveDedup(idVendedor, vendedor, marca, cliente, dataEmissao, valorFaturado, quantidade, canal) {
+  return [idVendedor, vendedor, marca, cliente, dataEmissao, valorFaturado, quantidade, canal].join('|');
 }
 
 // Retorna { linhas, maiorDataEmissao } -- maiorDataEmissao serve pra
@@ -112,15 +119,16 @@ function montarLinhas(vendedores, datainicial, datafinal) {
       const marca = venda.marca || '';
       const cliente = venda.cliente || '';
       const valorFaturado = Number(venda['valor faturado']) || 0;
+      const quantidade = Number(venda.quantidade) || 0;
+      const canal = venda['canal de venda'] || '';
       const dataEmissao = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão') || '').trim();
       if (dataEmissao && (!maiorDataEmissao || dataEmissao > maiorDataEmissao)) maiorDataEmissao = dataEmissao;
-      const chave = montarChaveDedup(idVendedor, nomeVendedor, marca, cliente, dataEmissao, valorFaturado);
+      const chave = montarChaveDedup(idVendedor, nomeVendedor, marca, cliente, dataEmissao, valorFaturado, quantidade, canal);
       linhas.push({
         chave,
         linha: [
           datainicial, datafinal, idVendedor, nomeVendedor, marca, cliente,
-          venda.empresa || '', cidade, uf, Number(venda.quantidade) || 0,
-          venda['canal de venda'] || '', valorFaturado, dataEmissao, chave,
+          venda.empresa || '', cidade, uf, quantidade, canal, valorFaturado, dataEmissao, chave,
         ],
       });
     });
