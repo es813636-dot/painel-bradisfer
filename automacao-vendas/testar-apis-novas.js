@@ -59,7 +59,7 @@ async function sondar(nome, url, token, corpo) {
     return;
   }
 
-  const destino = path.join(__dirname, '..', 'amostra_' + nome + '.json');
+  const destino = path.join(__dirname, '..', 'amostra_' + nome.replace(/[^A-Za-z0-9]+/g, '_') + '.json');
   fs.writeFileSync(destino, JSON.stringify(dados, null, 2), 'utf8');
   process.stdout.write('Salvo em ' + destino + '\n');
 
@@ -84,11 +84,22 @@ async function sondar(nome, url, token, corpo) {
 
 async function main() {
   const token = lerToken();
-  // id_empresa vazio segue a convenção dos outros métodos já usados aqui
-  // (cod_barra: '' = todos). Se voltar vazio, testar com o id de cada empresa.
-  const base = { id_empresa: '', datainicial: dataISO(-30), datafinal: dataISO(0), offset: '' };
+  // ATENÇÃO a estes 2 parâmetros (testado em 02/09/2026):
+  //
+  // offset: a documentação mostra "" no exemplo, mas com string vazia os
+  //   dois métodos respondem HTTP 200 com {"status":true,"qtde":0,
+  //   "retorno":[]} -- silenciosamente vazio, sem erro nenhum. Precisa ser
+  //   "0". Foi o que fez a primeira rodada de teste parecer "API sem dado".
+  //
+  // id_empresa: aqui NÃO segue a convenção de "" = todos que o
+  //   listarVendasMediaPorProduto usa com cod_barra. Vazio devolve zero;
+  //   é obrigatório passar o id. As empresas com dado hoje são a 1 e a 3
+  //   (a 2 devolve vazio nos dois métodos).
+  const base = { datainicial: dataISO(-30), datafinal: dataISO(0), offset: '0' };
   for (const [nome, url] of Object.entries(METODOS)) {
-    await sondar(nome, url, token, { ...base });
+    for (const empresa of ['1', '3']) {
+      await sondar(nome + ' (empresa ' + empresa + ')', url, token, { ...base, id_empresa: empresa });
+    }
   }
 }
 
