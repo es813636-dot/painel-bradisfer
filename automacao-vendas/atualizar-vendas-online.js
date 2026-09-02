@@ -234,6 +234,7 @@ async function main() {
   const hoje = dataISO(new Date());
   let todasNovas = [];
   const novosCheckpoints = new Map(checkpoints);
+  const empresasComErro = [];
 
   for (const [idEmpresa, nomeEmpresa] of Object.entries(EMPRESAS_MARKETPLACE)) {
     const checkpoint = checkpoints.get(idEmpresa);
@@ -242,7 +243,21 @@ async function main() {
     console.log('Buscando vendas da empresa ' + idEmpresa + ' (' + nomeEmpresa + '), ' + datainicial + ' a ' + datafinal +
       (checkpoint ? ' (incremental)' : ' (carga histórica -- sem checkpoint ainda)') + '...');
 
-    const vendedores = await buscarVendasEmpresa(sysempToken, idEmpresa, datainicial, datafinal);
+    // Isolado por empresa -- confirmado em 02/09/2026 que a Sysemp pode
+    // devolver HTTP 500 pra UMA empresa (Construbrag) enquanto a outra
+    // responde normal na mesma hora. Sem isolar, uma falha do lado deles
+    // travava a rodada inteira, inclusive a empresa saudável, a cada 5
+    // min até eles resolverem. Agora: pula só a empresa com erro, segue
+    // com a outra, e o job termina com erro (visível no Actions) mas sem
+    // perder o progresso de quem funcionou.
+    let vendedores;
+    try {
+      vendedores = await buscarVendasEmpresa(sysempToken, idEmpresa, datainicial, datafinal);
+    } catch (erro) {
+      console.error('  -> FALHOU pra essa empresa, pulando: ' + erro.message);
+      empresasComErro.push(idEmpresa + ' (' + nomeEmpresa + ')');
+      continue;
+    }
     const { linhas, maiorDataEmissao } = montarLinhas(vendedores, datainicial, datafinal);
 
     const novas = linhas.filter((l) => !chavesExistentes.has(l.chave));
@@ -280,10 +295,17 @@ async function main() {
 
   await gravarCheckpoints(sheets, novosCheckpoints);
   console.log('Checkpoints atualizados: ' + JSON.stringify([...novosCheckpoints.entries()]));
+
+  if (empresasComErro.length > 0) {
+    // Progresso das empresas saudáveis já foi salvo acima (append +
+    // checkpoint) -- só marca a rodada como falha (job vermelho no
+    // Actions, visível) sem derrubar nada que já deu certo.
+    throw new Error('Falhou pra ' + empresasComErro.length + ' empresa(s), as outras foram processadas normalmente: ' + empresasComErro.join(', '));
+  }
   console.log('Concluído.');
 }
 
 main().catch((err) => {
-  console.error('Falhou:', err);
+  console.error('Falhou:', err.message || err);
   process.exit(1);
 });
