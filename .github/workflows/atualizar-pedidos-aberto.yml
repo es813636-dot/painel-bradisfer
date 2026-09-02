@@ -1,0 +1,29 @@
+name: Atualizar Pedidos em Aberto
+
+on:
+  schedule:
+    # A cada 30 min, mesma janela do atualizar-estoque/atualizar-vendas --
+    # pedido de compra muda menos que estoque/venda, mas 30 min já é bem
+    # mais frequente que a importação manual que substitui.
+    - cron: '*/30 8-23,0-2 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  atualizar-pedidos-aberto:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: automacao-vendas
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      - run: node atualizar-pedidos-aberto.js
+        env:
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}

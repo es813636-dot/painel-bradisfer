@@ -17,6 +17,13 @@ const VENDAS_VIVO_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID
 // inspecionar/testar ao vivo é risco alto demais pra pouco ganho.
 const PRODUTOS_SHEET_NAME = 'Produtos';
 const PRODUTOS_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(PRODUTOS_SHEET_NAME);
+// Aba "PedidosAberto" (gravada pela automação, ver automacao-vendas/
+// atualizar-pedidos-aberto.js -- listarPedidoCompras da Sysemp) — quanto já
+// está pedido e ainda não recebido, por produto. Casa por Código Interno
+// (id_produto), não por código de barras: o item do pedido de compra na API
+// não traz código de barras nenhum, só id_produto/cod_fabrica.
+const PEDIDOS_ABERTO_SHEET_NAME = 'PedidosAberto';
+const PEDIDOS_ABERTO_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(PEDIDOS_ABERTO_SHEET_NAME);
 // Ponte (Cloudflare Worker, ver cloudflare-worker/produto-detalhe.js) que
 // busca compras/vendas reais na Sysemp, um produto por vez, sob demanda
 // (ao clicar num item). Substituiu o Apps Script Web App em 25/08/2026 --
@@ -190,6 +197,20 @@ function carregarPedidosEmAbertoDoLocalStorage() {
 }
 carregarPedidosEmAbertoDoLocalStorage();
 
+// Quantidade em pedido de compra em aberto pra um produto: prioriza edição
+// manual do usuário (pedidosEmAberto, por nome — upload de arquivo ou campo
+// editado na tela) sobre o valor sincronizado automático da Sysemp
+// (pedidosAbertoAutomaticoPersistente, por Código Interno). Editar o campo
+// pra 0/vazio remove a chave do Map manual (ver handler de
+// .input-pedido-aberto), então "sem entrada manual" volta a usar o
+// automático — não fica preso num 0 manual antigo depois que o pedido real
+// já foi recebido.
+function obterPedidoEmAberto(produto) {
+  const manual = pedidosEmAberto.get(normalizarProduto(produto.produto));
+  if (manual !== undefined) return manual;
+  return (produto.codigoInterno && pedidosAbertoAutomaticoPersistente.get(produto.codigoInterno)) || 0;
+}
+
 // ----------------------------------------------------------------------
 // Cotações de fornecedor -- comparação manual entre o preço cotado e o
 // custo atual (Sysemp). Casamento por nome é sempre manual (usuário busca
@@ -240,6 +261,11 @@ let minMaxPlanilhaPersistente = new Map();
 // Mesma lógica de persistência que minMaxPlanilhaPersistente, só que pra
 // venda AO VIVO em lote (chave: código de barras).
 let vendasVivoPersistente = new Map();
+// Idem, pra pedido de compra em aberto sincronizado automático (chave:
+// Código Interno / id_produto). Ver obterPedidoEmAberto() -- é só a base;
+// uma edição manual no campo da tela (pedidosEmAberto, por nome de
+// produto) sempre tem prioridade sobre esse valor automático.
+let pedidosAbertoAutomaticoPersistente = new Map();
 let diaRotinaSelecionado = null; // null até carregar — definido pra "hoje" (ou SEG se hoje for fim de semana)
 
 // ----------------------------------------------------------------------
@@ -759,11 +785,12 @@ async function carregarDados() {
   document.getElementById('subtitle').textContent = 'conectando...';
 
   try {
-    const [respBase, respAnalise, respVendasVivo, respProdutos] = await Promise.all([
+    const [respBase, respAnalise, respVendasVivo, respProdutos, respPedidosAberto] = await Promise.all([
       fetch(CSV_URL + '&t=' + Date.now()),
       fetch(ANALISE_CSV_URL + '&t=' + Date.now()).catch(() => null), // fonte opcional — não trava o painel se falhar
       fetch(VENDAS_VIVO_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem
       fetch(PRODUTOS_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem — só pra Código Interno/Fabricante/Auxiliar
+      fetch(PEDIDOS_ABERTO_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem — pedido de compra em aberto
     ]);
     if (!respBase.ok) throw new Error('HTTP ' + respBase.status);
     const textoBase = await respBase.text();
@@ -862,6 +889,30 @@ async function carregarDados() {
           codigoAuxiliar: r['Código Auxiliar'] || '',
         });
       });
+    }
+
+    // ---- fonte 5 (opcional): Pedido de compra em aberto sincronizado da
+    // Sysemp (aba "PedidosAberto", ver automacao-vendas/
+    // atualizar-pedidos-aberto.js) -- substitui a importação manual como
+    // fonte principal; casa por Código Interno, não por nome de produto
+    // (mais confiável, o item do pedido não traz nome nenhum pra comparar
+    // por texto, só id_produto). Mesmo padrão "persiste se falhar" das
+    // outras fontes opcionais.
+    const pedidosAbertoAutomatico = new Map();
+    if (respPedidosAberto && respPedidosAberto.ok) {
+      const textoPedidosAberto = await respPedidosAberto.text();
+      const linhasPedidosAberto = parseCSV(textoPedidosAberto);
+      linhasPedidosAberto.forEach(r => {
+        const codigoInterno = String(r['Código Interno'] || '').trim();
+        if (!codigoInterno) return;
+        const qtde = parseNumeroBR(r['Qtde Em Aberto']);
+        if (qtde > 0) pedidosAbertoAutomatico.set(codigoInterno, qtde);
+      });
+    }
+    const pedidosAbertoEhRazoavel = pedidosAbertoAutomatico.size > 0 &&
+      (pedidosAbertoAutomaticoPersistente.size === 0 || pedidosAbertoAutomatico.size >= pedidosAbertoAutomaticoPersistente.size * 0.5);
+    if (pedidosAbertoEhRazoavel) {
+      pedidosAbertoAutomaticoPersistente = pedidosAbertoAutomatico;
     }
 
     let qtdComOverride = 0;
@@ -1230,7 +1281,7 @@ function ajustarParaLoteDoNome(quantidade, produto) {
 function calcularPedidoSugeridoAoVivo(produto) {
   const an = produto.analise;
   if (!an || an.descontinuada || an.pontoPedido == null || an.estoqueSeguranca == null) return null;
-  const emAbertoAoVivo = pedidosEmAberto.get(normalizarProduto(produto.produto)) || 0;
+  const emAbertoAoVivo = obterPedidoEmAberto(produto);
   const pedidoCalculado = an.pontoPedido - an.estoqueSeguranca;
   const estoqueConsolidadoAoVivo = produto.estoque + emAbertoAoVivo;
   const necessidadeAoVivo = Math.max(0, an.pontoPedido - estoqueConsolidadoAoVivo + pedidoCalculado);
@@ -1699,7 +1750,7 @@ function calcularSugestaoSemPlanilha(produto, mediaMensal12M) {
   const leadTimeMarca = LEAD_TIME_POR_MARCA[marcaNormalizada];
   const temLeadTime = leadTimeMarca !== undefined && leadTimeMarca !== null;
   const tempoReposicaoMeses = temLeadTime ? leadTimeMarca / DIAS_POR_MES_SYSEMP : 1;
-  const emAberto = pedidosEmAberto.get(normalizarProduto(produto.produto)) || 0;
+  const emAberto = obterPedidoEmAberto(produto);
   const bruto = Math.max(0, Math.round(mediaMensal12M * tempoReposicaoMeses - produto.estoque - emAberto));
   return ajustarParaLoteDoNome(bruto, produto);
 }
@@ -3549,7 +3600,7 @@ function renderizar() {
       (marcaExpandidaTabela ?
         (() => {
           const itensDaMarca = itensDaMarcaExibidos;
-          const totalEmAberto = itensDaMarcaExpandida.reduce((s, d) => s + (pedidosEmAberto.get(normalizarProduto(d.produto)) || 0), 0);
+          const totalEmAberto = itensDaMarcaExpandida.reduce((s, d) => s + obterPedidoEmAberto(d), 0);
           return '<div class="panel" id="painel-resultados-busca">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
               '<h2 style="margin:0;">Itens de ' + escapeHtml(marcaExpandidaTabela) + '</h2>' +
@@ -3565,7 +3616,7 @@ function renderizar() {
             '<input type="text" id="busca-itens-criticos" placeholder="Buscar item nesta lista..." aria-label="Buscar item nesta lista" autocomplete="off" value="' + escapeHtml(buscaItensCriticosTexto) + '" style="margin-bottom:12px;width:280px;">' +
             '<table><thead><tr><th>Produto</th><th class="num">Curva</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mín.</th><th class="num">Pedido</th><th class="num">A repor</th></tr></thead><tbody>' +
               (itensDaMarca.map((d, i) => {
-                const emAberto = pedidosEmAberto.get(normalizarProduto(d.produto)) || 0;
+                const emAberto = obterPedidoEmAberto(d);
                 // Itens que só entram aqui pela sugestão AO VIVO (situação
                 // OK/EXCESSO, mas média real de venda pede reposição) têm
                 // valorRepor = 0 pelo cálculo antigo — usa a quantidade AO
