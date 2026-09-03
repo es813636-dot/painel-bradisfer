@@ -1,14 +1,16 @@
 name: Atualizar Vendas Bradisfer (B2B)
 
 on:
-  # `schedule` deliberadamente OFF por enquanto -- lição do incidente de
-  # VendasOnline (ver CONTEXTO.md): ligar o cron antes de validar carga
-  # inicial + 1 incremento controlado causou ~61 mil linhas duplicadas.
-  # Ligar só depois de: 1) rodar 1x via workflow_dispatch (carga
-  # histórica), 2) conferir o volume gravado, 3) rodar de novo e conferir
-  # que o incremento é pequeno/realista (não duplica o histórico).
-  # schedule:
-  #   - cron: '*/5 8-23,0-2 * * *'
+  schedule:
+    # Religado em 03/09/2026 depois de confirmar a carga histórica
+    # (15.837 linhas, batendo exatamente com o teste ao vivo feito antes
+    # de implementar) e da chave de dedup reforçada com id_pedido testada
+    # isolada (2 marcas do mesmo pedido geram chaves diferentes). Pulado
+    # o teste extra de 1 incremento manual de controle a pedido do
+    # usuário, confiando na lógica já validada e no padrão que já
+    # funcionou pro VendasOnline. Mesma janela horária das outras
+    # automações; piso real do GitHub Actions é 5 min.
+    - cron: '*/5 8-23,0-2 * * *'
   workflow_dispatch: {}
 
 jobs:
