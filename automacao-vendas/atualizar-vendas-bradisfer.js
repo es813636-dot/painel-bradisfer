@@ -1,30 +1,46 @@
 // ----------------------------------------------------------------------
-// Atualiza a aba "VendasBradisfer" da planilha do painel, buscando as
-// vendas B2B da BRADISFER DISTRIBUIDORA (id_empresa "1") via
-// listarVendasPorVendedor -- alimenta o dashboard Power BI separado
-// ("Dados BI", C:\Users\Admin\Documents\Dados BI), substituindo o Excel
-// manual (Fact_Vendas/Fact_Pedidos) que era a fonte até 03/09/2026.
+// Atualiza a aba "VendasBradisfer" da planilha do painel, buscando vendas
+// B2B via listarVendasPorVendedor -- alimenta o dashboard Power BI
+// separado ("Dados BI", C:\Users\Admin\Documents\Dados BI), substituindo
+// o Excel manual (Fact_Vendas/Fact_Pedidos) que era a fonte até 03/09/2026.
 //
-// Aba separada de "VendasOnline" de propósito: Bradisfer é B2B
-// (aplicativo/site/vendedor de carteira), Construbrag/SS Construcasa são
-// marketplace (Shopee/TikTok/Mercado Livre) -- modelos de negócio
-// diferentes, não misturar (ver CONTEXTO.md, achado das 132 linhas
-// vazadas que confirmou que não existe pipeline nenhuma pra id_empresa
+// Duas fontes gravam na MESMA aba:
+//   - id_empresa "1" (BRADISFER DISTRIBUIDORA) -- todo canal, é B2B pura.
+//   - id_empresa "3" (CONSTRUBRAG) -- só os canais B2B (CANAIS_B2B_CONSTRUBRAG
+//     abaixo). Construbrag é majoritariamente marketplace (Shopee/TikTok),
+//     mas uma fração pequena (confirmado 03/09/2026: ~1,5% do volume, R$
+//     95,6 mil/mês) usa os MESMOS canais B2B da Bradisfer -- essas vendas
+//     não apareciam em nenhuma planilha antes. `Empresa` continua vindo
+//     como "CONSTRUBRAG" (campo da própria API) -- não sobrescrever pra
+//     "BRADISFER". A aba `VendasOnline` (marketplace) continua intocada,
+//     essa é uma coleta paralela e adicional.
+//
+// Aba separada de "VendasOnline" de propósito: modelo de negócio diferente
+// (B2B vs. marketplace) -- não misturar (ver CONTEXTO.md, achado das 132
+// linhas vazadas que confirmou não existir pipeline nenhuma pra id_empresa
 // "1" antes desta).
 //
 // Mesmo padrão v2 de atualizar-vendas-online.js: carga histórica 1x +
-// incremental por checkpoint, append sem sobrescrever, dedup por chave
-// recalculada. Diferença: aqui a chave usa `id_pedido` (a Sysemp
-// acrescentou esse campo em 03/09/2026, destravando a migração que
-// estava pausada -- ver Dados BI/CLAUDE.md) -- muito mais robusto que a
-// composta por vendedor+marca+cliente+data+valor usada em VendasOnline
-// antes do id_pedido existir.
+// incremental por checkpoint (agora por EMPRESA, não só 1 valor -- ver
+// lerCheckpoints/gravarCheckpoints), append sem sobrescrever, dedup por
+// chave recalculada usando `id_pedido` (a Sysemp acrescentou esse campo
+// em 03/09/2026, confirmado presente em 100% das linhas testadas nas
+// duas empresas) -- bem mais robusto que a composta sem esse campo usada
+// em VendasOnline antes de existir (que colidiu de verdade, ver
+// CONTEXTO.md).
 //
-// Descoberta de performance (03/09/2026): o limite de janela de ~2 dias
-// documentado antes pra essa empresa (acima disso dava HTTP 500) não
-// existe mais -- testado ao vivo até a janela completa desde 01/01/2026
-// (8+ meses, 15.837 linhas), 200 OK em 2,6s. Carga histórica em 1
-// chamada só, sem precisar quebrar em janelas pequenas.
+// Descobertas de performance (03/09/2026):
+//   - Bradisfer (1): o limite de janela de ~2 dias documentado antes
+//     (acima disso dava HTTP 500) não existe mais -- testado até a janela
+//     completa desde 01/01/2026 (8+ meses, 15.837 linhas), 200 OK em
+//     2,6s. Carga histórica numa chamada só.
+//   - Construbrag (3): CONTINUA instável em janela larga -- testado ao
+//     vivo, janela de 8 meses devolveu HTML/erro em vez de JSON (mesma
+//     lentidão/instabilidade já documentada antes pra essa empresa em
+//     outros contextos). Por isso a busca dessa empresa é sempre
+//     QUEBRADA EM PEDAÇOS MENSAIS (TAMANHO_PEDACO_DIAS), mesmo na carga
+//     histórica -- cada pedaço isolado por try/catch, uma falha não
+//     derruba os pedaços seguintes nem a outra empresa.
 // ----------------------------------------------------------------------
 
 const { google } = require('googleapis');
@@ -33,7 +49,14 @@ const SHEET_ID = '1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A';
 const NOME_ABA = 'VendasBradisfer';
 const NOME_ABA_CONTROLE = 'VendasBradisferControle';
 const URL_VENDAS_POR_VENDEDOR = 'https://api.sysemp.com.br/163/listarVendasPorVendedor';
-const ID_EMPRESA = '1';
+
+// canaisPermitidos: null = todo canal (Bradisfer, já é 100% B2B). Set =
+// só esses canais entram (Construbrag, filtra o B2B de dentro do
+// marketplace). Comparação sempre case-insensitive/trim.
+const FONTES = [
+  { idEmpresa: '1', nome: 'BRADISFER DISTRIBUIDORA', canaisPermitidos: null, tamanhoPedacoDias: null },
+  { idEmpresa: '3', nome: 'CONSTRUBRAG (só canais B2B)', canaisPermitidos: new Set(['APLICATIVO', 'SITE', 'VENDAS INTERNA', 'MOBWIT']), tamanhoPedacoDias: 30 },
+];
 
 const DATA_INICIO_HISTORICO = '2026-01-01';
 // Reprocessa 1 dia pra trás do checkpoint em toda rodada incremental, pra
@@ -56,6 +79,18 @@ function somarDias(dataISOStr, dias) {
   d.setUTCDate(d.getUTCDate() + dias);
   return dataISO(d);
 }
+// Quebra [datainicial, datafinal] em pedaços de no máximo `dias`, em
+// ordem cronológica -- usado só pra fontes instáveis em janela larga.
+function quebrarEmPedacos(datainicial, datafinal, dias) {
+  const pedacos = [];
+  let ini = datainicial;
+  while (ini <= datafinal) {
+    const fim = somarDias(ini, dias - 1) > datafinal ? datafinal : somarDias(ini, dias - 1);
+    pedacos.push([ini, fim]);
+    ini = somarDias(fim, 1);
+  }
+  return pedacos;
+}
 
 // A API às vezes varia grafia/acento entre campos -- aceita variantes em
 // vez de assumir uma só (mesmo cuidado de atualizar-vendas-online.js).
@@ -64,17 +99,24 @@ function campoVenda(venda, ...chaves) {
   return undefined;
 }
 
-async function buscarVendas(token, datainicial, datafinal) {
+async function buscarVendas(token, idEmpresa, datainicial, datafinal) {
   const resp = await fetch(URL_VENDAS_POR_VENDEDOR, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Token: token },
-    body: JSON.stringify({ id_empresa: ID_EMPRESA, datainicial, datafinal, offset: '0' }),
+    body: JSON.stringify({ id_empresa: idEmpresa, datainicial, datafinal, offset: '0' }),
   });
-  if (!resp.ok) {
-    const corpo = await resp.text().catch(() => '(sem corpo)');
-    throw new Error('HTTP ' + resp.status + ' — resposta: ' + corpo);
+  const texto = await resp.text();
+  if (!resp.ok) throw new Error('HTTP ' + resp.status + ' — resposta: ' + texto.slice(0, 300));
+  let dados;
+  try {
+    dados = JSON.parse(texto);
+  } catch {
+    // Visto ao vivo em 03/09/2026: a Sysemp às vezes devolve uma página
+    // HTML de erro com HTTP 200 numa janela larga pra Construbrag --
+    // trata como falha (não um catálogo vazio), pra não confundir "sem
+    // venda no período" com "a busca quebrou".
+    throw new Error('Resposta não é JSON (provável erro/timeout da Sysemp): ' + texto.slice(0, 300));
   }
-  const dados = await resp.json();
   return dados.retorno || [];
 }
 
@@ -96,20 +138,23 @@ function montarChaveDedup(idPedido, marca, cliente, dataEmissao, valorFaturado, 
 }
 
 // Retorna { linhas, maiorDataEmissao } -- maiorDataEmissao avança o
-// checkpoint mesmo quando toda linha da rodada já existia.
-function montarLinhas(vendedores, datainicial, datafinal) {
+// checkpoint mesmo quando toda linha da rodada já existia. `canaisPermitidos`
+// (Set ou null) filtra vendas antes de virarem linha -- usado só pra
+// Construbrag, isolar o B2B de dentro do marketplace.
+function montarLinhas(vendedores, datainicial, datafinal, canaisPermitidos) {
   const linhas = [];
   let maiorDataEmissao = null;
   vendedores.forEach((v) => {
     const idVendedor = v.id_vendedor == null ? '' : String(v.id_vendedor);
     const nomeVendedor = v.vendedor == null ? '' : String(v.vendedor).trim();
     (v.vendas || []).forEach((venda) => {
+      const canal = venda['canal de venda'] || '';
+      if (canaisPermitidos && !canaisPermitidos.has(String(canal).toUpperCase().trim())) return;
       const [cidade, uf] = separarCidadeUf(venda['cidade/uf']);
       const marca = venda.marca || '';
       const cliente = venda.cliente || '';
       const valorFaturado = Number(venda['valor faturado']) || 0;
       const quantidade = Number(venda.quantidade) || 0;
-      const canal = venda['canal de venda'] || '';
       const idPedido = venda.id_pedido == null ? '' : String(venda.id_pedido);
       const dataEmissao = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão') || '').trim();
       if (dataEmissao && (!maiorDataEmissao || dataEmissao > maiorDataEmissao)) maiorDataEmissao = dataEmissao;
@@ -139,22 +184,27 @@ async function garantirAba(sheets, nomeAba) {
   return !existe;
 }
 
-// Checkpoint: maior "data de emissão" já processada com sucesso, numa
-// aba pequena separada (não escaneia a VendasBradisfer inteira toda
-// rodada -- ela só tende a crescer). 1 linha, já que é 1 empresa só.
-async function lerCheckpoint(sheets) {
+// Checkpoint por empresa (Map idEmpresa -> maior "data de emissão" já
+// processada com sucesso), numa aba pequena separada -- não escaneia a
+// VendasBradisfer inteira toda rodada, ela só tende a crescer.
+async function lerCheckpoints(sheets) {
   const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: NOME_ABA_CONTROLE + '!A2:B' }).catch(() => null);
-  const linha = resp && resp.data.values ? resp.data.values[0] : null;
-  return linha && linha[1] ? String(linha[1]) : null;
+  const mapa = new Map();
+  (resp && resp.data.values ? resp.data.values : []).forEach((linha) => {
+    const [idEmpresa, ultimaData] = linha;
+    if (idEmpresa && ultimaData) mapa.set(String(idEmpresa), String(ultimaData));
+  });
+  return mapa;
 }
 
-async function gravarCheckpoint(sheets, ultimaData) {
+async function gravarCheckpoints(sheets, mapa) {
+  const linhas = [...mapa.entries()].map(([idEmpresa, ultimaData]) => [idEmpresa, ultimaData]);
   await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: NOME_ABA_CONTROLE + '!A2:B' });
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
     range: NOME_ABA_CONTROLE + '!A1',
     valueInputOption: 'RAW',
-    resource: { values: [['IdEmpresa', 'UltimaDataEmissaoProcessada'], [ID_EMPRESA, ultimaData]] },
+    resource: { values: [['IdEmpresa', 'UltimaDataEmissaoProcessada'], ...linhas] },
   });
 }
 
@@ -178,6 +228,39 @@ async function garantirCabecalho(sheets) {
   });
 }
 
+// Busca uma fonte inteira, dividindo em pedaços quando `tamanhoPedacoDias`
+// for definido (Construbrag). Pra pra no primeiro pedaço que falhar --
+// não avança pros pedaços mais novos, pra não deixar buraco no meio do
+// histórico com o checkpoint pulando por cima dele (ver comentário em
+// main() sobre como o checkpoint é calculado a partir do que retorna
+// aqui). Retorna { linhas, maiorDataEmissao, completo } -- completo=false
+// quando parou antes do fim por causa de erro num pedaço.
+async function buscarFonteCompleta(token, fonte, datainicial, datafinal) {
+  const pedacos = fonte.tamanhoPedacoDias
+    ? quebrarEmPedacos(datainicial, datafinal, fonte.tamanhoPedacoDias)
+    : [[datainicial, datafinal]];
+
+  let todasLinhas = [];
+  let maiorDataEmissaoGeral = null;
+  for (const [ini, fim] of pedacos) {
+    console.log('  pedaço ' + ini + ' a ' + fim + '...');
+    let vendedores;
+    try {
+      vendedores = await buscarVendas(token, fonte.idEmpresa, ini, fim);
+    } catch (erro) {
+      console.error('  -> FALHOU nesse pedaço, parando aqui (pedaços mais novos ficam pra próxima rodada): ' + erro.message);
+      return { linhas: todasLinhas, maiorDataEmissao: maiorDataEmissaoGeral, completo: false };
+    }
+    const { linhas, maiorDataEmissao } = montarLinhas(vendedores, ini, fim, fonte.canaisPermitidos);
+    console.log('    -> ' + vendedores.length + ' vendedor(es)/grupo(s), ' + linhas.length + ' linha(s) (após filtro de canal, se houver)');
+    todasLinhas = todasLinhas.concat(linhas);
+    if (maiorDataEmissao && (!maiorDataEmissaoGeral || maiorDataEmissao > maiorDataEmissaoGeral)) {
+      maiorDataEmissaoGeral = maiorDataEmissao;
+    }
+  }
+  return { linhas: todasLinhas, maiorDataEmissao: maiorDataEmissaoGeral, completo: true };
+}
+
 async function main() {
   const sysempToken = process.env.SYSEMP_TOKEN;
   if (!sysempToken) throw new Error('SYSEMP_TOKEN não configurado (variável de ambiente/secret).');
@@ -190,53 +273,84 @@ async function main() {
   await garantirAba(sheets, NOME_ABA_CONTROLE);
   await garantirCabecalho(sheets);
 
-  const checkpoint = await lerCheckpoint(sheets);
-  const hoje = dataISO(new Date());
-  const datainicial = checkpoint ? somarDias(checkpoint, -MARGEM_SEGURANCA_DIAS) : DATA_INICIO_HISTORICO;
-  const datafinal = hoje;
+  const checkpoints = await lerCheckpoints(sheets);
 
-  console.log('Buscando vendas Bradisfer (empresa ' + ID_EMPRESA + '), ' + datainicial + ' a ' + datafinal +
-    (checkpoint ? ' (incremental)' : ' (carga histórica -- sem checkpoint ainda)') + '...');
-
-  if (!checkpoint && !abaVendasCriadaAgora) {
-    // Carga inicial de verdade (nunca rodou essa v2 antes, mas a aba já
-    // existia por algum motivo) -- limpa antes de recarregar, evita
-    // misturar schema.
-    console.log('Sem checkpoint -- limpando dado antigo da aba ' + NOME_ABA + ' antes de recarregar do zero...');
+  // Carga inicial geral (nenhuma fonte tem checkpoint ainda) -- limpa a
+  // aba antes de escrever, evita misturar com dado antigo de formato
+  // diferente. Se só uma fonte NOVA for adicionada depois (outras já com
+  // checkpoint), NÃO limpa -- só faz a carga histórica dela, dedup cuida
+  // do resto (mesmo padrão de atualizar-vendas-online.js).
+  const cargaInicialGeral = checkpoints.size === 0;
+  if (cargaInicialGeral && !abaVendasCriadaAgora) {
+    console.log('Carga inicial detectada (sem checkpoint algum) -- limpando dado antigo da aba ' + NOME_ABA + ' antes de recarregar do zero...');
     await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: NOME_ABA + '!A2:Z' });
   }
 
-  const chavesExistentes = checkpoint ? await lerChavesExistentes(sheets) : new Set();
+  const chavesExistentes = cargaInicialGeral ? new Set() : await lerChavesExistentes(sheets);
   console.log('Chaves já gravadas (pra dedup): ' + chavesExistentes.size);
 
-  const vendedores = await buscarVendas(sysempToken, datainicial, datafinal);
-  const { linhas, maiorDataEmissao } = montarLinhas(vendedores, datainicial, datafinal);
+  const hoje = dataISO(new Date());
+  let todasNovas = [];
+  const novosCheckpoints = new Map(checkpoints);
+  const fontesComErro = [];
 
-  const novas = linhas.filter((l) => !chavesExistentes.has(l.chave));
-  console.log(vendedores.length + ' vendedor(es)/grupo(s), ' + linhas.length + ' linha(s) no período, ' +
-    novas.length + ' nova(s) (' + (linhas.length - novas.length) + ' já existiam)');
+  for (const fonte of FONTES) {
+    const checkpoint = checkpoints.get(fonte.idEmpresa);
+    const datainicial = checkpoint ? somarDias(checkpoint, -MARGEM_SEGURANCA_DIAS) : DATA_INICIO_HISTORICO;
+    const datafinal = hoje;
+    console.log('Buscando ' + fonte.nome + ' (empresa ' + fonte.idEmpresa + '), ' + datainicial + ' a ' + datafinal +
+      (checkpoint ? ' (incremental)' : ' (carga histórica -- sem checkpoint ainda)') + '...');
 
-  if (novas.length > 0) {
-    console.log('Gravando ' + novas.length + ' linha(s) nova(s) na aba ' + NOME_ABA + ' (append)...');
+    const { linhas, maiorDataEmissao, completo } = await buscarFonteCompleta(sysempToken, fonte, datainicial, datafinal);
+    if (!completo) fontesComErro.push(fonte.nome);
+
+    const novas = linhas.filter((l) => !chavesExistentes.has(l.chave));
+    novas.forEach((l) => chavesExistentes.add(l.chave)); // evita duplicar dentro da mesma rodada também
+    console.log('  -> total ' + fonte.nome + ': ' + linhas.length + ' linha(s) no período, ' +
+      novas.length + ' nova(s) (' + (linhas.length - novas.length) + ' já existiam)' + (completo ? '' : ' [PARCIAL -- parou num pedaço com erro]'));
+
+    todasNovas = todasNovas.concat(novas.map((l) => l.linha));
+
+    // Avança o checkpoint pela maior data vista, mesmo que toda linha já
+    // existisse (senão o job reprocessa a mesma janela pra sempre num dia
+    // sem venda nova). Se a busca foi PARCIAL (parou num pedaço com
+    // erro), maiorDataEmissao já reflete só os pedaços que deram certo
+    // (buscarFonteCompleta para antes de processar os pedaços mais
+    // novos) -- então avançar até ali é seguro, a próxima rodada retoma
+    // do pedaço que falhou.
+    if (maiorDataEmissao && (!checkpoint || maiorDataEmissao > checkpoint)) {
+      novosCheckpoints.set(fonte.idEmpresa, maiorDataEmissao);
+    } else if (!checkpoint && completo) {
+      // Sem nenhuma venda no período histórico inteiro (fonte nova, por
+      // ex.) -- marca "hoje" pra não ficar refazendo carga histórica
+      // completa pra sempre. Só faz isso se a busca foi completa (senão
+      // ainda não sabemos se há dado além do que falhou).
+      novosCheckpoints.set(fonte.idEmpresa, hoje);
+    }
+  }
+
+  if (todasNovas.length > 0) {
+    console.log('Gravando ' + todasNovas.length + ' linha(s) nova(s) na aba ' + NOME_ABA + ' (append)...');
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
       range: NOME_ABA + '!A1',
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
-      resource: { values: novas.map((l) => l.linha) },
+      resource: { values: todasNovas },
     });
   } else {
     console.log('Nenhuma linha nova -- nada pra gravar nesta rodada.');
   }
 
-  // Avança o checkpoint pela maior data vista, mesmo que toda linha já
-  // existisse (senão o job reprocessa a mesma janela pra sempre num dia
-  // sem venda nova).
-  const novoCheckpoint = maiorDataEmissao && (!checkpoint || maiorDataEmissao > checkpoint)
-    ? maiorDataEmissao
-    : (checkpoint || hoje);
-  await gravarCheckpoint(sheets, novoCheckpoint);
-  console.log('Checkpoint atualizado: ' + novoCheckpoint);
+  await gravarCheckpoints(sheets, novosCheckpoints);
+  console.log('Checkpoints atualizados: ' + JSON.stringify([...novosCheckpoints.entries()]));
+
+  if (fontesComErro.length > 0) {
+    // Progresso das fontes/pedaços saudáveis já foi salvo acima (append +
+    // checkpoint) -- só marca a rodada como falha (job vermelho no
+    // Actions, visível) sem derrubar nada que já deu certo.
+    throw new Error('Busca parcial (parou num pedaço com erro) pra: ' + fontesComErro.join(', ') + ' -- retoma sozinho na próxima rodada.');
+  }
   console.log('Concluído.');
 }
 
