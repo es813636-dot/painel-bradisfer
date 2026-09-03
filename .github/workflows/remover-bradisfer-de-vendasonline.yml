@@ -1,0 +1,23 @@
+name: Remover BRADISFER de VendasOnline (pontual)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  remover-bradisfer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: automacao-vendas
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      - run: node remover-bradisfer-de-vendasonline.js
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
