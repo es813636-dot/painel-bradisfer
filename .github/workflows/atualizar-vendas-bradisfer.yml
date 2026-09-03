@@ -1,0 +1,32 @@
+name: Atualizar Vendas Bradisfer (B2B)
+
+on:
+  # `schedule` deliberadamente OFF por enquanto -- lição do incidente de
+  # VendasOnline (ver CONTEXTO.md): ligar o cron antes de validar carga
+  # inicial + 1 incremento controlado causou ~61 mil linhas duplicadas.
+  # Ligar só depois de: 1) rodar 1x via workflow_dispatch (carga
+  # histórica), 2) conferir o volume gravado, 3) rodar de novo e conferir
+  # que o incremento é pequeno/realista (não duplica o histórico).
+  # schedule:
+  #   - cron: '*/5 8-23,0-2 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  atualizar-vendas-bradisfer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: automacao-vendas
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      - run: node atualizar-vendas-bradisfer.js
+        env:
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
