@@ -1,23 +1,22 @@
 name: Atualizar Vendas Online (Marketplace)
 
 on:
-  # `schedule` DESLIGADO DE PROPÓSITO em 02/09/2026 -- a run #4 (incremental,
-  # janela de só 1-2 dias) gravou ~61 mil linhas novas de uma vez, muito
-  # mais do que uma janela curta deveria trazer. Suspeita: o ChaveDedup das
-  # linhas gravadas na carga inicial (run #2) usa o formato ANTIGO de 6
-  # campos, mas o código já estava no formato NOVO de 8 campos (commit
-  # 2361029) quando a incremental rodou -- toda chave nova ficou diferente
-  # de toda chave antiga, então o dedup não reconheceu nada como repetido e
-  # reprocessou tudo que voltou como "novo". Ainda não confirmado se o
-  # endpoint também não respeita a janela de data pedida (segunda causa
-  # possível, agravando o problema). Religar só depois de:
-  #   1. Confirmar/descartar se a API ignora datainicial/datafinal;
-  #   2. Migrar o ChaveDedup de todas as linhas já gravadas pro formato
-  #      novo (ou voltar o código pro formato antigo, o que for decidido);
-  #   3. Rodar 1x via workflow_dispatch e conferir que o incremento real
-  #      bate com o volume esperado antes de religar o cron.
-  # schedule:
-  #   - cron: '*/5 8-23,0-2 * * *'
+  schedule:
+    # Religado em 03/09/2026 depois de resolver os 2 bugs que causaram a
+    # duplicação de 02/09 (ver histórico do arquivo e CONTEXTO.md):
+    #   1. A API listarVendasPorVendedor não respeitava datainicial/
+    #      datafinal numa chamada da empresa 4 -- reportado e corrigido
+    #      pela Sysemp no mesmo dia. Reconfirmado ao vivo (empresa 3 e 4,
+    #      janela de 1-2 dias, 0 linha fora do período) antes de religar.
+    #   2. O ChaveDedup mudou de formato (6 -> 8 campos) entre a carga
+    #      inicial e a 1ª rodada incremental, quebrando o dedup -- corrigido
+    #      com limpar-duplicatas-vendas-online.js (rodado 1x, ver commit),
+    #      que recalcula a chave de verdade e migra tudo pro formato novo.
+    #      122.194 linhas limpas restantes, 0 duplicata, 0 divergência.
+    #   3. Confirmado com um disparo manual de controle: incremento real de
+    #      1.127 linhas num dia, dentro do esperado (não mais dezenas de
+    #      milhares).
+    - cron: '*/5 8-23,0-2 * * *'
   workflow_dispatch: {}
 
 jobs:
