@@ -3555,6 +3555,7 @@ function renderizar() {
               (temPendencia ? 'data-rotina-marca="' + escapeHtml(r.marcaOriginal) + '"' : '') +
               ' style="border-left-color:' + cor + ';">' +
                 '<div class="rc-nome">' + escapeHtml(r.fornecedor) + '</div>' +
+                (temPendencia ? '<div class="rc-valor">' + fmtMoeda(r.valorRepor) + '</div>' : '') +
                 '<div class="rc-rodape"><span class="rotina-tipo">' + tipoLabel + '</span>' + statusHtml + '</div>' +
             '</div>';
           }).join('') +
