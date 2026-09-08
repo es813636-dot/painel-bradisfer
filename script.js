@@ -3451,12 +3451,19 @@ function renderizar() {
   const diaSelecionadoLabel = NOMES_DIA[diaRotinaSelecionado];
   const porMarcaCompleto = {};
   dadosCompletos.forEach(d => {
+    if (!precisaReporAoVivo(d)) return;
     const chave = normalizarFornecedor(d.marca);
     if (!porMarcaCompleto[chave]) porMarcaCompleto[chave] = { marcaOriginal: d.marca, qtdRuptura: 0, qtdBaixo: 0, valorRepor: 0 };
     const m = porMarcaCompleto[chave];
     if (d.situacao === 'RUPTURA') m.qtdRuptura++;
     if (d.situacao === 'BAIXO') m.qtdBaixo++;
-    m.valorRepor += d.valorRepor;
+    // Mesma conta da tabela de itens/geração de pedido (ver
+    // valorReporExibido acima): usa a sugestão AO VIVO × custo quando o
+    // item só entra pela venda real (situação OK/EXCESSO), não pelo
+    // mínimo/máximo estático — senão o card mostra um valor que não bate
+    // com o pedido que o botão "Gerar pedido" realmente monta.
+    m.valorRepor += d.valorRepor > 0 ? d.valorRepor
+      : (d.vendasAoVivoLote ? calcularSugestaoSemPlanilha(d, d.vendasAoVivoLote.mediaMensal) * (d.custo || 0) : 0);
   });
   let rotinaHoje = calcularFornecedoresPorDia(diaRotinaSelecionado).map(r => {
     const chave = normalizarFornecedor(r.f);
