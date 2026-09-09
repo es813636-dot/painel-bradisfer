@@ -3828,7 +3828,11 @@ function renderizar() {
     mostrarItensNormaisMarca = false;
     buscaItensCriticosTexto = ''; buscaItensNormaisTexto = '';
     renderizar();
-    document.querySelector('.container').scrollIntoView({ behavior: 'smooth' });
+    // Rola até a seção de itens da marca (que renderizar() acabou de criar),
+    // não pro topo da página — o card fica no meio da tela e sem isso o
+    // usuário não vê que a lista abriu lá embaixo.
+    const painelItens = document.getElementById('painel-resultados-busca');
+    (painelItens || document.querySelector('.container')).scrollIntoView({ behavior: 'smooth', block: 'start' });
   }));
   document.querySelectorAll('[data-dia-rotina]').forEach(el => el.addEventListener('click', () => {
     diaRotinaSelecionado = el.dataset.diaRotina;
