@@ -151,8 +151,9 @@ function validarRetornoVendas(dados, idEmpresa, datainicial, datafinal) {
   for (const vendedor of dados.retorno) {
     if (!Array.isArray(vendedor.vendas)) throw new Error('Grupo de vendas inválido.');
     for (const venda of vendedor.vendas) {
-      const data = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão') || '').trim();
-      if (venda.id_pedido == null || String(venda.id_pedido).trim() === '' || !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+      const data = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão', 'data_emissao') || '').trim();
+      const pedido = campoVenda(venda, 'id_pedido', 'pedido');
+      if (pedido == null || String(pedido).trim() === '' || !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
         throw new Error('API sem id_pedido/data de emissão: resposta rejeitada, sem gravar vendas sem identificação.');
       }
       if (data < datainicial || data > datafinal) throw new Error('API retornou venda fora da janela de datas solicitada.');
@@ -217,8 +218,8 @@ function montarLinhas(vendedores, datainicial, datafinal, canaisPermitidos) {
       const [cidade, uf] = separarCidadeUf(venda['cidade/uf']);
       const marca = venda.marca || '';
       const cliente = venda.cliente || '';
-      const idPedido = venda.id_pedido == null ? '' : String(venda.id_pedido);
-      const dataEmissao = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão') || '').trim();
+      const idPedido = String(campoVenda(venda, 'id_pedido', 'pedido') ?? '');
+      const dataEmissao = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão', 'data_emissao') || '').trim();
       if (dataEmissao && (!maiorDataEmissao || dataEmissao > maiorDataEmissao)) maiorDataEmissao = dataEmissao;
       const chave = montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal, venda.empresa);
 

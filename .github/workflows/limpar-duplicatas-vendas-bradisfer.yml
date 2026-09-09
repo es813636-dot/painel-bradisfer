@@ -8,7 +8,7 @@ on:
         required: true
         default: audit
         type: choice
-        options: [audit, apply]
+        options: [audit, apply, repair_audit, repair_apply]
       expected_plan_sha256:
         description: 'Hash CLEANUP_PLAN da auditoria (obrigatório para apply)'
         required: false
@@ -35,9 +35,9 @@ jobs:
         with:
           node-version: '20'
       - run: npm install
-      - run: node --test limpar-duplicatas-vendas-bradisfer.test.js atualizar-vendas-bradisfer.test.js
+      - run: node --test limpar-duplicatas-vendas-bradisfer.test.js atualizar-vendas-bradisfer.test.js recuperar-vendas-b2b-sem-identificacao.test.js
       - name: Pausar carga B2B e aguardar execuções anteriores
-        if: inputs.mode == 'apply'
+        if: inputs.mode == 'apply' || inputs.mode == 'repair_apply'
         id: pause
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -69,6 +69,15 @@ jobs:
           })().catch(error => { console.error(error.message); process.exitCode = 1; });
           NODE
       - run: node limpar-duplicatas-vendas-bradisfer.js
+        if: inputs.mode == 'audit' || inputs.mode == 'apply'
+        env:
+          CLEANUP_MODE: ${{ inputs.mode }}
+          EXPECTED_PLAN_SHA256: ${{ inputs.expected_plan_sha256 }}
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: node recuperar-vendas-b2b-sem-identificacao.js
+        if: inputs.mode == 'repair_audit' || inputs.mode == 'repair_apply'
         env:
           CLEANUP_MODE: ${{ inputs.mode }}
           EXPECTED_PLAN_SHA256: ${{ inputs.expected_plan_sha256 }}

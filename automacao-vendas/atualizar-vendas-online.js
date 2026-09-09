@@ -121,7 +121,10 @@ function montarLinhas(vendedores, datainicial, datafinal) {
       const valorFaturado = Number(venda['valor faturado']) || 0;
       const quantidade = Number(venda.quantidade) || 0;
       const canal = venda['canal de venda'] || '';
-      const dataEmissao = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão') || '').trim();
+      const dataEmissao = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão', 'data_emissao') || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataEmissao) || dataEmissao < datainicial || dataEmissao > datafinal) {
+        throw new Error('API sem data de emissão válida no período; nenhuma venda sem data será gravada.');
+      }
       if (dataEmissao && (!maiorDataEmissao || dataEmissao > maiorDataEmissao)) maiorDataEmissao = dataEmissao;
       const chave = montarChaveDedup(idVendedor, nomeVendedor, marca, cliente, dataEmissao, valorFaturado, quantidade, canal);
       linhas.push({

@@ -52,13 +52,13 @@ function duplicateGroups(rows) {
     return { key: k, company, companyId: COMPANIES.get(company), date: str(group[0].row[12]), group };
   });
 }
-async function getApiDay(token, companyId, date) {
+async function getApiDay(token, companyId, date, endDate = date) {
   let payload;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await fetch('https://api.sysemp.com.br/163/listarVendasPorVendedor', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Token: token },
-        body: JSON.stringify({ id_empresa: companyId, datainicial: date, datafinal: date, offset: '0' }),
+        body: JSON.stringify({ id_empresa: companyId, datainicial: date, datafinal: endDate, offset: '0' }),
         signal: AbortSignal.timeout(60000),
       });
       assert.ok(response.ok, 'API Sysemp retornou HTTP ' + response.status);
@@ -77,15 +77,16 @@ async function getApiDay(token, companyId, date) {
   for (const seller of payload.retorno) {
     assert.ok(Array.isArray(seller.vendas), 'Grupo sem vendas na API.');
     for (const sale of seller.vendas) {
-      const emission = str(sale['data de emissão'] || sale['data de emissao'] || sale['Data de Emissão']).trim();
-      if (emission) assert.equal(emission, date, 'A API não respeitou o filtro de data.');
+      const emission = str(sale['data de emissão'] || sale['data de emissao'] || sale['Data de Emissão'] || sale.data_emissao).trim();
+      if (emission) assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(emission) && emission >= date && emission <= endDate, 'A API não respeitou o filtro de data.');
       assert.equal(COMPANIES.get(normalizedCompany(sale.empresa)), companyId, 'A API não respeitou o filtro de empresa.');
       const channel = str(sale['canal de venda']);
       if (companyId === '3' && !B2B.has(channel.trim().toUpperCase())) continue;
-      const hasOrder = sale.id_pedido != null && str(sale.id_pedido) !== '';
+      const order = sale.id_pedido ?? sale.pedido;
+      const hasOrder = order != null && str(order) !== '';
       assert.equal(hasOrder, Boolean(emission), 'API com identificação parcialmente preenchida.');
       modes.add(hasOrder ? 'order' : 'daily-aggregate');
-      const k = [normalizedCompany(sale.empresa), str(seller.id_vendedor), str(sale.id_pedido), str(sale.marca), str(sale.cliente), emission, channel].join('|');
+      const k = [normalizedCompany(sale.empresa), str(seller.id_vendedor), str(order), str(sale.marca), str(sale.cliente), emission, channel].join('|');
       const value = cents(sale['valor faturado']);
       assert.ok(typeof sale.quantidade === 'number' && Number.isFinite(sale.quantidade), 'Quantidade da API inválida.');
       const acc = grouped.get(k) || { cents: 0, quantity: 0 };
@@ -267,5 +268,5 @@ async function main() {
     '. Excesso removido (centavos): ' + result.excessCents + '. Grupos pendentes: ' + result.remainingDuplicates +
     '. Linhas sem identificação preservadas: ' + result.unidentifiedRowsPreserved + '.\n');
 }
-module.exports = { canonical, key, duplicateGroups, expectedRows, deletionRanges, makePlan, cents };
+module.exports = { canonical, key, coarseKey, duplicateGroups, expectedRows, deletionRanges, makePlan, cents, getApiDay, assertWriterStopped };
 if (require.main === module) main().catch(error => { console.error('CLEANUP_ABORTED: ' + error.message); process.exitCode = 1; });

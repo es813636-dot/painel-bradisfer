@@ -32,6 +32,15 @@ test('resposta agregada sem pedido/data é rejeitada', () => {
   const invalid = venda({ cfop: '5.102' }); delete invalid.id_pedido; delete invalid['data de emissão'];
   assert.throws(() => context.validarRetornoVendas(payload([invalid]), '1', '2026-07-02', '2026-07-02'), /sem id_pedido/);
 });
+test('nomes novos pedido/data_emissao preservam a identidade anterior', () => {
+  const old = venda();
+  const updated = { ...old, pedido: 38141, data_emissao: '2026-07-02', cfop: '5.102' };
+  delete updated.id_pedido; delete updated['data de emissão'];
+  context.validarRetornoVendas(payload([updated]), '1', '2026-07-02', '2026-07-02');
+  const a = context.montarLinhas(payload([old]).retorno, '2026-07-02', '2026-07-02', null);
+  const b = context.montarLinhas(payload([updated]).retorno, '2026-07-02', '2026-07-02', null);
+  assert.equal(a.linhas[0].chave, b.linhas[0].chave);
+});
 test('valida empresa, intervalo e status antes de aceitar vendas', () => {
   context.validarRetornoVendas(payload([venda()]), '1', '2026-07-02', '2026-07-02');
   assert.throws(() => context.validarRetornoVendas(payload([venda({ empresa: 'CONSTRUBRAG' })]), '1', '2026-07-02', '2026-07-02'), /outra empresa/);
