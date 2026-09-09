@@ -43,8 +43,12 @@ async function buildPlan(rows, token, query = getApiDay) {
       const valid = rows.slice(1).filter(r => company(r) === name && !blank(r[13]) && r[12] >= START && r[12] <= END);
       const existing = new Map(valid.map(r => [key(r), { cents: cents(r[11]), quantity: r[9] }]));
       assert.equal(existing.size, valid.length, 'Há pedidos duplicados entre os registros válidos.');
-      compareMaps(existing, current.grouped, 'Vendas identificadas não coincidem integralmente com a API');
-      compareMaps(aggregate(bad), current.coarse, 'Agregados sem identificação não coincidem integralmente com a API');
+      // A API recebe pedidos novos durante a pausa. Cada pedido já gravado
+      // deve continuar confirmado integralmente; novos pedidos não são alvo.
+      for (const [k, value] of existing) {
+        assert.deepEqual(current.grouped.get(k), value, 'Vendas identificadas não coincidem com a API');
+      }
+      compareMaps(aggregate(bad), aggregate(valid), 'Agregados sem identificação não coincidem integralmente com os pedidos confirmados');
       evidence.push({ company: name, unidentified: bad.length, validOrdersAndBrands: valid.length,
         cents: bad.reduce((n, r) => n + cents(r[11]), 0) });
     }
