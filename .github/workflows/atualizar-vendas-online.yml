@@ -17,7 +17,24 @@ on:
     #      1.127 linhas num dia, dentro do esperado (não mais dezenas de
     #      milhares).
     - cron: '*/5 8-23,0-2 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      reprocessar_desde:
+        description: 'Reprocessar desde a data YYYY-MM-DD (vazio usa checkpoint)'
+        required: false
+        default: ''
+      simular:
+        description: 'Conferir sem gravar'
+        type: boolean
+        default: false
+      criar_backup:
+        description: 'Copiar a aba antes da correção'
+        type: boolean
+        default: false
+
+concurrency:
+  group: vendas-online-planilha
+  cancel-in-progress: false
 
 jobs:
   atualizar-vendas-online:
@@ -34,7 +51,12 @@ jobs:
 
       - run: npm install
 
+      - run: node --test atualizar-vendas-online.test.js
+
       - run: node atualizar-vendas-online.js
         env:
           SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          REPROCESSAR_DESDE: ${{ inputs.reprocessar_desde }}
+          SO_SIMULAR: ${{ inputs.simular && '1' || '0' }}
+          CRIAR_BACKUP: ${{ inputs.criar_backup && '1' || '0' }}

@@ -3,6 +3,10 @@ name: Limpar Duplicatas VendasOnline (pontual)
 on:
   workflow_dispatch: {}
 
+concurrency:
+  group: vendas-online-planilha
+  cancel-in-progress: false
+
 jobs:
   limpar-duplicatas:
     runs-on: ubuntu-latest
