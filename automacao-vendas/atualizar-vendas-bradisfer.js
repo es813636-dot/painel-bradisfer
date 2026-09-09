@@ -22,12 +22,30 @@
 //
 // Mesmo padrão v2 de atualizar-vendas-online.js: carga histórica 1x +
 // incremental por checkpoint (agora por EMPRESA, não só 1 valor -- ver
-// lerCheckpoints/gravarCheckpoints), append sem sobrescrever, dedup por
-// chave recalculada usando `id_pedido` (a Sysemp acrescentou esse campo
-// em 03/09/2026, confirmado presente em 100% das linhas testadas nas
-// duas empresas) -- bem mais robusto que a composta sem esse campo usada
-// em VendasOnline antes de existir (que colidiu de verdade, ver
-// CONTEXTO.md).
+// lerCheckpoints/gravarCheckpoints), dedup por chave recalculada usando
+// `id_pedido` (a Sysemp acrescentou esse campo em 03/09/2026, confirmado
+// presente em 100% das linhas testadas nas duas empresas) -- bem mais
+// robusto que a composta sem esse campo usada em VendasOnline antes de
+// existir (que colidiu de verdade, ver CONTEXTO.md).
+//
+// UPSERT, não append cego (corrigido em 09/09/2026 -- ver CONTEXTO.md):
+// a chave descreve a VENDA (vendedor+pedido+marca+cliente+canal+data) e não
+// inclui valor/quantidade. Cada linha do retorno cai em um de três casos:
+//   - chave inédita           -> acrescenta
+//   - chave conhecida, = valor-> ignora
+//   - chave conhecida, ≠ valor-> ATUALIZA a linha existente no lugar
+// Antes, valor e quantidade faziam parte da chave, então qualquer mudança
+// na forma de agrupar ou no valor da venda gerava "linha nova" e as duas
+// ficavam somando. Dois sintomas reais disso:
+//   - CFOP: em 09/09/2026 a Sysemp ligou/desligou o campo `cfop_item` no
+//     meio do dia; enquanto ligado, a mesma venda voltava quebrada em uma
+//     linha por CFOP -> R$555,84 duplicados só em 08/09.
+//   - Pedido que cresce: item acrescentado antes de faturar faz a venda
+//     voltar com valor maior numa rodada seguinte -> R$13.420,97
+//     duplicados espalhados por 22 datas.
+// montarLinhas() ainda AGREGA o retorno por chave antes de gravar, então a
+// aba fica sempre na mesma granularidade seja qual for o agrupamento que a
+// API resolver usar.
 //
 // Descobertas de performance (03/09/2026):
 //   - Bradisfer (1): o limite de janela de ~2 dias documentado antes
@@ -133,16 +151,35 @@ function separarCidadeUf(texto) {
 // usada em VendasOnline (que colidiu de verdade sem esse campo, ver
 // CONTEXTO.md) -- IdPedido identifica a transação real; os outros campos
 // distinguem as diferentes linhas (marcas) dentro do mesmo pedido.
-function montarChaveDedup(idPedido, marca, cliente, dataEmissao, valorFaturado, quantidade, canal) {
-  return [idPedido, marca, cliente, dataEmissao, valorFaturado, quantidade, canal].join('|');
+//
+// A chave NÃO inclui valor nem quantidade DE PROPÓSITO: a Sysemp muda a
+// granularidade do retorno sem aviso (em 09/09/2026 ligaram e desligaram o
+// campo `cfop_item` no meio do dia, e enquanto ele esteve ligado a mesma
+// venda voltou quebrada em várias linhas, uma por CFOP). Com valor/qtd na
+// chave, cada granularidade gerava uma chave diferente pra MESMA venda, o
+// dedup não reconhecia, e a linha entrava de novo -- foi assim que 3 vendas
+// de 08/09 viraram R$555,84 contados em dobro. Sem esses dois campos, a
+// chave descreve a venda (pedido+marca+cliente+canal+data por vendedor) e
+// não como a API resolveu agrupá-la naquele momento.
+function montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal) {
+  return [idVendedor, idPedido, marca, cliente, dataEmissao, canal].join('|');
+}
+
+function arredondarDinheiro(valor) {
+  return Math.round((Number(valor) || 0) * 100) / 100;
 }
 
 // Retorna { linhas, maiorDataEmissao } -- maiorDataEmissao avança o
 // checkpoint mesmo quando toda linha da rodada já existia. `canaisPermitidos`
 // (Set ou null) filtra vendas antes de virarem linha -- usado só pra
 // Construbrag, isolar o B2B de dentro do marketplace.
+// AGREGA por chave antes de virar linha: se a API devolver a mesma venda
+// quebrada em N linhas (o que acontece quando o `cfop_item` está ligado),
+// soma tudo de volta numa linha só. Assim a aba sempre fica na MESMA
+// granularidade -- uma linha por vendedor+pedido+marca+cliente+canal+data --
+// independentemente de como a Sysemp agrupou o retorno naquela rodada.
 function montarLinhas(vendedores, datainicial, datafinal, canaisPermitidos) {
-  const linhas = [];
+  const porChave = new Map();
   let maiorDataEmissao = null;
   vendedores.forEach((v) => {
     const idVendedor = v.id_vendedor == null ? '' : String(v.id_vendedor);
@@ -153,21 +190,33 @@ function montarLinhas(vendedores, datainicial, datafinal, canaisPermitidos) {
       const [cidade, uf] = separarCidadeUf(venda['cidade/uf']);
       const marca = venda.marca || '';
       const cliente = venda.cliente || '';
-      const valorFaturado = Number(venda['valor faturado']) || 0;
-      const quantidade = Number(venda.quantidade) || 0;
       const idPedido = venda.id_pedido == null ? '' : String(venda.id_pedido);
       const dataEmissao = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão') || '').trim();
       if (dataEmissao && (!maiorDataEmissao || dataEmissao > maiorDataEmissao)) maiorDataEmissao = dataEmissao;
-      const chave = montarChaveDedup(idPedido, marca, cliente, dataEmissao, valorFaturado, quantidade, canal);
-      linhas.push({
-        chave,
-        linha: [
-          datainicial, datafinal, idVendedor, nomeVendedor, marca, cliente,
-          venda.empresa || '', cidade, uf, quantidade, canal, valorFaturado, dataEmissao, idPedido, chave,
-        ],
+      const chave = montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal);
+
+      const acc = porChave.get(chave);
+      if (acc) {
+        acc.quantidade += Number(venda.quantidade) || 0;
+        acc.valorFaturado = arredondarDinheiro(acc.valorFaturado + (Number(venda['valor faturado']) || 0));
+        return;
+      }
+      porChave.set(chave, {
+        chave, idVendedor, nomeVendedor, marca, cliente, canal, idPedido, dataEmissao, cidade, uf,
+        empresa: venda.empresa || '',
+        quantidade: Number(venda.quantidade) || 0,
+        valorFaturado: arredondarDinheiro(venda['valor faturado']),
       });
     });
   });
+
+  const linhas = [...porChave.values()].map((a) => ({
+    chave: a.chave,
+    linha: [
+      datainicial, datafinal, a.idVendedor, a.nomeVendedor, a.marca, a.cliente,
+      a.empresa, a.cidade, a.uf, a.quantidade, a.canal, a.valorFaturado, a.dataEmissao, a.idPedido, a.chave,
+    ],
+  }));
   return { linhas, maiorDataEmissao };
 }
 
@@ -208,12 +257,52 @@ async function gravarCheckpoints(sheets, mapa) {
   });
 }
 
-// Lê só a coluna ChaveDedup (O) inteira -- mais barato que ler a aba
-// toda; cresce bem devagar mesmo com muita linha (texto curto).
-async function lerChavesExistentes(sheets) {
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: NOME_ABA + '!O2:O' }).catch(() => null);
+// RECALCULA a chave a partir dos DADOS de cada linha, em vez de confiar na
+// coluna ChaveDedup gravada. Isso é o que torna seguro mudar o formato da
+// chave: as linhas antigas têm chave no formato velho (com valor/qtd), e se
+// comparássemos texto com texto nenhuma bateria -- a rodada seguinte
+// reimportaria a aba inteira. Foi exatamente esse erro que gerou as ~61 mil
+// linhas duplicadas em VendasOnline quando a chave mudou de 6 pra 8 campos
+// (ver CONTEXTO.md). Recalculando, o formato gravado deixa de importar.
+//
+// Colunas: A=PeriodoInicio, B=PeriodoFim, C=IdVendedor, D=Vendedor, E=Marca,
+// F=Cliente, G=Empresa, H=Cidade, I=UF, J=Quantidade, K=Canal,
+// L=ValorFaturado, M=DataEmissao, N=IdPedido, O=ChaveDedup.
+// Devolve Map(chave -> { numeroLinha, quantidade, valorFaturado }) da PRIMEIRA
+// ocorrência de cada chave. numeroLinha permite ATUALIZAR a linha quando o
+// valor muda, em vez de acrescentar outra: um pedido pode crescer entre duas
+// rodadas (item adicionado antes de faturar), e com a chave antiga essa versão
+// nova virava "linha inédita" -- as duas ficavam somando. Levantado em
+// 09/09/2026: R$13.420,97 espalhados por 22 datas na aba por causa disso.
+async function lerLinhasExistentes(sheets) {
+  const resp = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: NOME_ABA + '!A2:N',
+    valueRenderOption: 'UNFORMATTED_VALUE', // número volta número, não "1.234,56"
+  }).catch(() => null);
   const valores = resp && resp.data.values ? resp.data.values : [];
-  return new Set(valores.map((l) => l[0]).filter(Boolean));
+  const mapa = new Map();
+  let chavesRepetidas = 0;
+  valores.forEach((l, i) => {
+    const idVendedor = String(l[2] == null ? '' : l[2]);
+    const marca = String(l[4] || '');
+    const cliente = String(l[5] || '');
+    const canal = String(l[10] || '');
+    const dataEmissao = String(l[12] || '');
+    const idPedido = String(l[13] == null ? '' : l[13]);
+    if (!idPedido && !marca && !cliente) return; // linha vazia/lixo
+    const chave = montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal);
+    if (mapa.has(chave)) { chavesRepetidas++; return; } // duplicata herdada -- fica pra limpeza one-off
+    mapa.set(chave, {
+      numeroLinha: i + 2, // +1 do cabeçalho, +1 porque o array é 0-based
+      quantidade: Number(l[9]) || 0,
+      valorFaturado: Number(l[11]) || 0,
+    });
+  });
+  if (chavesRepetidas > 0) {
+    console.log('AVISO: ' + chavesRepetidas + ' linha(s) da aba compartilham chave com outra (duplicata anterior à correção de 09/09/2026) -- exige limpeza one-off, este script não apaga linha.');
+  }
+  return mapa;
 }
 
 // Sempre reescreve o cabeçalho (idempotente, custa pouco) -- evita o bug
@@ -286,11 +375,12 @@ async function main() {
     await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: NOME_ABA + '!A2:Z' });
   }
 
-  const chavesExistentes = cargaInicialGeral ? new Set() : await lerChavesExistentes(sheets);
-  console.log('Chaves já gravadas (pra dedup): ' + chavesExistentes.size);
+  const linhasExistentes = cargaInicialGeral ? new Map() : await lerLinhasExistentes(sheets);
+  console.log('Chaves já gravadas (pra dedup): ' + linhasExistentes.size);
 
   const hoje = dataISO(new Date());
   let todasNovas = [];
+  let todasAtualizacoes = [];
   const novosCheckpoints = new Map(checkpoints);
   const fontesComErro = [];
 
@@ -304,12 +394,40 @@ async function main() {
     const { linhas, maiorDataEmissao, completo } = await buscarFonteCompleta(sysempToken, fonte, datainicial, datafinal);
     if (!completo) fontesComErro.push(fonte.nome);
 
-    const novas = linhas.filter((l) => !chavesExistentes.has(l.chave));
-    novas.forEach((l) => chavesExistentes.add(l.chave)); // evita duplicar dentro da mesma rodada também
+    // Três destinos possíveis por linha: inédita (append), já existente com
+    // o mesmo valor (ignora), ou já existente com valor/qtd diferente
+    // (atualiza a linha no lugar -- nunca acrescenta outra).
+    const novas = [];
+    const atualizacoes = [];
+    let iguais = 0;
+    linhas.forEach((l) => {
+      const existente = linhasExistentes.get(l.chave);
+      if (!existente) {
+        novas.push(l);
+        // Registra já, pra não duplicar dentro da mesma rodada. numeroLinha
+        // fica null: linha recém-criada não é alvo de update nesta rodada.
+        linhasExistentes.set(l.chave, { numeroLinha: null, quantidade: l.linha[9], valorFaturado: l.linha[11] });
+        return;
+      }
+      const mudouValor = arredondarDinheiro(existente.valorFaturado) !== arredondarDinheiro(l.linha[11]);
+      const mudouQtd = Number(existente.quantidade) !== Number(l.linha[9]);
+      if ((mudouValor || mudouQtd) && existente.numeroLinha) {
+        atualizacoes.push({ numeroLinha: existente.numeroLinha, linha: l.linha, de: existente, para: l.linha });
+        existente.quantidade = l.linha[9];
+        existente.valorFaturado = l.linha[11];
+      } else {
+        iguais++;
+      }
+    });
+
     console.log('  -> total ' + fonte.nome + ': ' + linhas.length + ' linha(s) no período, ' +
-      novas.length + ' nova(s) (' + (linhas.length - novas.length) + ' já existiam)' + (completo ? '' : ' [PARCIAL -- parou num pedaço com erro]'));
+      novas.length + ' nova(s), ' + atualizacoes.length + ' atualizada(s), ' + iguais + ' sem mudança' +
+      (completo ? '' : ' [PARCIAL -- parou num pedaço com erro]'));
+    atualizacoes.forEach((a) => console.log('     atualiza linha ' + a.numeroLinha + ': qtd ' + a.de.quantidade +
+      ' -> ' + a.para[9] + ', R$ ' + a.de.valorFaturado + ' -> ' + a.para[11]));
 
     todasNovas = todasNovas.concat(novas.map((l) => l.linha));
+    todasAtualizacoes = todasAtualizacoes.concat(atualizacoes);
 
     // Avança o checkpoint pela maior data vista, mesmo que toda linha já
     // existisse (senão o job reprocessa a mesma janela pra sempre num dia
@@ -329,6 +447,22 @@ async function main() {
     }
   }
 
+  // Atualiza ANTES de acrescentar: os números de linha foram calculados
+  // sobre a aba como ela está agora, e o append muda o fim da aba.
+  if (todasAtualizacoes.length > 0) {
+    console.log('Atualizando ' + todasAtualizacoes.length + ' linha(s) que mudaram de valor/quantidade...');
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      resource: {
+        valueInputOption: 'RAW',
+        data: todasAtualizacoes.map((a) => ({
+          range: NOME_ABA + '!A' + a.numeroLinha,
+          values: [a.linha],
+        })),
+      },
+    });
+  }
+
   if (todasNovas.length > 0) {
     console.log('Gravando ' + todasNovas.length + ' linha(s) nova(s) na aba ' + NOME_ABA + ' (append)...');
     await sheets.spreadsheets.values.append({
@@ -338,8 +472,8 @@ async function main() {
       insertDataOption: 'INSERT_ROWS',
       resource: { values: todasNovas },
     });
-  } else {
-    console.log('Nenhuma linha nova -- nada pra gravar nesta rodada.');
+  } else if (todasAtualizacoes.length === 0) {
+    console.log('Nenhuma linha nova nem alterada -- nada pra gravar nesta rodada.');
   }
 
   await gravarCheckpoints(sheets, novosCheckpoints);
