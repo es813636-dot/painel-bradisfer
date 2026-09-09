@@ -132,10 +132,18 @@ async function main() {
   if (process.env.SO_SIMULAR === '1') { console.log('Simulação: nenhuma alteração.'); return; }
   if (process.env.CRIAR_BACKUP === '1') {
     const nome = 'BackupOnline_' + new Date().toISOString().replace(/[-:.]/g, '');
+    // Copiar a aba histórica inteira excede os 10 milhões de células.
+    // Preserva exatamente todas as linhas que a transação poderá remover.
+    const backup = [CABECALHO, ...existentes.filter(l => planos.some(p => pertence(l, p.empresa, p.inicio, hoje)))];
+    let backupId = 1;
+    while (meta.data.sheets.some(s => s.properties.sheetId === backupId)) backupId++;
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: {
-      requests: [{ duplicateSheet: { sourceSheetId: aba.properties.sheetId, newSheetName: nome } }],
+      requests: [
+        { addSheet: { properties: { sheetId: backupId, title: nome, gridProperties: { rowCount: backup.length, columnCount: CABECALHO.length } } } },
+        { updateCells: { start: { sheetId: backupId, rowIndex: 0, columnIndex: 0 }, rows: backup.map(celulas), fields: 'userEnteredValue' } },
+      ],
     } });
-    console.log('Backup criado: ' + nome);
+    console.log('Backup criado: ' + nome + ' (' + (backup.length - 1) + ' linhas do período)');
   }
   for (const p of planos) {
     const antigas = existentes.filter(l => pertence(l, p.empresa, p.inicio, hoje));
