@@ -225,6 +225,15 @@ Este registro substitui o estado de pausa e o próximo passo descritos acima. A 
 - **Carga B2B reativada.** Execução normal `34358312469` concluída com sucesso: quatro novas linhas Bradisfer, 107 existentes sem mudança, checkpoints empresa 1 = 09/09 e empresa 3 = 08/09. Código publicado; 28 testes passaram.
 - O Power BI ainda precisa de atualização para carregar a base corrigida. Não foi feita auditoria/limpeza do histórico online nesta recuperação.
 
+## Correção da carga online — 09/09/2026
+
+- Shopee de 08/09: a planilha tinha R$37.515,75, 726 linhas e 2.196 itens. A API e o relatório fiscal tinham R$18.980,96, 488 linhas na API e 1.106 itens. As 238 linhas excedentes somavam R$18.534,79: agregados antigos coexistiam com parcelas atuais (exemplo: R$88,15 junto de R$61,70 + R$26,45).
+- `atualizar-vendas-online.js` agora substitui por empresa toda a janela do checkpoint menos um dia até hoje, em vez de deduplicar por valor/quantidade. Valida as duas respostas antes de gravar; rejeita empresa/data/valores inválidos e resposta vazia que apagaria vendas. Delete + append usam uma transação atômica do Sheets, sem retry automático da mutação; a leitura autenticada posterior confere todas as linhas e sua multiplicidade. Mantidas as 14 colunas do Power BI. Falha na API preserva os dados; checkpoint só avança após conferência.
+- Workflow com exclusão mútua (`vendas-online-planilha`), testes e entradas `reprocessar_desde`, `simular`, `criar_backup`. Backup inclui todas as linhas afetadas, em aba dimensionada ao período: copiar a aba histórica inteira excedeu 10 milhões de células e abortou sem alterar vendas.
+- Limpeza autorizada de 08/09 a 09/09 concluída na execução `34367733603`, código `43b418f`. Backup `BackupOnline_20260909T150358067Z`, 3.322 linhas. Construbrag: 2.784 → 1.954 linhas; SS Construcasa: 538 → 383 linhas, ambas conferidas com a resposta da API. Shopee 08/09 confirmado após gravação: **R$18.980,96, 488 linhas, 1.106 itens**. Carga online reativada. Histórico anterior a 08/09 não foi auditado nesta limpeza; B2B e PBIP não foram alterados. Power BI precisa de atualização para importar os valores corrigidos.
+
+- Execução normal seguinte `34367885103` concluída com sucesso: ambas as empresas já correspondiam integralmente à API, nenhuma venda foi acrescentada/reescrita; Shopee 08/09 permaneceu em R$18.980,96. Seis testes passaram, incluindo preservação de parcelas idênticas legítimas, isolamento por empresa/data e falha da segunda API sem mutação da primeira.
+
 ## Convenções do projeto
 - **Checar a sintaxe do JS antes de todo push.** Desde a divisão em arquivos (19/08/2026), o JS mora em `script.js`, separado do `index.html` — um erro de sintaxe nele não falha em lugar nenhum, só impede o script inteiro de executar, e a página fica congelada pra sempre no esqueleto inicial ("Buscando dados na planilha..."). Já aconteceu (quando ainda era tudo um arquivo só) de remover um bloco HTML de dentro de um ternário e deixar o ramo `else` faltando — o painel ficou fora do ar e parecia problema de cache/GitHub Pages. Comando pra validar:
   ```
