@@ -3471,9 +3471,14 @@ function renderizar() {
     // custo. Só cai no valorRepor estático (mínimo − estoque) quando nem
     // venda em lote nem planilha existem — caso em que o pedido resolveria
     // por busca individual na Sysemp, que não dá pra fazer no meio da
-    // renderização.
+    // renderização. Na PYRAMID (maior marca do catálogo, ~538 SKUs) esse
+    // resíduo virava um valor grande e enganoso no card — pra ela, item sem
+    // cobertura de dados soma 0 em vez do valor estático (mais conservador,
+    // nunca superestima). Nas outras marcas, com poucos SKUs, o resíduo é
+    // pequeno o bastante pra manter como estava.
     const qtdSugerida = calcularQtdSugeridaSync(d);
-    m.valorRepor += qtdSugerida !== null ? qtdSugerida * (d.custo || 0) : d.valorRepor;
+    const semCoberturaPyramid = qtdSugerida === null && chave === 'PYRAMID';
+    m.valorRepor += qtdSugerida !== null ? qtdSugerida * (d.custo || 0) : (semCoberturaPyramid ? 0 : d.valorRepor);
   });
   let rotinaHoje = calcularFornecedoresPorDia(diaRotinaSelecionado).map(r => {
     const chave = normalizarFornecedor(r.f);
@@ -3639,7 +3644,11 @@ function renderizar() {
                 // calcularQtdSugeridaSync), pra a coluna bater com o card da
                 // rotina e com o pedido gerado.
                 const qtdSugeridaItem = calcularQtdSugeridaSync(d);
-                const valorReporExibido = qtdSugeridaItem !== null ? qtdSugeridaItem * (d.custo || 0) : d.valorRepor;
+                // Mesmo ajuste do card: na PYRAMID, item sem cobertura de
+                // dados soma 0 em vez do valor estático (ver comentário na
+                // montagem do card da rotina de compras).
+                const semCoberturaPyramidItem = qtdSugeridaItem === null && normalizarFornecedor(marcaExpandidaTabela) === 'PYRAMID';
+                const valorReporExibido = qtdSugeridaItem !== null ? qtdSugeridaItem * (d.custo || 0) : (semCoberturaPyramidItem ? 0 : d.valorRepor);
                 return '<tr class="clickable" data-idx-marca="' + i + '"><td>' + escapeHtml(d.produto) + '</td>' +
                 '<td class="num">' + (d.analise && d.analise.curva ? d.analise.curva : '—') + '</td>' +
                 '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
