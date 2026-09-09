@@ -43,7 +43,9 @@ function duplicateGroups(rows) {
   });
   return [...groups.entries()].filter(([, group]) => group.length > 1).map(([k, group]) => {
     const companies = new Set(group.map(x => normalizedCompany(x.row[6])));
-    assert.equal(companies.size, 1, 'Colisão entre empresas: precisa de revisão manual.');
+    assert.equal(companies.size, 1, 'Colisão entre empresas: ' + JSON.stringify(group.map(x => ({
+      row: x.index + 1, company: normalizedCompany(x.row[6]), date: str(x.row[12]),
+      orderType: typeof x.row[13], sellerType: typeof x.row[2] }))) + '. Precisa de revisão manual.');
     const company = [...companies][0];
     assert.ok(COMPANIES.has(company), 'Empresa desconhecida.');
     return { key: k, company, companyId: COMPANIES.get(company), date: str(group[0].row[12]), group };
