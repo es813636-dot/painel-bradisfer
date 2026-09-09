@@ -38,9 +38,9 @@ test('reagrega CFOP e não soma cópias antigas ao valor correto', async t => {
 test('não modifica pedidos distintos só porque cliente e valor coincidem', () => {
   assert.deepEqual(duplicateGroups([header, row(2, 10, '10'), row(2, 10, '11')]), []);
 });
-test('recusa colisão de chave entre empresas', () => {
+test('mesmo pedido em empresas diferentes não é duplicata', () => {
   const other = row(2, 10); other[6] = 'CONSTRUBRAG';
-  assert.throws(() => duplicateGroups([header, row(2, 10), other]), /Colisão entre empresas/);
+  assert.deepEqual(duplicateGroups([header, row(2, 10), other]), []);
 });
 test('recusa venda sem confirmação na API', async t => {
   mockApi(t, [sale(2, 10, { id_pedido: '999' })]);

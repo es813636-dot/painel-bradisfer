@@ -40,9 +40,10 @@
 //   - CFOP: em 09/09/2026 a Sysemp ligou/desligou o campo `cfop_item` no
 //     meio do dia; enquanto ligado, a mesma venda voltava quebrada em uma
 //     linha por CFOP -> R$555,84 duplicados só em 08/09.
-//   - Pedido que cresce: item acrescentado antes de faturar faz a venda
-//     voltar com valor maior numa rodada seguinte -> R$13.420,97
-//     duplicados espalhados por 22 datas.
+//   - REVISÃO em 09/09/2026: os R$13.420,97 antes classificados como
+//     duplicatas eram 27 vendas LEGÍTIMAS da Construbrag. Os mesmos IDs
+//     de pedido também existem na Bradisfer. Conferidos na API por empresa.
+//     A identidade agora inclui Empresa para não misturar essas vendas.
 // montarLinhas() ainda AGREGA o retorno por chave antes de gravar, então a
 // aba fica sempre na mesma granularidade seja qual for o agrupamento que a
 // API resolver usar.
@@ -135,7 +136,31 @@ async function buscarVendas(token, idEmpresa, datainicial, datafinal) {
     // venda no período" com "a busca quebrou".
     throw new Error('Resposta não é JSON (provável erro/timeout da Sysemp): ' + texto.slice(0, 300));
   }
-  return dados.retorno || [];
+  validarRetornoVendas(dados, idEmpresa, datainicial, datafinal);
+  return dados.retorno;
+}
+
+// A inclusão de cfop em 09/09 removeu id_pedido e data de emissão da API.
+// Nunca transformar esse retorno agregado em venda com identidade vazia.
+function validarRetornoVendas(dados, idEmpresa, datainicial, datafinal) {
+  if (dados.status !== true || !Array.isArray(dados.retorno)) {
+    throw new Error('Resposta de vendas inválida (status/retorno).');
+  }
+  const empresaEsperada = { '1': 'BRADISFER DISTRIBUIDORA', '3': 'CONSTRUBRAG' }[idEmpresa];
+  if (!empresaEsperada) throw new Error('Empresa não configurada.');
+  for (const vendedor of dados.retorno) {
+    if (!Array.isArray(vendedor.vendas)) throw new Error('Grupo de vendas inválido.');
+    for (const venda of vendedor.vendas) {
+      const data = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão') || '').trim();
+      if (venda.id_pedido == null || String(venda.id_pedido).trim() === '' || !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+        throw new Error('API sem id_pedido/data de emissão: resposta rejeitada, sem gravar vendas sem identificação.');
+      }
+      if (data < datainicial || data > datafinal) throw new Error('API retornou venda fora da janela de datas solicitada.');
+      if (String(venda.empresa || '').trim().toUpperCase() !== empresaEsperada) {
+        throw new Error('API retornou venda de outra empresa.');
+      }
+    }
+  }
 }
 
 // "Cidade/UF" -> ["Cidade", "UF"], separando pelo ÚLTIMO '/' (mesma
@@ -161,8 +186,10 @@ function separarCidadeUf(texto) {
 // de 08/09 viraram R$555,84 contados em dobro. Sem esses dois campos, a
 // chave descreve a venda (pedido+marca+cliente+canal+data por vendedor) e
 // não como a API resolveu agrupá-la naquele momento.
-function montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal) {
-  return [idVendedor, idPedido, marca, cliente, dataEmissao, canal].join('|');
+function montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal, empresa) {
+  const empresaNormalizada = String(empresa || '').trim().toUpperCase();
+  if (!empresaNormalizada) throw new Error('Venda sem empresa: não é possível identificar o pedido.');
+  return [empresaNormalizada, idVendedor, idPedido, marca, cliente, dataEmissao, canal].join('|');
 }
 
 function arredondarDinheiro(valor) {
@@ -193,7 +220,7 @@ function montarLinhas(vendedores, datainicial, datafinal, canaisPermitidos) {
       const idPedido = venda.id_pedido == null ? '' : String(venda.id_pedido);
       const dataEmissao = String(campoVenda(venda, 'data de emissão', 'data de emissao', 'Data de Emissão') || '').trim();
       if (dataEmissao && (!maiorDataEmissao || dataEmissao > maiorDataEmissao)) maiorDataEmissao = dataEmissao;
-      const chave = montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal);
+      const chave = montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal, venda.empresa);
 
       const acc = porChave.get(chave);
       if (acc) {
@@ -273,7 +300,8 @@ async function gravarCheckpoints(sheets, mapa) {
 // valor muda, em vez de acrescentar outra: um pedido pode crescer entre duas
 // rodadas (item adicionado antes de faturar), e com a chave antiga essa versão
 // nova virava "linha inédita" -- as duas ficavam somando. Levantado em
-// 09/09/2026: R$13.420,97 espalhados por 22 datas na aba por causa disso.
+// 09/09/2026: os R$13.420,97 suspeitos eram vendas de empresas diferentes;
+// a chave deve incluir Empresa, inclusive ao reler linhas antigas.
 async function lerLinhasExistentes(sheets) {
   const resp = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
@@ -291,7 +319,7 @@ async function lerLinhasExistentes(sheets) {
     const dataEmissao = String(l[12] || '');
     const idPedido = String(l[13] == null ? '' : l[13]);
     if (!idPedido && !marca && !cliente) return; // linha vazia/lixo
-    const chave = montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal);
+    const chave = montarChaveDedup(idVendedor, idPedido, marca, cliente, dataEmissao, canal, l[6]);
     if (mapa.has(chave)) { chavesRepetidas++; return; } // duplicata herdada -- fica pra limpeza one-off
     mapa.set(chave, {
       numeroLinha: i + 2, // +1 do cabeçalho, +1 porque o array é 0-based

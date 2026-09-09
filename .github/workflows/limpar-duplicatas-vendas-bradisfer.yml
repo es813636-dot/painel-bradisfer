@@ -35,7 +35,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm install
-      - run: node --test limpar-duplicatas-vendas-bradisfer.test.js
+      - run: node --test limpar-duplicatas-vendas-bradisfer.test.js atualizar-vendas-bradisfer.test.js
       - name: Pausar carga B2B e aguardar execuções anteriores
         if: inputs.mode == 'apply'
         id: pause

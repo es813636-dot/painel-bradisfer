@@ -17,7 +17,8 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const str = value => String(value ?? '');
 const normalizedCompany = value => str(value).trim().toUpperCase();
-const key = row => [2, 13, 4, 5, 12, 10].map(i => str(row[i])).join('|');
+const legacyKey = row => [2, 13, 4, 5, 12, 10].map(i => str(row[i])).join('|');
+const key = row => [normalizedCompany(row[6]), legacyKey(row)].join('|');
 const coarseKey = row => JSON.stringify([2, 4, 5, 10].map(i => str(row[i])));
 const hasIdentity = row => row[13] !== '' && row[13] != null && /^\d{4}-\d{2}-\d{2}$/.test(str(row[12]));
 function cents(value) {
@@ -84,7 +85,7 @@ async function getApiDay(token, companyId, date) {
       const hasOrder = sale.id_pedido != null && str(sale.id_pedido) !== '';
       assert.equal(hasOrder, Boolean(emission), 'API com identificação parcialmente preenchida.');
       modes.add(hasOrder ? 'order' : 'daily-aggregate');
-      const k = [str(seller.id_vendedor), str(sale.id_pedido), str(sale.marca), str(sale.cliente), emission, channel].join('|');
+      const k = [normalizedCompany(sale.empresa), str(seller.id_vendedor), str(sale.id_pedido), str(sale.marca), str(sale.cliente), emission, channel].join('|');
       const value = cents(sale['valor faturado']);
       assert.ok(typeof sale.quantidade === 'number' && Number.isFinite(sale.quantidade), 'Quantidade da API inválida.');
       const acc = grouped.get(k) || { cents: 0, quantity: 0 };
@@ -133,6 +134,12 @@ function confirmExistingVersion(g, rows, day) {
 }
 async function makePlan(rows, token) {
   const groups = duplicateGroups(rows);
+  const oldIdentityCompanies = new Map();
+  for (const row of rows.slice(1).filter(hasIdentity)) {
+    const k = legacyKey(row);
+    if (!oldIdentityCompanies.has(k)) oldIdentityCompanies.set(k, new Set());
+    oldIdentityCompanies.get(k).add(normalizedCompany(row[6]));
+  }
   const api = new Map();
   for (const g of groups) {
     const requestKey = g.companyId + '/' + g.date;
@@ -162,6 +169,7 @@ async function makePlan(rows, token) {
   const summary = { duplicateGroups: changes.length, rowsToRemove: changes.reduce((n, c) => n + c.remove.length, 0),
     affectedDates: Object.keys(byDate).length, excessCents: changes.reduce((n, c) => n + c.removedCents, 0), byDate,
     unresolvedGroups: unresolved.length, unresolved,
+    crossCompanyCollisionsPreserved: [...oldIdentityCompanies.values()].filter(s => s.size > 1).length,
     unidentifiedRowsPreserved: rows.slice(1).filter(r => !hasIdentity(r)).length };
   return { changes, summary, fingerprint: hash({ changes, unresolved }) };
 }
