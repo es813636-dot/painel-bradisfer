@@ -1,0 +1,45 @@
+name: Conferir e Limpar Duplicatas B2B (pontual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'audit apenas confere; apply exige hash e carga B2B pausada'
+        required: true
+        default: audit
+        type: choice
+        options: [audit, apply]
+      expected_plan_sha256:
+        description: 'Hash CLEANUP_PLAN da auditoria (obrigatório para apply)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: limpeza-pontual-vendas-bradisfer
+  cancel-in-progress: false
+
+jobs:
+  limpeza:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: automacao-vendas
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: node --test limpar-duplicatas-vendas-bradisfer.test.js
+      - run: node limpar-duplicatas-vendas-bradisfer.js
+        env:
+          CLEANUP_MODE: ${{ inputs.mode }}
+          EXPECTED_PLAN_SHA256: ${{ inputs.expected_plan_sha256 }}
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
