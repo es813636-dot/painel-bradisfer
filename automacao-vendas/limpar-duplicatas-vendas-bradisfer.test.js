@@ -68,3 +68,38 @@ test('snapshot preserva números, texto e células vazias', () => {
   assert.deepEqual(rows[0].slice(0, 4), [1, '001', '', '']);
   assert.equal(rows[0].length, 15);
 });
+function legacyDay(t, targetQuantity, targetValue) {
+  const rows = [header, row(2, 10), row(4, 20)];
+  const sales = [sale(targetQuantity, targetValue)];
+  for (let i = 0; i < 6; i++) {
+    const reference = row(1, 100 + i, 'ref' + i);
+    reference[4] = 'REFERENCIA ' + i;
+    rows.push(reference);
+    sales.push(sale(1, 100 + i, { marca: reference[4] }));
+  }
+  for (const s of sales) { delete s.id_pedido; delete s['data de emissão']; s.cfop = '5.102'; }
+  mockApi(t, sales);
+  return rows;
+}
+test('API sem ID: confirma uma versão existente com valor/quantidade e referências do dia', async t => {
+  const rows = legacyDay(t, 2, 10);
+  const unidentified = row(5, 50); unidentified[12] = ''; unidentified[13] = '';
+  rows.push(unidentified);
+  const plan = await makePlan(rows, 'test');
+  assert.equal(plan.summary.rowsToRemove, 1);
+  assert.equal(plan.summary.excessCents, 2000);
+  assert.equal(plan.summary.unidentifiedRowsPreserved, 1);
+  assert.equal(plan.changes[0].basis, 'daily-aggregate');
+  assert.deepEqual(expectedRows(rows, plan.changes).at(-1), unidentified);
+});
+test('API sem ID: preserva grupo quando nenhuma versão existente corresponde', async t => {
+  const rows = legacyDay(t, 3, 15);
+  const plan = await makePlan(rows, 'test');
+  assert.equal(plan.changes.length, 0);
+  assert.equal(plan.summary.unresolvedGroups, 1);
+  assert.deepEqual(expectedRows(rows, plan.changes), rows);
+});
+test('API sem ID: não aceita coincidência isolada sem referências suficientes do dia', async t => {
+  const rows = legacyDay(t, 2, 10).slice(0, 3);
+  await assert.rejects(makePlan(rows, 'test'), /recorte diário/);
+});
