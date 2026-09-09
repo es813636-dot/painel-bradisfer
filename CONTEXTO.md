@@ -216,6 +216,15 @@ O plano de redesign (dark elegante + reorganização de layout) tinha 5 fases. A
 - Backup local do CSV e evidências da conferência foram salvos fora do repositório público, em `C:\Users\Admin\.codex\visualizations\2026\09\09\01a08611-08e6-73e3-8d79-713fcd35cd29`. Não commitar os dados de clientes.
 - **Próximo passo:** pedir à Sysemp que mantenha `id_pedido` e `data de emissão` junto com `cfop`; depois reprocessar a janela afetada para substituir corretamente os registros sem identificação e só então retomar a carga/validar o Power BI. Não executar a limpeza de R$13.420,97 proposta anteriormente.
 
+## Recuperação B2B concluída — 09/09/2026, 10h38
+
+Este registro substitui o estado de pausa e o próximo passo descritos acima. A Sysemp restaurou a identificação com os nomes `pedido` e `data_emissao`, mantendo CFOP. As cargas B2B e online aceitam os nomes novos; B2B continua exigindo pedido/data, empresa e intervalo válidos.
+
+- Removidas somente as **106 linhas incompletas redundantes**, R$22.826,83 (92 Bradisfer, 14 Construbrag). Os 107 pedidos/marcas correspondentes já estavam gravados corretamente e foram confirmados em valor e quantidade contra a API. As 27 vendas legítimas da Construbrag anteriormente confundidas com duplicatas foram preservadas.
+- Execução de recuperação `34358159660`: backup integral oculto `BackupB2B_antes_recuperacao_34358159660`, sheetId `2115375437`; 17.651 → 17.545 linhas, zero registros sem identificação e zero duplicatas pela chave completa. Backup e todas as linhas preservadas foram verificados por hash. A primeira tentativa abortou sem escrever porque entraram pedidos novos na API; a rotina agora aceita pedidos novos, mas exige que cada pedido usado como evidência permaneça integralmente confirmado.
+- **Carga B2B reativada.** Execução normal `34358312469` concluída com sucesso: quatro novas linhas Bradisfer, 107 existentes sem mudança, checkpoints empresa 1 = 09/09 e empresa 3 = 08/09. Código publicado; 28 testes passaram.
+- O Power BI ainda precisa de atualização para carregar a base corrigida. Não foi feita auditoria/limpeza do histórico online nesta recuperação.
+
 ## Convenções do projeto
 - **Checar a sintaxe do JS antes de todo push.** Desde a divisão em arquivos (19/08/2026), o JS mora em `script.js`, separado do `index.html` — um erro de sintaxe nele não falha em lugar nenhum, só impede o script inteiro de executar, e a página fica congelada pra sempre no esqueleto inicial ("Buscando dados na planilha..."). Já aconteceu (quando ainda era tudo um arquivo só) de remover um bloco HTML de dentro de um ternário e deixar o ramo `else` faltando — o painel ficou fora do ar e parecia problema de cache/GitHub Pages. Comando pra validar:
   ```
