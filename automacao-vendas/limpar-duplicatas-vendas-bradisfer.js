@@ -31,7 +31,9 @@ function duplicateGroups(rows) {
   const groups = new Map();
   rows.slice(1).forEach((row, offset) => {
     assert.ok(row[13] !== '' && row[13] != null && /^\d{4}-\d{2}-\d{2}$/.test(str(row[12])),
-      'Pedido/data ausente: nenhuma linha será excluída.');
+      'Pedido/data inválido: ' + JSON.stringify({ row: offset + 2, hasOrder: row[13] !== '' && row[13] != null,
+        dateType: typeof row[12], dateShape: str(row[12]).replace(/[A-Za-z]/g, 'x').slice(0, 24),
+        filledColumns: row.filter(v => v !== '' && v != null).length }) + '. Nenhuma linha será excluída.');
     cents(row[11]);
     assert.ok(typeof row[9] === 'number' && Number.isFinite(row[9]), 'Quantidade inválida.');
     const k = key(row);

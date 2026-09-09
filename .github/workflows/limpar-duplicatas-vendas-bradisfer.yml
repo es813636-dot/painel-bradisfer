@@ -16,7 +16,7 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 concurrency:
   group: limpeza-pontual-vendas-bradisfer
@@ -36,6 +36,38 @@ jobs:
           node-version: '20'
       - run: npm install
       - run: node --test limpar-duplicatas-vendas-bradisfer.test.js
+      - name: Pausar carga B2B e aguardar execuções anteriores
+        if: inputs.mode == 'apply'
+        id: pause
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          (async () => {
+            const base = 'https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY + '/actions/workflows/atualizar-vendas-bradisfer.yml';
+            const headers = { Authorization: 'Bearer ' + process.env.GITHUB_TOKEN, Accept: 'application/vnd.github+json' };
+            const get = async url => {
+              const r = await fetch(url, { headers });
+              if (!r.ok) throw new Error('GitHub HTTP ' + r.status);
+              return r.json();
+            };
+            const workflow = await get(base);
+            if (!['active', 'disabled_manually'].includes(workflow.state)) throw new Error('Estado inesperado da carga B2B.');
+            const active = workflow.state === 'active';
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'was_active=' + active + '\n');
+            if (active) {
+              const r = await fetch(base + '/disable', { method: 'PUT', headers });
+              if (!r.ok) throw new Error('Falha ao pausar a carga B2B: ' + r.status);
+            }
+            for (let i = 0; i < 30; i++) {
+              const runs = await get(base + '/runs?per_page=30');
+              if (runs.workflow_runs.every(r => r.status === 'completed')) return;
+              await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+            throw new Error('A carga B2B não terminou a tempo; limpeza cancelada.');
+          })().catch(error => { console.error(error.message); process.exitCode = 1; });
+          NODE
       - run: node limpar-duplicatas-vendas-bradisfer.js
         env:
           CLEANUP_MODE: ${{ inputs.mode }}
@@ -43,3 +75,19 @@ jobs:
           SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
+      - name: Retomar carga B2B mesmo se a limpeza falhar
+        if: always() && steps.pause.outputs.was_active == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node <<'NODE'
+          (async () => {
+            const url = 'https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY + '/actions/workflows/atualizar-vendas-bradisfer.yml/enable';
+            for (let attempt = 0; attempt < 3; attempt++) {
+              const r = await fetch(url, { method: 'PUT', headers: { Authorization: 'Bearer ' + process.env.GITHUB_TOKEN } });
+              if (r.ok) { console.log('Carga B2B reativada.'); return; }
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+            throw new Error('Não foi possível reativar a carga B2B. Reativar manualmente no Actions.');
+          })().catch(error => { console.error(error.message); process.exitCode = 1; });
+          NODE
