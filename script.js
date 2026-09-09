@@ -1755,6 +1755,23 @@ function calcularSugestaoSemPlanilha(produto, mediaMensal12M) {
   return ajustarParaLoteDoNome(bruto, produto);
 }
 
+// Quantidade sugerida de compra, na MESMA ordem de prioridade que
+// gerarPedidoSysemp usa — venda real em lote primeiro, planilha de análise
+// depois. Retorna null quando só a busca individual na Sysemp (assíncrona)
+// resolveria, pra quem chama decidir o que fazer sem travar a renderização.
+// Existe pra que o valor mostrado no card da rotina e o pedido realmente
+// gerado saiam do mesmo cálculo — antes cada um usava uma conta diferente e
+// os dois números não batiam.
+function calcularQtdSugeridaSync(produto) {
+  if (produto.vendasAoVivoLote) {
+    return calcularSugestaoSemPlanilha(produto, produto.vendasAoVivoLote.mediaMensal);
+  }
+  if (produto.analise && !produto.analise.descontinuada && produto.analise.pontoPedido != null) {
+    return calcularPedidoSugeridoAoVivo(produto) || 0;
+  }
+  return null;
+}
+
 // ----------------------------------------------------------------------
 // Motor de regras — aba "Atenção": itens/marcas que precisam de atenção,
 // cruzando Curva ABC (calculada ao vivo, por faturamento estimado) + lead
@@ -1933,17 +1950,10 @@ async function gerarPedidoSysemp(marca, itens) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Calculando...'; }
 
   const linhasCalculadas = await Promise.all(itens.map(async d => {
-    let qtd;
-    if (d.vendasAoVivoLote) {
-      // Fonte principal: média mensal real (12 meses) coletada em lote
-      // pra todo o catálogo — mesma fórmula do modal (média × lead time
-      // da marca), sem precisar de chamada individual à Sysemp aqui.
-      qtd = calcularSugestaoSemPlanilha(d, d.vendasAoVivoLote.mediaMensal);
-    } else if (d.analise && !d.analise.descontinuada && d.analise.pontoPedido != null) {
-      // Fallback: produto ainda não coberto pelo lote AO VIVO (ex. deploy
-      // recente, antes do 1º ciclo completar) — usa a planilha de análise.
-      qtd = calcularPedidoSugeridoAoVivo(d) || 0;
-    } else {
+    // Venda real em lote, depois planilha de análise — mesma conta que o
+    // card da rotina de compras mostra (ver calcularQtdSugeridaSync).
+    let qtd = calcularQtdSugeridaSync(d);
+    if (qtd === null) {
       // Último recurso: busca a venda real ao vivo, um produto por vez.
       const dadosVendas = await buscarComprasVendasReais(d.codigoBarras, d.vendasAoVivoLote);
       if (dadosVendas.vendas) {
@@ -3457,13 +3467,13 @@ function renderizar() {
     const m = porMarcaCompleto[chave];
     if (d.situacao === 'RUPTURA') m.qtdRuptura++;
     if (d.situacao === 'BAIXO') m.qtdBaixo++;
-    // Mesma conta da tabela de itens/geração de pedido (ver
-    // valorReporExibido acima): usa a sugestão AO VIVO × custo quando o
-    // item só entra pela venda real (situação OK/EXCESSO), não pelo
-    // mínimo/máximo estático — senão o card mostra um valor que não bate
-    // com o pedido que o botão "Gerar pedido" realmente monta.
-    m.valorRepor += d.valorRepor > 0 ? d.valorRepor
-      : (d.vendasAoVivoLote ? calcularSugestaoSemPlanilha(d, d.vendasAoVivoLote.mediaMensal) * (d.custo || 0) : 0);
+    // Exatamente a quantidade que o botão "Gerar pedido" vai sugerir, ×
+    // custo. Só cai no valorRepor estático (mínimo − estoque) quando nem
+    // venda em lote nem planilha existem — caso em que o pedido resolveria
+    // por busca individual na Sysemp, que não dá pra fazer no meio da
+    // renderização.
+    const qtdSugerida = calcularQtdSugeridaSync(d);
+    m.valorRepor += qtdSugerida !== null ? qtdSugerida * (d.custo || 0) : d.valorRepor;
   });
   let rotinaHoje = calcularFornecedoresPorDia(diaRotinaSelecionado).map(r => {
     const chave = normalizarFornecedor(r.f);
@@ -3625,12 +3635,11 @@ function renderizar() {
             '<table><thead><tr><th>Produto</th><th class="num">Curva</th><th>Situação</th><th class="num">Estoque</th><th class="num">Mín.</th><th class="num">Pedido</th><th class="num">A repor</th></tr></thead><tbody>' +
               (itensDaMarca.map((d, i) => {
                 const emAberto = obterPedidoEmAberto(d);
-                // Itens que só entram aqui pela sugestão AO VIVO (situação
-                // OK/EXCESSO, mas média real de venda pede reposição) têm
-                // valorRepor = 0 pelo cálculo antigo — usa a quantidade AO
-                // VIVO × custo pra "A repor" não ficar zerado à toa.
-                const valorReporExibido = d.valorRepor > 0 ? d.valorRepor
-                  : (d.vendasAoVivoLote ? calcularSugestaoSemPlanilha(d, d.vendasAoVivoLote.mediaMensal) * (d.custo || 0) : 0);
+                // Mesma quantidade que o pedido vai sugerir × custo (ver
+                // calcularQtdSugeridaSync), pra a coluna bater com o card da
+                // rotina e com o pedido gerado.
+                const qtdSugeridaItem = calcularQtdSugeridaSync(d);
+                const valorReporExibido = qtdSugeridaItem !== null ? qtdSugeridaItem * (d.custo || 0) : d.valorRepor;
                 return '<tr class="clickable" data-idx-marca="' + i + '"><td>' + escapeHtml(d.produto) + '</td>' +
                 '<td class="num">' + (d.analise && d.analise.curva ? d.analise.curva : '—') + '</td>' +
                 '<td><span class="badge ' + badgeClass(d.situacao) + '">' + situacaoLabel(d.situacao) + '</span></td>' +
