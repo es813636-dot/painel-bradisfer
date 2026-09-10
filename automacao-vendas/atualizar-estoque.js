@@ -103,7 +103,10 @@ async function buscarPagina(token, offset) {
   const resp = await fetch(URL_METODO, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Token: token },
-    body: JSON.stringify({ offset: String(offset) }),
+    // cod_barra vazio força a consulta do catálogo completo. Sem o campo,
+    // a API pode reaproveitar um filtro pontual e devolver somente o último
+    // produto consultado.
+    body: JSON.stringify({ cod_barra: '', offset: String(offset) }),
   });
   if (!resp.ok) {
     const corpo = await resp.text().catch(() => '(sem corpo)');
@@ -216,8 +219,11 @@ async function main() {
     }
   });
 
-  if (registros.length === 0) {
-    console.log('AVISO: a API não retornou nenhum produto. Nada foi alterado na planilha, para evitar apagar dados válidos.');
+  // A carga normal possui milhares de produtos. Uma resposta muito pequena
+  // indica filtro pontual ou retorno parcial da API; nunca devemos limpar a
+  // aba inteira nesse caso.
+  if (registros.length < 100) {
+    console.log('AVISO: a API retornou somente ' + registros.length + ' produto(s). Nada foi alterado na planilha, para evitar apagar o catálogo válido.');
     return;
   }
 
