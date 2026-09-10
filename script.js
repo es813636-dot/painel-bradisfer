@@ -60,6 +60,15 @@ const MARCAS_EXCLUIDAS = [
   'DOAN',
 ].map(m => m.trim().toUpperCase());
 
+// Kits são montados internamente pela Bradisfer e não são itens comprados.
+// O catálogo da Sysemp mantém esses SKUs para venda, mas eles não devem
+// aparecer no painel de estoque/compras nem gerar alerta de reposição.
+// Usamos o início do nome para não ocultar produtos comuns que apenas
+// mencionem a palavra "kit" na descrição.
+function ehKitMontado(nomeProduto) {
+  return /^KIT(?:\s|[-_]|\d|$)/i.test(String(nomeProduto || '').trim());
+}
+
 // ---- Ícones inline (estilo Phosphor "regular", stroke-based, currentColor) ----
 // Sem dependência externa: cada entrada é um <svg> completo, sizing controlado
 // pela classe .icon-* que o envolve (não pelos atributos width/height do svg).
@@ -945,11 +954,17 @@ async function carregarDados() {
     });
 
     const totalAntesExclusao = dadosCompletos.length;
+    const qtdKitsExcluidos = dadosCompletos.filter(d => ehKitMontado(d.produto)).length;
+    dadosCompletos = dadosCompletos.filter(d => !ehKitMontado(d.produto));
+    const qtdMarcasExcluidas = dadosCompletos.filter(d => MARCAS_EXCLUIDAS.includes(d.marca.trim().toUpperCase())).length;
     dadosCompletos = dadosCompletos.filter(d => !MARCAS_EXCLUIDAS.includes(d.marca.trim().toUpperCase()));
     const qtdExcluida = totalAntesExclusao - dadosCompletos.length;
 
+    const detalhesExclusao = [];
+    if (qtdKitsExcluidos > 0) detalhesExclusao.push(fmtNum(qtdKitsExcluidos) + ' kits inativos');
+    if (qtdMarcasExcluidas > 0) detalhesExclusao.push(fmtNum(qtdMarcasExcluidas) + ' marcas excluídas');
     document.getElementById('subtitle').textContent = fmtNum(dadosCompletos.length) + ' produtos monitorados em tempo real' +
-      (qtdExcluida > 0 ? ' · ' + fmtNum(qtdExcluida) + ' ocultos (marcas excluídas)' : '') +
+      (qtdExcluida > 0 ? ' · ' + fmtNum(qtdExcluida) + ' ocultos (' + detalhesExclusao.join(', ') + ')' : '') +
       (qtdComOverride > 0 ? ' · ' + fmtNum(qtdComOverride) + ' com mín/máx da planilha de análise' : '');
     document.getElementById('updated-label').textContent = 'atualizado às ' + new Date().toLocaleTimeString('pt-BR');
     renderizar();
