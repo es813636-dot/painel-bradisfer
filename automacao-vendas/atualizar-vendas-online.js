@@ -2,7 +2,7 @@
 // Substitui a janela reprocessada por empresa. Valor/quantidade e o
 // agrupamento por CFOP podem mudar na API; nunca usar esses campos para
 // acrescentar uma segunda versão da venda. Mantém as 14 colunas do Power BI.
-const { google } = require('googleapis');
+
 const SHEET_ID = '1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A';
 const NOME_ABA = 'VendasOnline';
 const NOME_ABA_CONTROLE = 'VendasOnlineControle';
@@ -98,6 +98,7 @@ function resumo(linhas) {
     quantidade: linhas.reduce((s, l) => s + Number(l[9]), 0) };
 }
 async function main() {
+  const { google } = require('googleapis');
   if (!process.env.SYSEMP_TOKEN) throw new Error('SYSEMP_TOKEN não configurado.');
   const chave = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
   const auth = new google.auth.JWT(chave.client_email, null, chave.private_key, ['https://www.googleapis.com/auth/spreadsheets']);
@@ -166,4 +167,5 @@ async function main() {
     valueInputOption: 'RAW', requestBody: { values: [['IdEmpresa', 'UltimaDataEmissaoProcessada'], ...checkpoints] } });
   console.log('Concluído.');
 }
-main().catch(err => { console.error('Falhou:', err.message); process.exitCode = 1; });
+module.exports = { montarLinhas, CABECALHO, resumo };
+if (require.main === module) main().catch(err => { console.error('Falhou:', err.message); process.exitCode = 1; });

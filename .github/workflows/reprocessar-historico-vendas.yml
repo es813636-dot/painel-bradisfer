@@ -1,0 +1,48 @@
+name: Reprocessar histórico completo de vendas
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: reprocessar-historico-vendas
+  cancel-in-progress: false
+jobs:
+  historico:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: automacao-vendas
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: node --test reprocessar-historico-vendas.test.js atualizar-vendas-bradisfer.test.js atualizar-vendas-online.test.js
+      - name: Pausar cargas automáticas
+        run: node pausar-cargas-historico.js pause
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Consultar e validar todo o histórico
+        run: node reprocessar-historico-vendas.js prepare
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+      - name: Preservar backup criptografado antes de gravar
+        uses: actions/upload-artifact@v4
+        with:
+          name: historico-backup-criptografado
+          path: automacao-vendas/historico-backup.enc
+          if-no-files-found: error
+          retention-days: 30
+      - name: Substituir histórico e conferir integralmente
+        run: node reprocessar-historico-vendas.js apply
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+      - name: Restaurar cargas automáticas
+        if: always()
+        run: node pausar-cargas-historico.js resume
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

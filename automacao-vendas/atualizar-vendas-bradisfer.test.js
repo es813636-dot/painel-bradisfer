@@ -6,7 +6,7 @@ const vm = require('node:vm');
 // Executa só as definições, sem inicializar SDK nem rodar main/escrever no Sheets.
 const source = fs.readFileSync(require.resolve('./atualizar-vendas-bradisfer'), 'utf8')
   .replace("const { google } = require('googleapis');", '')
-  .replace(/main\(\)\.catch\([\s\S]*$/, '');
+  .replace(/module\.exports[\s\S]*$/, '');
 const context = { console };
 vm.createContext(context); vm.runInContext(source, context);
 const venda = (extra = {}) => ({ empresa: 'BRADISFER DISTRIBUIDORA', id_pedido: '38141',

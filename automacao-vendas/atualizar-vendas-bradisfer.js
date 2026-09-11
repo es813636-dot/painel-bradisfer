@@ -62,7 +62,7 @@
 //     derruba os pedaços seguintes nem a outra empresa.
 // ----------------------------------------------------------------------
 
-const { google } = require('googleapis');
+
 
 const SHEET_ID = '1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A';
 const NOME_ABA = 'VendasBradisfer';
@@ -380,6 +380,7 @@ async function buscarFonteCompleta(token, fonte, datainicial, datafinal) {
 }
 
 async function main() {
+  const { google } = require('googleapis');
   const sysempToken = process.env.SYSEMP_TOKEN;
   if (!sysempToken) throw new Error('SYSEMP_TOKEN não configurado (variável de ambiente/secret).');
 
@@ -517,7 +518,8 @@ async function main() {
   console.log('Concluído.');
 }
 
-main().catch((err) => {
+module.exports = { montarLinhas, validarRetornoVendas, CABECALHO, FONTES };
+if (require.main === module) main().catch((err) => {
   console.error('Falhou:', err.message || err);
   process.exit(1);
 });

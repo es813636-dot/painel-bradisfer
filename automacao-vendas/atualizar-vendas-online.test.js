@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), vm = require('node:vm');
 const source = fs.readFileSync(require.resolve('./atualizar-vendas-online'), 'utf8')
-  .replace("const { google } = require('googleapis');", '').replace(/main\(\)\.catch\([\s\S]*$/, '');
+  .replace("const { google } = require('googleapis');", '').replace(/module\.exports[\s\S]*$/, '');
 const context = { console }; vm.createContext(context); vm.runInContext(source, context);
 test('online aceita data_emissao sem mudar o formato gravado', () => {
   const rows = context.montarLinhas([{ id_vendedor: null, vendedor: null, vendas: [{
