@@ -25,7 +25,9 @@ function validateExisting(name, values, end) {
   if (JSON.stringify(values[0]) !== JSON.stringify(abas[name])) throw new Error('Cabeçalho inesperado: ' + name);
   const allowed = name === 'VendasBradisfer' ? [empresas[1], empresas[3]] : [empresas[3], empresas[4]];
   for (const row of values.slice(1)) {
-    if (!allowed.includes(row[6]) || !/^\d{4}-\d{2}-\d{2}$/.test(row[12]) || row[12] > end) {
+    const date = row[12] || '';
+    const recoverableMissingDate = !date && /^\d{4}-\d{2}-\d{2}$/.test(row[0]) && /^\d{4}-\d{2}-\d{2}$/.test(row[1]) && row[0] <= row[1] && row[1] <= end;
+    if (!allowed.includes(row[6]) || (!recoverableMissingDate && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > end))) {
       throw new Error('Linha existente fora do contrato; preservar e investigar: ' + name);
     }
   }
@@ -33,7 +35,7 @@ function validateExisting(name, values, end) {
 function totals(rows) {
   const result = {};
   for (const r of rows) {
-    const k = r[6] + '|' + r[12].slice(0, 7);
+    const k = r[6] + '|' + (r[12] || 'SEM DATA').slice(0, 7);
     const t = result[k] ||= { linhas: 0, centavos: 0, quantidade: 0 };
     t.linhas++; t.centavos += Math.round(Number(r[11]) * 100); t.quantidade += Number(r[9]);
   }
@@ -82,12 +84,17 @@ async function main() {
   const read = async name => (await sheets.spreadsheets.values.get({ spreadsheetId, range: name + '!A1:' + (name === 'VendasBradisfer' ? 'O' : 'N'), valueRenderOption: 'UNFORMATTED_VALUE' })).data.values || [];
   if (process.argv[2] === 'prepare') {
     const end = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-    const plan = { generatedAt: new Date().toISOString(), end, before: {}, after: {}, raw: [] };
+    const plan = { generatedAt: new Date().toISOString(), end, before: {}, after: {}, raw: [], starts: {} };
     let start = '2026-01-01';
     for (const [name, header] of Object.entries(abas)) {
       plan.before[name] = await read(name);
       validateExisting(name, plan.before[name], end);
-      for (const row of plan.before[name].slice(1)) if (row[12] < start) start = row[12];
+      let tableStart = '2026-01-01';
+      for (const row of plan.before[name].slice(1)) {
+        for (const date of [row[0], row[12]]) if (date && date < tableStart) tableStart = date.slice(0, 7) + '-01';
+      }
+      plan.starts[name] = tableStart;
+      if (tableStart < start) start = tableStart;
       plan.after[name] = [header];
     }
     plan.start = start;
@@ -97,8 +104,8 @@ async function main() {
         plan.raw.push({ id, inicio: begin, fim: finish, retorno: raw });
         const old = Object.values(plan.before).flatMap(rows => rows.slice(1)).filter(r => r[6] === empresas[id] && r[12] >= begin && r[12] <= finish);
         if (old.length && !raw.some(s => s.vendas.length)) throw new Error('Retorno vazio para período com histórico');
-        if (id !== '4') plan.after.VendasBradisfer.push(...b2b.montarLinhas(raw, begin, finish, b2b.FONTES.find(f => f.idEmpresa === id).canaisPermitidos).linhas.map(l => l.linha));
-        if (id !== '1') plan.after.VendasOnline.push(...online.montarLinhas(raw, begin, finish, empresas[id]).linhas.map(l => l.linha));
+        if (id !== '4') plan.after.VendasBradisfer.push(...b2b.montarLinhas(raw, begin, finish, b2b.FONTES.find(f => f.idEmpresa === id).canaisPermitidos).linhas.map(l => l.linha).filter(r => r[12] >= plan.starts.VendasBradisfer));
+        if (id !== '1') plan.after.VendasOnline.push(...online.montarLinhas(raw, begin, finish, empresas[id]).linhas.map(l => l.linha).filter(r => r[12] >= plan.starts.VendasOnline));
         console.log('Validado API: empresa ' + id + ', ' + begin + ' a ' + finish);
       }
     }
