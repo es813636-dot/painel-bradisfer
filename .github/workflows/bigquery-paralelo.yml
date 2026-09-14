@@ -90,7 +90,7 @@ jobs:
           cache-dependency-path: bigquery/package-lock.json
       - run: npm ci --ignore-scripts
       - uses: google-github-actions/auth@v3
-        if: inputs.modo == 'publicar' || inputs.conciliar_sheets
+        if: github.event_name == 'workflow_run' || inputs.modo == 'publicar' || inputs.conciliar_sheets
         with:
           workload_identity_provider: ${{ vars.BQ_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.BQ_WRITER_SERVICE_ACCOUNT }}
