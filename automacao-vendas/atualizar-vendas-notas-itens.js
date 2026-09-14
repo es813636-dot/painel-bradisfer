@@ -6,6 +6,7 @@ const SHEET_ID = '1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A';
 const NOTES_URL = 'https://api.sysemp.com.br/163/listaPedidosNotasSaida';
 const TAB_B2B_NOTES = 'VendasB2B_Notas';
 const TAB_B2B_ITEMS = 'VendasB2B_Itens';
+const TAB_B2B_SUMMARY = 'VendasB2B_Resumo';
 const TAB_B2B_CONTROL = 'ConciliacaoB2B';
 const TAB_ONLINE_SUMMARY = 'VendasOnline_Resumo';
 const TAB_ONLINE_ITEMS = 'VendasOnline_Itens';
@@ -43,6 +44,14 @@ const ITEMS_HEADER = [
   'IdProduto', 'Produto', 'Marca', 'Grupo', 'Categoria', 'Quantidade', 'ValorUnitario',
   'ValorLiquidoItem', 'AjusteFiscalAlocado', 'ValorFaturado', 'CustoUnitario',
   'CustoTotalItem', 'ChaveItem', 'AtualizadoEm',
+];
+
+// Uma linha por nota e marca. Mantém as dimensões usadas pelo Power BI,
+// sem ocupar uma linha da planilha para cada produto vendido.
+const B2B_SUMMARY_HEADER = [
+  'EmpresaId', 'Empresa', 'IdVenda', 'IdPedidoOrigem', 'DataEmissao',
+  'IdVendedor', 'Vendedor', 'IdCliente', 'Cliente', 'Cidade', 'UF', 'Canal',
+  'Marca', 'Quantidade', 'Faturamento', 'ChaveResumo', 'AtualizadoEm',
 ];
 
 const ONLINE_SUMMARY_HEADER = [
@@ -210,6 +219,9 @@ function prepareData(rawRows, updatedAt, segment = 'b2b', storeNoteRows = true) 
     const note = {
       key, companyId, company, noteId, emissionDate, noteTotalCents, itemTotalCents,
       adjustmentCents, sellerId, seller, channel: normalize(row.canal), cfop: text(row.cfop),
+      orderId: text(row.pedido), clientId: text(row.id_cliente),
+      client: text(row.razsocial_cliente) || 'CLIENTE NÃO INFORMADO',
+      city: text(row.entrega_cidade || row.cidade), uf: text(row.sigla),
       row: storeNoteRows ? [
         companyId, company, noteId, text(row.nrnota), text(row.serie), text(row.chavenfe),
         text(row.pedido), text(row.marketplace_pedido), text(row.data_pedido), emissionDate,
@@ -255,6 +267,31 @@ function prepareData(rawRows, updatedAt, segment = 'b2b', storeNoteRows = true) 
   stats.marcusExcludedValue = amount(stats.marcusExcludedCents);
   stats.withoutSellerValue = amount(stats.withoutSellerCents);
   return { notes, items, stats };
+}
+
+function summarizeB2B(prepared, updatedAt) {
+  const summaries = new Map();
+  for (const item of prepared.items.values()) {
+    const note = prepared.notes.get(item.noteKey);
+    if (!note) throw new Error(`Item sem nota correspondente: ${item.noteKey}`);
+    const brand = text(item.brand) || 'SEM MARCA';
+    const key = `${note.key}|${normalize(brand)}`;
+    const current = summaries.get(key) || { key, note, brand, quantity: 0, fiscalCents: 0 };
+    current.quantity += item.quantity;
+    current.fiscalCents += item.fiscalCents;
+    summaries.set(key, current);
+  }
+  const rows = [...summaries.values()].map(({ key, note, brand, quantity, fiscalCents }) => [
+    note.companyId, note.company, note.noteId, note.orderId, note.emissionDate,
+    note.sellerId, note.seller, note.clientId, note.client, note.city, note.uf,
+    note.channel, brand, quantity, amount(fiscalCents), key, updatedAt,
+  ]);
+  const summarizedCents = rows.reduce((sum, row) => sum + cents(row[14]), 0);
+  const fiscalCents = [...prepared.notes.values()].reduce((sum, note) => sum + note.noteTotalCents, 0);
+  if (summarizedCents !== fiscalCents) {
+    throw new Error(`Resumo B2B não conciliou: ${amount(summarizedCents)} vs ${amount(fiscalCents)}.`);
+  }
+  return sortRows(rows, [4, 0, 2, 12]);
 }
 
 function summarizeOnline(prepared, updatedAt) {
@@ -612,11 +649,13 @@ async function main() {
   const simulate = process.env.SO_SIMULAR === '1';
   const includeB2B = process.env.INCLUIR_B2B !== '0';
   const includeOnline = process.env.INCLUIR_ONLINE !== '0';
+  const includeB2BDetails = process.env.INCLUIR_B2B_ITENS === '1';
   if (!includeB2B && !includeOnline) throw new Error('Ative ao menos um segmento para a carga.');
   let sheets;
   let tabs;
   let beforeB2BNotes = [];
   let beforeB2BItems = [];
+  let beforeB2BSummary = [];
   let beforeB2BControl = [];
   let beforeOnlineSummary = [];
   let beforeOnlineItems = [];
@@ -629,8 +668,11 @@ async function main() {
     sheets = google.sheets({ version: 'v4', auth });
     tabs = await listTabs(sheets);
     if (includeB2B) {
-      beforeB2BNotes = await readTab(sheets, tabs, TAB_B2B_NOTES, NOTES_HEADER.length);
-      beforeB2BItems = await readTab(sheets, tabs, TAB_B2B_ITEMS, ITEMS_HEADER.length);
+      beforeB2BSummary = await readTab(sheets, tabs, TAB_B2B_SUMMARY, B2B_SUMMARY_HEADER.length);
+      if (includeB2BDetails) {
+        beforeB2BNotes = await readTab(sheets, tabs, TAB_B2B_NOTES, NOTES_HEADER.length);
+        beforeB2BItems = await readTab(sheets, tabs, TAB_B2B_ITEMS, ITEMS_HEADER.length);
+      }
       beforeB2BControl = await readTab(sheets, tabs, TAB_B2B_CONTROL, CONTROL_HEADER.length);
     }
     if (includeOnline) {
@@ -640,7 +682,8 @@ async function main() {
     }
   }
 
-  const needsBootstrap = (includeB2B && (!beforeB2BNotes.length || !beforeB2BItems.length))
+  const needsBootstrap = (includeB2B && (!beforeB2BSummary.length
+      || (includeB2BDetails && (!beforeB2BNotes.length || !beforeB2BItems.length))))
     || (includeOnline && (!beforeOnlineSummary.length || !beforeOnlineItems.length));
   const mode = simulate ? requestedMode : (needsBootstrap ? 'historico' : requestedMode);
   const end = process.env.DATA_FIM || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -656,6 +699,7 @@ async function main() {
   };
   const newB2BNotes = sortRows([...prepared.b2b.notes.values()].map(value => value.row), [9, 0, 2]);
   const newB2BItems = sortRows([...prepared.b2b.items.values()].map(value => value.row), [6, 0, 2, 15]);
+  const newB2BSummary = summarizeB2B(prepared.b2b, updatedAt);
   const online = summarizeOnline(prepared.online, updatedAt);
   const newOnlineSummary = online.summaryRows;
   const newOnlineItems = online.itemRows;
@@ -668,10 +712,11 @@ async function main() {
     difference: amount(reconciliations[segment].differenceCents),
   });
   const result = {
-    mode, start, end, segments: { b2b: includeB2B, online: includeOnline },
+    mode, start, end, segments: { b2b: includeB2B, b2bDetails: includeB2BDetails, online: includeOnline },
     b2b: { ...segmentResult('b2b'), byCompany: summarizeByCompany(prepared.b2b) },
     online: { ...segmentResult('online'), summaryRows: newOnlineSummary.length, itemSummaryRows: newOnlineItems.length },
-    plannedDataCells: (includeB2B ? (newB2BNotes.length * NOTES_HEADER.length) + (newB2BItems.length * ITEMS_HEADER.length) : 0)
+    plannedDataCells: (includeB2B ? (newB2BSummary.length * B2B_SUMMARY_HEADER.length)
+      + (includeB2BDetails ? (newB2BNotes.length * NOTES_HEADER.length) + (newB2BItems.length * ITEMS_HEADER.length) : 0) : 0)
       + (includeOnline ? (newOnlineSummary.length * ONLINE_SUMMARY_HEADER.length) + (newOnlineItems.length * ONLINE_ITEMS_HEADER.length) : 0),
   };
   if (simulate) {
@@ -681,6 +726,7 @@ async function main() {
   }
   const finalB2BNotes = mergeWindow(beforeB2BNotes, NOTES_HEADER, newB2BNotes, 9, start, end, mode);
   const finalB2BItems = mergeWindow(beforeB2BItems, ITEMS_HEADER, newB2BItems, 6, start, end, mode);
+  const finalB2BSummary = mergeWindow(beforeB2BSummary, B2B_SUMMARY_HEADER, newB2BSummary, 4, start, end, mode);
   const finalOnlineSummary = mergeWindow(beforeOnlineSummary, ONLINE_SUMMARY_HEADER, newOnlineSummary, 2, start, end, mode);
   const finalOnlineItems = mergeWindow(beforeOnlineItems, ONLINE_ITEMS_HEADER, newOnlineItems, 2, start, end, mode);
   const makeControl = (before, segment, tabName) => {
@@ -690,7 +736,7 @@ async function main() {
     const row = [
       updatedAt, mode, start, end, 'SUCESSO', Math.round((Date.now() - started) / 100) / 10,
       stats.notesRead, prepared[segment].notes.size, prepared[segment].items.size,
-      segment === 'online' ? newOnlineItems.length : newB2BItems.length,
+      segment === 'online' ? newOnlineItems.length : (includeB2BDetails ? newB2BItems.length : 0),
       amount(reconciliation.fiscalCents), amount(reconciliation.itemCents), amount(reconciliation.adjustmentCents),
       stats.withoutSellerCount, stats.withoutSellerValue,
       stats.marcusExcludedCount, stats.marcusExcludedValue,
@@ -703,9 +749,12 @@ async function main() {
 
   const targets = [];
   if (includeB2B) targets.push(
+    { name: TAB_B2B_SUMMARY, before: beforeB2BSummary, after: finalB2BSummary, columns: B2B_SUMMARY_HEADER.length },
+    { name: TAB_B2B_CONTROL, before: beforeB2BControl, after: finalB2BControl, columns: CONTROL_HEADER.length },
+  );
+  if (includeB2B && includeB2BDetails) targets.push(
     { name: TAB_B2B_NOTES, before: beforeB2BNotes, after: finalB2BNotes, columns: NOTES_HEADER.length },
     { name: TAB_B2B_ITEMS, before: beforeB2BItems, after: finalB2BItems, columns: ITEMS_HEADER.length },
-    { name: TAB_B2B_CONTROL, before: beforeB2BControl, after: finalB2BControl, columns: CONTROL_HEADER.length },
   );
   if (includeOnline) targets.push(
     { name: TAB_ONLINE_SUMMARY, before: beforeOnlineSummary, after: finalOnlineSummary, columns: ONLINE_SUMMARY_HEADER.length },
@@ -740,8 +789,8 @@ async function main() {
 }
 
 module.exports = {
-  NOTES_HEADER, ITEMS_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER, CONTROL_HEADER,
-  MARCUS_ID, prepareData, summarizeOnline, validatePrepared,
+  NOTES_HEADER, ITEMS_HEADER, B2B_SUMMARY_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER, CONTROL_HEADER,
+  MARCUS_ID, prepareData, summarizeB2B, summarizeOnline, validatePrepared,
   mergeWindow, noteKey, itemKey, isSaleNote, classifyNote, dateList, allocateAdjustment,
   projectedGridCellCount, firstChangedRow, summarizeByCompany,
 };

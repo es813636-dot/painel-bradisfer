@@ -3,8 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  NOTES_HEADER, ITEMS_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER,
-  MARCUS_ID, prepareData, summarizeOnline, validatePrepared,
+  NOTES_HEADER, ITEMS_HEADER, B2B_SUMMARY_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER,
+  MARCUS_ID, prepareData, summarizeB2B, summarizeOnline, validatePrepared,
   mergeWindow, isSaleNote, classifyNote, dateList, projectedGridCellCount, firstChangedRow,
 } = require('./atualizar-vendas-notas-itens');
 
@@ -54,6 +54,23 @@ test('classifica vendedor vazio e preserva seu valor nos totais', () => {
   assert.equal(fiscal.seller, 'SEM VENDEDOR');
   assert.equal(prepared.stats.withoutSellerCount, 1);
   assert.equal(prepared.stats.withoutSellerValue, 105);
+});
+
+test('resume B2B por nota e marca e preserva exatamente o total fiscal', () => {
+  const prepared = prepareData([note({
+    vrtotal_geral: '106.00',
+    nota_saida_itens: [
+      { id_produto: 1, descricao_produto: 'PRODUTO A', descricao_marca: 'MARCA A', qtde: 2, valor_unitario: 20, total_liquido: 40, custo_produto: 10 },
+      { id_produto: 2, descricao_produto: 'PRODUTO B', descricao_marca: 'MARCA B', qtde: 3, valor_unitario: 20, total_liquido: 60, custo_produto: 10 },
+    ],
+  })], 'agora');
+  const rows = summarizeB2B(prepared, 'agora');
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].length, B2B_SUMMARY_HEADER.length);
+  assert.equal(rows.reduce((sum, row) => sum + row[14], 0), 106);
+  assert.deepEqual(rows.map(row => row[12]), ['MARCA A', 'MARCA B']);
+  assert.deepEqual(rows.map(row => row[13]), [2, 3]);
+  assert.ok(rows.every(row => row[2] === '500'));
 });
 
 test('exclui Marcus pelo ID, independentemente do nome', () => {

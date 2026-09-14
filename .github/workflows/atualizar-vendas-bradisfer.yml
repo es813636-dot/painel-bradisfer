@@ -1,16 +1,8 @@
 name: Atualizar Vendas Bradisfer (B2B)
 
 on:
-  schedule:
-    # Religado em 03/09/2026 depois de confirmar a carga histórica
-    # (15.837 linhas, batendo exatamente com o teste ao vivo feito antes
-    # de implementar) e da chave de dedup reforçada com id_pedido testada
-    # isolada (2 marcas do mesmo pedido geram chaves diferentes). Pulado
-    # o teste extra de 1 incremento manual de controle a pedido do
-    # usuário, confiando na lógica já validada e no padrão que já
-    # funcionou pro VendasOnline. Mesma janela horária das outras
-    # automações; piso real do GitHub Actions é 5 min.
-    - cron: '*/5 8-23,0-2 * * *'
+  # Mantido apenas para recuperação manual. O painel passou a usar o resumo
+  # conciliado da API fiscal em VendasB2B_Resumo.
   workflow_dispatch: {}
 
 jobs:
