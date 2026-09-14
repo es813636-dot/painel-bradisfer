@@ -1,0 +1,56 @@
+name: Atualizar Vendas por Notas e Itens
+
+on:
+  schedule:
+    - cron: '17 8-23,0-2 * * *'
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: Tipo de carga
+        required: true
+        default: incremental
+        type: choice
+        options:
+          - incremental
+          - historico
+      data_inicio:
+        description: Data inicial opcional (AAAA-MM-DD)
+        required: false
+        type: string
+      data_fim:
+        description: Data final opcional (AAAA-MM-DD)
+        required: false
+        type: string
+
+concurrency:
+  group: atualizar-vendas-notas-itens
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: automacao-vendas
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      - name: Validar transformação fiscal
+        run: node --test atualizar-vendas-notas-itens.test.js
+
+      - name: Atualizar notas, itens e conciliação
+        run: node atualizar-vendas-notas-itens.js
+        env:
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          MODO_CARGA: ${{ inputs.modo || 'incremental' }}
+          DATA_INICIO: ${{ inputs.data_inicio }}
+          DATA_FIM: ${{ inputs.data_fim }}
+          JANELA_DIAS: '7'

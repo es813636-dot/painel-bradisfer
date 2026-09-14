@@ -1,0 +1,164 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const {
+  NOTES_HEADER, ITEMS_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER,
+  MARCUS_ID, prepareData, summarizeOnline, validatePrepared,
+  mergeWindow, isSaleNote, classifyNote, dateList, projectedGridCellCount, firstChangedRow,
+} = require('./atualizar-vendas-notas-itens');
+
+function note(overrides = {}) {
+  return {
+    id_empresa: '1', fantasia_empresa: 'BRADISFER DISTRIBUIDORA', id_nota_saida: '500',
+    nrnota: '100', serie: 'B', chavenfe: 'CHAVE', pedido: '39000', marketplace_pedido: '',
+    data_pedido: '2026-09-10', data_emissao: '2026-09-10', hora_pedido: '10:00:00',
+    id_vendedor: '10', vendedor: 'VENDEDOR', id_cliente: '20', razsocial_cliente: 'CLIENTE',
+    entrega_cidade: 'ATIBAIA', sigla: 'SP', canal: 'APLICATIVO', cfop: '5.102',
+    nat_operacao: 'Venda de merc. adquirida ou recebida de terceiros', tipo_documento: 'NF',
+    nf_cancelada: 'NAO', total_produtos: '100.00', total_nota_fiscal: '100.00',
+    vrtotal_geral: '105.00', valor_frete: '0', valor_financeiro_servico: '0',
+    custo_total: '60', status: '2', descsituacao: 'TRANSMITIDA',
+    nota_saida_itens: [
+      { id_produto: 1, descricao_produto: 'PRODUTO A', descricao_marca: 'MARCA A', descricao_grupo: 'GRUPO', descricao_categoria: 'CATEGORIA', qtde: 2, valor_unitario: 20, total_liquido: 40, custo_produto: 10 },
+      { id_produto: 1, descricao_produto: 'PRODUTO A', descricao_marca: 'MARCA A', descricao_grupo: 'GRUPO', descricao_categoria: 'CATEGORIA', qtde: 3, valor_unitario: 20, total_liquido: 60, custo_produto: 10 },
+    ],
+    ...overrides,
+  };
+}
+
+test('prepara uma nota e agrega o mesmo produto sem duplicar o total fiscal', () => {
+  const prepared = prepareData([note()], '2026-09-14T12:00:00.000Z');
+  assert.equal(prepared.notes.size, 1);
+  assert.equal(prepared.items.size, 1);
+  const fiscal = [...prepared.notes.values()][0];
+  const item = [...prepared.items.values()][0];
+  assert.equal(fiscal.noteTotalCents, 10500);
+  assert.equal(fiscal.itemTotalCents, 10000);
+  assert.equal(fiscal.adjustmentCents, 500);
+  assert.equal(item.row[20], 5);
+  assert.equal(item.row[22], 100);
+  assert.equal(item.row[23], 5);
+  assert.equal(item.row[24], 105);
+  assert.equal(item.row[26], 50);
+  assert.deepEqual(validatePrepared(prepared), {
+    fiscalCents: 10500, itemCents: 10000, adjustmentCents: 500,
+    allocatedFiscalCents: 10500, differenceCents: 0,
+  });
+});
+
+test('classifica vendedor vazio e preserva seu valor nos totais', () => {
+  const prepared = prepareData([note({ id_vendedor: null, vendedor: null })], 'agora');
+  const fiscal = [...prepared.notes.values()][0];
+  assert.equal(fiscal.sellerId, 'SEM_VENDEDOR');
+  assert.equal(fiscal.seller, 'SEM VENDEDOR');
+  assert.equal(prepared.stats.withoutSellerCount, 1);
+  assert.equal(prepared.stats.withoutSellerValue, 105);
+});
+
+test('exclui Marcus pelo ID, independentemente do nome', () => {
+  const prepared = prepareData([note({ id_vendedor: MARCUS_ID, vendedor: 'OUTRA GRAFIA' })], 'agora');
+  assert.equal(prepared.notes.size, 0);
+  assert.equal(prepared.items.size, 0);
+  assert.equal(prepared.stats.marcusExcludedCount, 1);
+  assert.equal(prepared.stats.marcusExcludedValue, 105);
+});
+
+test('filtra canal, cancelamento, documento e natureza de operação', () => {
+  assert.equal(isSaleNote(note()), true);
+  assert.equal(isSaleNote(note({ canal: 'SHOPEE' })), false);
+  assert.equal(isSaleNote(note({ nf_cancelada: 'SIM' })), false);
+  assert.equal(isSaleNote(note({ tipo_documento: 'PD' })), false);
+  assert.equal(isSaleNote(note({ nat_operacao: 'Remessa em bonificação, doação ou brinde' })), false);
+});
+
+test('classifica marketplaces das empresas online sem misturar com B2B', () => {
+  assert.equal(classifyNote(note({ id_empresa: '3', canal: 'SHOPEE MVONLINE 3' })), 'online');
+  assert.equal(classifyNote(note({ id_empresa: '4', canal: 'TIKTOK SHOP' })), 'online');
+  assert.equal(classifyNote(note({ id_empresa: '4', canal: 'MERCADO LIVRE' })), 'online');
+  assert.equal(classifyNote(note({ id_empresa: '4', canal: 'SITE' })), null);
+  assert.equal(classifyNote(note({ id_empresa: '1', canal: 'SHOPEE' })), null);
+});
+
+test('mantém vendedor 1604 no marketplace e concilia o rateio fiscal', () => {
+  const marketplace = note({
+    id_empresa: '3', fantasia_empresa: 'CONSTRUBRAG', canal: 'SHOPEE MVONLINE 3',
+    id_vendedor: MARCUS_ID, vendedor: 'MARCUS', vrtotal_geral: '100.01',
+  });
+  const prepared = prepareData([marketplace], 'agora', 'online', false);
+  assert.equal(prepared.notes.size, 1);
+  assert.equal(prepared.stats.marcusExcludedCount, 0);
+  assert.equal([...prepared.items.values()][0].row[24], 100.01);
+  assert.deepEqual(validatePrepared(prepared, { excludeMarcus: false }), {
+    fiscalCents: 10001, itemCents: 10000, adjustmentCents: 1,
+    allocatedFiscalCents: 10001, differenceCents: 0,
+  });
+  const summarized = summarizeOnline(prepared, 'agora');
+  assert.equal(summarized.summaryRows.length, 1);
+  assert.equal(summarized.itemRows.length, 1);
+  assert.equal(summarized.summaryRows[0].length, ONLINE_SUMMARY_HEADER.length);
+  assert.equal(summarized.itemRows[0].length, ONLINE_ITEMS_HEADER.length);
+  assert.equal(summarized.summaryRows[0][4], 1);
+  assert.equal(summarized.summaryRows[0][5], 100.01);
+  assert.equal(summarized.itemRows[0][11], 1);
+  assert.equal(summarized.itemRows[0][14], 100.01);
+});
+
+test('consolida vendas online por data, empresa, canal e produto', () => {
+  const rows = [
+    note({ id_empresa: '3', id_nota_saida: '501', canal: 'SHOPEE', vrtotal_geral: 105 }),
+    note({ id_empresa: '3', id_nota_saida: '502', canal: 'SHOPEE', vrtotal_geral: 105 }),
+  ];
+  const prepared = prepareData(rows, 'agora', 'online', false);
+  const summarized = summarizeOnline(prepared, 'agora');
+  assert.equal(summarized.summaryRows.length, 1);
+  assert.equal(summarized.summaryRows[0][4], 2);
+  assert.equal(summarized.summaryRows[0][5], 210);
+  assert.equal(summarized.itemRows.length, 1);
+  assert.equal(summarized.itemRows[0][10], 10);
+  assert.equal(summarized.itemRows[0][11], 2);
+  assert.equal(summarized.itemRows[0][14], 210);
+});
+
+test('recusa nota duplicada na mesma resposta', () => {
+  assert.throws(() => prepareData([note(), note()], 'agora'), /Nota duplicada/);
+});
+
+test('substitui somente a janela incremental e mantém o histórico externo', () => {
+  const oldBefore = Array(NOTES_HEADER.length).fill(''); oldBefore[9] = '2026-09-01'; oldBefore[2] = '1';
+  const oldInside = Array(NOTES_HEADER.length).fill(''); oldInside[9] = '2026-09-10'; oldInside[2] = '2';
+  const replacement = Array(NOTES_HEADER.length).fill(''); replacement[9] = '2026-09-10'; replacement[2] = '3';
+  const result = mergeWindow([NOTES_HEADER, oldBefore, oldInside], NOTES_HEADER, [replacement], 9, '2026-09-08', '2026-09-14', 'incremental');
+  assert.deepEqual(result.map(row => row[2]), ['IdNota', '1', '3']);
+});
+
+test('carga histórica descarta todas as linhas anteriores', () => {
+  const old = Array(ITEMS_HEADER.length).fill(''); old[6] = '2026-01-02';
+  const fresh = Array(ITEMS_HEADER.length).fill(''); fresh[6] = '2026-09-10';
+  const result = mergeWindow([ITEMS_HEADER, old], ITEMS_HEADER, [fresh], 6, '2026-01-02', '2026-09-14', 'historico');
+  assert.deepEqual(result, [ITEMS_HEADER, fresh]);
+});
+
+test('gera lista diária inclusiva e valida a janela', () => {
+  assert.deepEqual(dateList('2026-09-12', '2026-09-14'), ['2026-09-12', '2026-09-13', '2026-09-14']);
+  assert.throws(() => dateList('2026-09-14', '2026-09-12'), /inválida/);
+});
+
+test('projeta células usando a grade existente e a expansão necessária', () => {
+  const tabs = new Map([
+    ['Existente', { gridProperties: { rowCount: 100, columnCount: 10 } }],
+    ['Alvo', { gridProperties: { rowCount: 50, columnCount: 8 } }],
+  ]);
+  const targets = [
+    { name: 'Alvo', after: Array(70), columns: 12 },
+    { name: 'Nova', after: Array(1500), columns: 28 },
+  ];
+  assert.equal(projectedGridCellCount(tabs, targets), 1000 + 840 + 42000);
+});
+
+test('localiza a primeira linha alterada para gravar somente o fim da janela', () => {
+  const before = [['A'], ['1'], ['2'], ['3']];
+  const after = [['A'], ['1'], ['4']];
+  assert.equal(firstChangedRow(before, after), 2);
+  assert.equal(firstChangedRow(before, before), 4);
+});
