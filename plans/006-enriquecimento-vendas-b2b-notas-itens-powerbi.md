@@ -67,6 +67,8 @@ Uma linha por data, empresa e canal, com número de vendas, faturamento fiscal, 
 
 Não será criada uma segunda aba online com uma linha para cada nota. Na simulação de 14/09/2026, a API retornou 215.139 notas e 219.764 linhas de itens, consolidadas em 908 linhas de resumo e 44.287 linhas de produto. As novas tabelas completas ocuparão cerca de 2,48 milhões de células, incluindo o detalhe B2B. A carga confere a projeção total antes de qualquer escrita e aborta acima de 9,5 milhões de células.
 
+A planilha existente já ocupa aproximadamente 8,4 milhões de células. A primeira tentativa segura projetou 10.879.286 células com B2B e Online juntos e foi interrompida antes de gravar. A implantação inicial, portanto, ativa somente `VendasOnline_Resumo`, `VendasOnline_Itens` e `ConciliacaoOnline`. As tabelas B2B permanecem implementadas e testadas, mas precisam de outra planilha ou da substituição da fonte antiga para liberar espaço.
+
 ## Automação
 
 1. Fazer uma carga histórica única de 02/01/2026 até a data atual, dividida por dia.

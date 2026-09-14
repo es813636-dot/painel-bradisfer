@@ -54,3 +54,5 @@ jobs:
           DATA_INICIO: ${{ inputs.data_inicio }}
           DATA_FIM: ${{ inputs.data_fim }}
           JANELA_DIAS: '7'
+          INCLUIR_B2B: '0'
+          INCLUIR_ONLINE: '1'

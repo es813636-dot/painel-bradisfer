@@ -402,16 +402,19 @@ function mergePrepared(target, source) {
   target.stats.withoutSellerValue = amount(target.stats.withoutSellerCents);
 }
 
-async function fetchPreparedWindow(token, start, end, updatedAt) {
+async function fetchPreparedWindow(token, start, end, updatedAt, { includeB2B = true, includeOnline = true } = {}) {
   const dates = dateList(start, end);
   const result = { b2b: emptyPrepared(), online: emptyPrepared() };
-  for (const companyId of Object.keys(COMPANIES)) {
+  const companyIds = new Set();
+  if (includeB2B) ['1', '3'].forEach(id => companyIds.add(id));
+  if (includeOnline) ['3', '4'].forEach(id => companyIds.add(id));
+  for (const companyId of companyIds) {
     for (let index = 0; index < dates.length; index += DAY_CONCURRENCY) {
       const batch = dates.slice(index, index + DAY_CONCURRENCY);
       const pages = await Promise.all(batch.map(date => fetchDay(token, companyId, date)));
       const rawRows = pages.flat();
-      if (companyId === '1' || companyId === '3') mergePrepared(result.b2b, prepareData(rawRows, updatedAt, 'b2b', true));
-      if (companyId === '3' || companyId === '4') mergePrepared(result.online, prepareData(rawRows, updatedAt, 'online', false));
+      if (includeB2B && (companyId === '1' || companyId === '3')) mergePrepared(result.b2b, prepareData(rawRows, updatedAt, 'b2b', true));
+      if (includeOnline && (companyId === '3' || companyId === '4')) mergePrepared(result.online, prepareData(rawRows, updatedAt, 'online', false));
       console.log(`API fiscal empresa ${companyId}: ${Math.min(index + batch.length, dates.length)}/${dates.length} dias; B2B ${result.b2b.notes.size} nota(s), online ${result.online.notes.size} nota(s).`);
     }
   }
@@ -559,6 +562,9 @@ async function main() {
   const requestedMode = normalize(process.env.MODO_CARGA || 'incremental').toLowerCase();
   if (!['incremental', 'historico'].includes(requestedMode)) throw new Error('MODO_CARGA deve ser incremental ou historico.');
   const simulate = process.env.SO_SIMULAR === '1';
+  const includeB2B = process.env.INCLUIR_B2B !== '0';
+  const includeOnline = process.env.INCLUIR_ONLINE !== '0';
+  if (!includeB2B && !includeOnline) throw new Error('Ative ao menos um segmento para a carga.');
   let sheets;
   let tabs;
   let beforeB2BNotes = [];
@@ -574,15 +580,20 @@ async function main() {
     const auth = new google.auth.JWT(credential.client_email, null, credential.private_key, ['https://www.googleapis.com/auth/spreadsheets']);
     sheets = google.sheets({ version: 'v4', auth });
     tabs = await listTabs(sheets);
-    beforeB2BNotes = await readTab(sheets, tabs, TAB_B2B_NOTES, NOTES_HEADER.length);
-    beforeB2BItems = await readTab(sheets, tabs, TAB_B2B_ITEMS, ITEMS_HEADER.length);
-    beforeB2BControl = await readTab(sheets, tabs, TAB_B2B_CONTROL, CONTROL_HEADER.length);
-    beforeOnlineSummary = await readTab(sheets, tabs, TAB_ONLINE_SUMMARY, ONLINE_SUMMARY_HEADER.length);
-    beforeOnlineItems = await readTab(sheets, tabs, TAB_ONLINE_ITEMS, ONLINE_ITEMS_HEADER.length);
-    beforeOnlineControl = await readTab(sheets, tabs, TAB_ONLINE_CONTROL, CONTROL_HEADER.length);
+    if (includeB2B) {
+      beforeB2BNotes = await readTab(sheets, tabs, TAB_B2B_NOTES, NOTES_HEADER.length);
+      beforeB2BItems = await readTab(sheets, tabs, TAB_B2B_ITEMS, ITEMS_HEADER.length);
+      beforeB2BControl = await readTab(sheets, tabs, TAB_B2B_CONTROL, CONTROL_HEADER.length);
+    }
+    if (includeOnline) {
+      beforeOnlineSummary = await readTab(sheets, tabs, TAB_ONLINE_SUMMARY, ONLINE_SUMMARY_HEADER.length);
+      beforeOnlineItems = await readTab(sheets, tabs, TAB_ONLINE_ITEMS, ONLINE_ITEMS_HEADER.length);
+      beforeOnlineControl = await readTab(sheets, tabs, TAB_ONLINE_CONTROL, CONTROL_HEADER.length);
+    }
   }
 
-  const needsBootstrap = !beforeB2BNotes.length || !beforeB2BItems.length || !beforeOnlineSummary.length || !beforeOnlineItems.length;
+  const needsBootstrap = (includeB2B && (!beforeB2BNotes.length || !beforeB2BItems.length))
+    || (includeOnline && (!beforeOnlineSummary.length || !beforeOnlineItems.length));
   const mode = simulate ? requestedMode : (needsBootstrap ? 'historico' : requestedMode);
   const end = process.env.DATA_FIM || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
   const windowDays = Number(process.env.JANELA_DIAS || 7);
@@ -590,7 +601,7 @@ async function main() {
   console.log(`Carga ${mode}: ${start} a ${end}.`);
 
   const updatedAt = new Date().toISOString();
-  const prepared = await fetchPreparedWindow(token, start, end, updatedAt);
+  const prepared = await fetchPreparedWindow(token, start, end, updatedAt, { includeB2B, includeOnline });
   const reconciliations = {
     b2b: validatePrepared(prepared.b2b, { excludeMarcus: true }),
     online: validatePrepared(prepared.online, { excludeMarcus: false }),
@@ -609,13 +620,11 @@ async function main() {
     difference: amount(reconciliations[segment].differenceCents),
   });
   const result = {
-    mode, start, end,
+    mode, start, end, segments: { b2b: includeB2B, online: includeOnline },
     b2b: segmentResult('b2b'),
     online: { ...segmentResult('online'), summaryRows: newOnlineSummary.length, itemSummaryRows: newOnlineItems.length },
-    plannedDataCells: (newB2BNotes.length * NOTES_HEADER.length)
-      + (newB2BItems.length * ITEMS_HEADER.length)
-      + (newOnlineSummary.length * ONLINE_SUMMARY_HEADER.length)
-      + (newOnlineItems.length * ONLINE_ITEMS_HEADER.length),
+    plannedDataCells: (includeB2B ? (newB2BNotes.length * NOTES_HEADER.length) + (newB2BItems.length * ITEMS_HEADER.length) : 0)
+      + (includeOnline ? (newOnlineSummary.length * ONLINE_SUMMARY_HEADER.length) + (newOnlineItems.length * ONLINE_ITEMS_HEADER.length) : 0),
   };
   if (simulate) {
     console.log('SIMULAÇÃO concluída; nenhuma planilha foi alterada.');
@@ -644,14 +653,17 @@ async function main() {
   const finalB2BControl = makeControl(beforeB2BControl, 'b2b', TAB_B2B_CONTROL);
   const finalOnlineControl = makeControl(beforeOnlineControl, 'online', TAB_ONLINE_CONTROL);
 
-  const targets = [
+  const targets = [];
+  if (includeB2B) targets.push(
     { name: TAB_B2B_NOTES, before: beforeB2BNotes, after: finalB2BNotes, columns: NOTES_HEADER.length },
     { name: TAB_B2B_ITEMS, before: beforeB2BItems, after: finalB2BItems, columns: ITEMS_HEADER.length },
+    { name: TAB_B2B_CONTROL, before: beforeB2BControl, after: finalB2BControl, columns: CONTROL_HEADER.length },
+  );
+  if (includeOnline) targets.push(
     { name: TAB_ONLINE_SUMMARY, before: beforeOnlineSummary, after: finalOnlineSummary, columns: ONLINE_SUMMARY_HEADER.length },
     { name: TAB_ONLINE_ITEMS, before: beforeOnlineItems, after: finalOnlineItems, columns: ONLINE_ITEMS_HEADER.length },
-    { name: TAB_B2B_CONTROL, before: beforeB2BControl, after: finalB2BControl, columns: CONTROL_HEADER.length },
     { name: TAB_ONLINE_CONTROL, before: beforeOnlineControl, after: finalOnlineControl, columns: CONTROL_HEADER.length },
-  ];
+  );
   const projectedCells = projectedGridCellCount(tabs, targets);
   if (projectedCells > SHEET_CELL_SAFETY_LIMIT) {
     throw new Error(`Carga projetaria ${projectedCells.toLocaleString('pt-BR')} células na planilha, acima do limite seguro de ${SHEET_CELL_SAFETY_LIMIT.toLocaleString('pt-BR')}. Use uma planilha separada para os itens online.`);
