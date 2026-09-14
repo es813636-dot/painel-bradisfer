@@ -12,10 +12,10 @@ on:
         default: fixture
         options: [fixture, api]
       modo:
-        description: Publicar exige infraestrutura e conciliação Sheets
+        description: Simular, auditar com Sheets ou publicar direto da API
         type: choice
         default: simulacao
-        options: [simulacao, publicar]
+        options: [simulacao, publicar, publicar_api]
       data_inicio:
         description: Data inicial AAAA-MM-DD (vazio usa últimos 7 dias)
         type: string
@@ -59,11 +59,11 @@ jobs:
       - name: Validar seleção
         env:
           SOURCE: ${{ github.event_name == 'schedule' && 'api' || inputs.origem }}
-          MODE: ${{ github.event_name == 'schedule' && 'publicar' || inputs.modo }}
+          MODE: ${{ github.event_name == 'schedule' && 'publicar_api' || inputs.modo }}
           SHEETS: ${{ inputs.conciliar_sheets }}
-          API_ONLY: ${{ github.event_name == 'schedule' }}
+          API_ONLY: ${{ github.event_name == 'schedule' || inputs.modo == 'publicar_api' }}
         run: |
-          if [[ "$MODE" == publicar && "$SOURCE" != api ]]; then
+          if [[ ( "$MODE" == publicar || "$MODE" == publicar_api ) && "$SOURCE" != api ]]; then
             echo 'Publicação exige origem API.'
             exit 1
           fi
@@ -93,7 +93,7 @@ jobs:
           cache-dependency-path: bigquery/package-lock.json
       - run: npm ci --ignore-scripts
       - uses: google-github-actions/auth@v3
-        if: github.event_name == 'schedule' || inputs.modo == 'publicar' || inputs.conciliar_sheets
+        if: github.event_name == 'schedule' || inputs.modo == 'publicar' || inputs.modo == 'publicar_api' || inputs.conciliar_sheets
         with:
           workload_identity_provider: ${{ vars.BQ_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.BQ_WRITER_SERVICE_ACCOUNT }}
@@ -109,15 +109,15 @@ jobs:
           BQ_SHEETS_ID: ${{ vars.BQ_SHEETS_ID }}
           START: ${{ inputs.data_inicio }}
           END: ${{ inputs.data_fim }}
-          MODE: ${{ github.event_name == 'schedule' && 'publicar' || inputs.modo }}
+          MODE: ${{ github.event_name == 'schedule' && 'publicar_api' || inputs.modo }}
           STOCK: ${{ inputs.estoque }}
           SHEETS: ${{ inputs.conciliar_sheets }}
-          API_ONLY: ${{ github.event_name == 'schedule' }}
+          API_ONLY: ${{ github.event_name == 'schedule' || inputs.modo == 'publicar_api' }}
         run: |
           args=()
           [[ -z "$START" ]] || args+=(--start "$START")
           [[ -z "$END" ]] || args+=(--end "$END")
-          [[ "$MODE" != publicar ]] || args+=(--write)
+          [[ "$MODE" != publicar && "$MODE" != publicar_api ]] || args+=(--write)
           [[ "$STOCK" != true ]] || args+=(--stock)
           [[ "$SHEETS" != true ]] || args+=(--sheets)
           [[ "$API_ONLY" != true ]] || args+=(--api-only)

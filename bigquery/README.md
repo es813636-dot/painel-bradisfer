@@ -107,7 +107,7 @@ node run.js --start 2026-09-02 --end 2026-09-02 --sheets --write
 
 Comandos acima são exemplos de shell POSIX; no PowerShell, defina variáveis com `$env:NOME`. Revisar o SQL gerado antes de executá-lo com a identidade de bootstrap. DDL usa `CREATE TABLE IF NOT EXISTS`: não substitui tabelas existentes nem migra automaticamente um esquema incompatível. Views são criadas/atualizadas apenas por esse operador. Não usar o bootstrap no workflow de carga.
 
-O workflow `bigquery-paralelo.yml` aceita `workflow_dispatch` e `schedule`. No disparo manual, começa por fixtures/testes e tem `origem=fixture`/`modo=simulacao` como padrão; modo `publicar` exige origem API e conciliação Sheets. No agendamento, fixa origem API, publicação e o modo explícito `--api-only`, sem depender do Sheets. O cron roda aos minutos 07, 22, 37 e 52 entre 05:00 e 23:59 no horário de São Paulo. A concorrência impede sobreposição.
+O workflow `bigquery-paralelo.yml` aceita `workflow_dispatch` e `schedule`. No disparo manual, começa por fixtures/testes e tem `origem=fixture`/`modo=simulacao` como padrão; modo `publicar` exige origem API e conciliação Sheets, enquanto `publicar_api` é a recuperação operacional explícita sem Sheets. No agendamento, fixa origem API, `publicar_api` e o modo `--api-only`. O cron roda aos minutos 07, 22, 37 e 52 entre 05:00 e 23:59 no horário de São Paulo. A concorrência impede sobreposição.
 
 ## Recuperação e aceite
 
