@@ -14,19 +14,23 @@ function options(args) {
     start: { type: 'string' }, end: { type: 'string' }, fixture: { type: 'string' }, output: { type: 'string', default: 'output' },
     write: { type: 'boolean', default: false }, 'allow-empty': { type: 'boolean', default: false },
     stock: { type: 'boolean', default: false }, sheets: { type: 'boolean', default: false },
+    'api-only': { type: 'boolean', default: false },
   } });
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   values.end ||= today;
   values.start ||= new Date(Date.parse(values.end) - 6 * 86400000).toISOString().slice(0, 10);
   dates(values.start, values.end);
   if (values.write && values.fixture) throw new Error('Fixture nunca pode gravar no BigQuery');
-  if (values.write && !values.sheets) throw new Error('Publicação exige --sheets e conciliação aprovada');
+  if (values.sheets && values['api-only']) throw new Error('--sheets e --api-only são modos exclusivos');
+  if (values.write && !values.sheets && !values['api-only']) {
+    throw new Error('Publicação exige --sheets ou --api-only explícito');
+  }
   return values;
 }
 async function run(args = process.argv.slice(2), dependencies = {}) {
   const opts = options(args), env = dependencies.env || process.env;
   const runId = randomUUID().replaceAll('-', ''), updatedAt = new Date().toISOString();
-  const report = { runId, updatedAt, mode: opts.write ? 'PARALELO' : 'SIMULACAO', start: opts.start, end: opts.end,
+  const report = { runId, updatedAt, mode: opts.write ? (opts['api-only'] ? 'PRODUCAO_API' : 'PARALELO') : 'SIMULACAO', start: opts.start, end: opts.end,
     status: 'INICIADO', sheets: 'NAO_VALIDADO', bigquery: 'NAO_VALIDADO', reconciliation: [] };
   await fs.mkdir(opts.output, { recursive: true });
   try {

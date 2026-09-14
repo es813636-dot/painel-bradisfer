@@ -134,7 +134,9 @@ test('publication uses atomic keyed MERGE, removes stale window only, asserts da
 test('safe CLI defaults and fixture-write/ungated-write protection', () => {
   assert.equal(options(['--start', start, '--end', start]).write, false);
   assert.throws(() => options(['--fixture', 'x', '--write', '--sheets']), /Fixture/);
-  assert.throws(() => options(['--write']), /--sheets/);
+  assert.throws(() => options(['--write']), /--sheets ou --api-only/);
+  assert.equal(options(['--write', '--api-only'])['api-only'], true);
+  assert.throws(() => options(['--write', '--sheets', '--api-only']), /modos exclusivos/);
   assert.throws(() => options(['--typo']), /Unknown option/);
 });
 test('offline simulation cannot instantiate a warehouse or read network', async t => {

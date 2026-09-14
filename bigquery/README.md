@@ -2,7 +2,7 @@
 
 Implementação inicial do [plano 007](../plans/007-migracao-google-sheets-bigquery-powerbi.md). O dashboard, o Power BI, as abas e os workflows existentes permanecem intactos. Nenhuma rotina deste diretório escreve no Sheets.
 
-Depois que o workflow `Atualizar Vendas por Notas e Itens` termina com sucesso, a carga paralela é iniciada automaticamente para a janela móvel dos últimos sete dias. Ela usa API, exige conciliação com o Sheets e publica somente quando todos os grupos coincidem. Falha ou cancelamento do atualizador do Sheets não inicia a carga. O disparo manual continua disponível para simulação, reprocessamento e investigação.
+A carga incremental consulta diretamente a API a cada 15 minutos, na janela móvel dos últimos sete dias. Ela concilia notas com itens, valida staging contra a API e publica em uma transação idempotente. O disparo manual continua disponível para simulação, reprocessamento e auditoria contra o Sheets.
 
 ## Executar sem credenciais
 
@@ -107,7 +107,7 @@ node run.js --start 2026-09-02 --end 2026-09-02 --sheets --write
 
 Comandos acima são exemplos de shell POSIX; no PowerShell, defina variáveis com `$env:NOME`. Revisar o SQL gerado antes de executá-lo com a identidade de bootstrap. DDL usa `CREATE TABLE IF NOT EXISTS`: não substitui tabelas existentes nem migra automaticamente um esquema incompatível. Views são criadas/atualizadas apenas por esse operador. Não usar o bootstrap no workflow de carga.
 
-O workflow `bigquery-paralelo.yml` aceita `workflow_dispatch` e `workflow_run`. No disparo manual, começa por fixtures/testes e tem `origem=fixture`/`modo=simulacao` como padrão; modo `publicar` exige origem API e conciliação Sheets. No disparo automático, roda somente após sucesso do atualizador fiscal e fixa origem API, publicação e conciliação Sheets. Não há cron adicional, alteração de agendamentos atuais ou etapa de Power BI.
+O workflow `bigquery-paralelo.yml` aceita `workflow_dispatch` e `schedule`. No disparo manual, começa por fixtures/testes e tem `origem=fixture`/`modo=simulacao` como padrão; modo `publicar` exige origem API e conciliação Sheets. No agendamento, fixa origem API, publicação e o modo explícito `--api-only`, sem depender do Sheets. O cron roda aos minutos 07, 22, 37 e 52 entre 05:00 e 23:59 no horário de São Paulo. A concorrência impede sobreposição.
 
 ## Recuperação e aceite
 

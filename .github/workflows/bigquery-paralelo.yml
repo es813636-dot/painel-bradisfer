@@ -1,10 +1,9 @@
-name: BigQuery - carga paralela manual
+name: BigQuery - carga incremental
 
 on:
-  workflow_run:
-    workflows: [Atualizar Vendas por Notas e Itens]
-    types: [completed]
-    branches: [main]
+  schedule:
+    # A cada 15 minutos, com sete minutos de defasagem das rotinas legadas.
+    - cron: '7,22,37,52 8-23,0-2 * * *'
   workflow_dispatch:
     inputs:
       origem:
@@ -41,7 +40,6 @@ concurrency:
 
 jobs:
   validar:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -60,18 +58,23 @@ jobs:
       - run: npm run simulate
       - name: Validar seleção
         env:
-          SOURCE: ${{ github.event_name == 'workflow_run' && 'api' || inputs.origem }}
-          MODE: ${{ github.event_name == 'workflow_run' && 'publicar' || inputs.modo }}
-          SHEETS: ${{ github.event_name == 'workflow_run' && 'true' || inputs.conciliar_sheets }}
+          SOURCE: ${{ github.event_name == 'schedule' && 'api' || inputs.origem }}
+          MODE: ${{ github.event_name == 'schedule' && 'publicar' || inputs.modo }}
+          SHEETS: ${{ inputs.conciliar_sheets }}
+          API_ONLY: ${{ github.event_name == 'schedule' }}
         run: |
-          if [[ "$MODE" == publicar && ( "$SOURCE" != api || "$SHEETS" != true ) ]]; then
-            echo 'Publicação exige origem API e conciliação Sheets.'
+          if [[ "$MODE" == publicar && "$SOURCE" != api ]]; then
+            echo 'Publicação exige origem API.'
+            exit 1
+          fi
+          if [[ "$MODE" == publicar && "$SHEETS" != true && "$API_ONLY" != true ]]; then
+            echo 'Publicação manual exige conciliação Sheets.'
             exit 1
           fi
 
   carga:
     needs: validar
-    if: github.event_name == 'workflow_run' || inputs.origem == 'api'
+    if: github.event_name == 'schedule' || inputs.origem == 'api'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: bigquery-paralelo
@@ -90,7 +93,7 @@ jobs:
           cache-dependency-path: bigquery/package-lock.json
       - run: npm ci --ignore-scripts
       - uses: google-github-actions/auth@v3
-        if: github.event_name == 'workflow_run' || inputs.modo == 'publicar' || inputs.conciliar_sheets
+        if: github.event_name == 'schedule' || inputs.modo == 'publicar' || inputs.conciliar_sheets
         with:
           workload_identity_provider: ${{ vars.BQ_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.BQ_WRITER_SERVICE_ACCOUNT }}
@@ -106,9 +109,10 @@ jobs:
           BQ_SHEETS_ID: ${{ vars.BQ_SHEETS_ID }}
           START: ${{ inputs.data_inicio }}
           END: ${{ inputs.data_fim }}
-          MODE: ${{ github.event_name == 'workflow_run' && 'publicar' || inputs.modo }}
+          MODE: ${{ github.event_name == 'schedule' && 'publicar' || inputs.modo }}
           STOCK: ${{ inputs.estoque }}
-          SHEETS: ${{ github.event_name == 'workflow_run' && 'true' || inputs.conciliar_sheets }}
+          SHEETS: ${{ inputs.conciliar_sheets }}
+          API_ONLY: ${{ github.event_name == 'schedule' }}
         run: |
           args=()
           [[ -z "$START" ]] || args+=(--start "$START")
@@ -116,6 +120,7 @@ jobs:
           [[ "$MODE" != publicar ]] || args+=(--write)
           [[ "$STOCK" != true ]] || args+=(--stock)
           [[ "$SHEETS" != true ]] || args+=(--sheets)
+          [[ "$API_ONLY" != true ]] || args+=(--api-only)
           node run.js "${args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
