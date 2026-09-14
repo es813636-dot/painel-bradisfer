@@ -1,0 +1,12 @@
+{
+  "name": "bradisfer-bigquery-paralelo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "simulate": "node run.js --fixture test/fixture.json --start 2026-09-10 --end 2026-09-10",
+    "schema": "node schema.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": { "googleapis": "144.0.0" }
+}

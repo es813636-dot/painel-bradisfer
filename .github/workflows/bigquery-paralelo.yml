@@ -1,0 +1,121 @@
+name: BigQuery - carga paralela manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      origem:
+        description: Origem (fixture não usa credenciais)
+        type: choice
+        default: fixture
+        options: [fixture, api]
+      modo:
+        description: Publicar exige infraestrutura e conciliação Sheets
+        type: choice
+        default: simulacao
+        options: [simulacao, publicar]
+      data_inicio:
+        description: Data inicial AAAA-MM-DD (vazio usa últimos 7 dias)
+        type: string
+      data_fim:
+        description: Data final AAAA-MM-DD (máximo 31 dias por lote)
+        type: string
+      estoque:
+        description: Incluir snapshot atual de estoque
+        type: boolean
+        default: false
+      conciliar_sheets:
+        description: Comparar abas fiscais do Sheets (obrigatório para publicar)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bigquery-paralelo
+  cancel-in-progress: false
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bigquery
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: bigquery/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: node --test ../automacao-vendas/atualizar-vendas-notas-itens.test.js
+      - run: npm run simulate
+      - name: Validar seleção
+        env:
+          SOURCE: ${{ inputs.origem }}
+          MODE: ${{ inputs.modo }}
+          SHEETS: ${{ inputs.conciliar_sheets }}
+        run: |
+          if [[ "$MODE" == publicar && ( "$SOURCE" != api || "$SHEETS" != true ) ]]; then
+            echo 'Publicação exige origem API e conciliação Sheets.'
+            exit 1
+          fi
+
+  carga:
+    needs: validar
+    if: inputs.origem == 'api'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: bigquery-paralelo
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: bigquery
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: bigquery/package-lock.json
+      - run: npm ci --ignore-scripts
+      - uses: google-github-actions/auth@v3
+        if: inputs.modo == 'publicar' || inputs.conciliar_sheets
+        with:
+          workload_identity_provider: ${{ vars.BQ_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BQ_WRITER_SERVICE_ACCOUNT }}
+      - name: Executar carga paralela
+        env:
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+          BQ_PROJECT_ID: ${{ vars.BQ_PROJECT_ID }}
+          BQ_LOCATION: ${{ vars.BQ_LOCATION }}
+          BQ_RAW_DATASET: ${{ vars.BQ_RAW_DATASET }}
+          BQ_COMERCIAL_DATASET: ${{ vars.BQ_COMERCIAL_DATASET }}
+          BQ_STAGING_DATASET: ${{ vars.BQ_STAGING_DATASET }}
+          BQ_MAX_BYTES: ${{ vars.BQ_MAX_BYTES || '1000000000' }}
+          BQ_SHEETS_ID: ${{ vars.BQ_SHEETS_ID }}
+          START: ${{ inputs.data_inicio }}
+          END: ${{ inputs.data_fim }}
+          MODE: ${{ inputs.modo }}
+          STOCK: ${{ inputs.estoque }}
+          SHEETS: ${{ inputs.conciliar_sheets }}
+        run: |
+          args=()
+          [[ -z "$START" ]] || args+=(--start "$START")
+          [[ -z "$END" ]] || args+=(--end "$END")
+          [[ "$MODE" != publicar ]] || args+=(--write)
+          [[ "$STOCK" != true ]] || args+=(--stock)
+          [[ "$SHEETS" != true ]] || args+=(--sheets)
+          node run.js "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bigquery-conciliacao-${{ github.run_id }}
+          path: bigquery/output/*.json
+          retention-days: 14
+          if-no-files-found: ignore

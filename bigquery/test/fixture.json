@@ -1,0 +1,27 @@
+{
+  "notes": [
+    {
+      "id_empresa": "1", "fantasia_empresa": "EMPRESA FICTICIA", "id_nota_saida": "500",
+      "pedido": "300", "data_emissao": "2026-09-10", "id_vendedor": "10", "vendedor": "VENDEDOR TESTE",
+      "id_cliente": "20", "razsocial_cliente": "CLIENTE FICTICIO", "cidade": "ATIBAIA", "sigla": "SP",
+      "canal": "APLICATIVO", "cfop": "5.102", "nat_operacao": "Venda de merc. adquirida ou recebida de terceiros",
+      "tipo_documento": "NF", "nf_cancelada": "NAO", "vrtotal_geral": "105.00",
+      "nota_saida_itens": [
+        { "id_produto": "1", "descricao_produto": "PRODUTO TESTE", "descricao_marca": "MARCA TESTE", "qtde": "2", "total_liquido": "40.00", "valor_unitario": "20", "custo_produto": "10" },
+        { "id_produto": "1", "descricao_produto": "PRODUTO TESTE", "descricao_marca": "MARCA TESTE", "qtde": "3", "total_liquido": "60.00", "valor_unitario": "20", "custo_produto": "10" }
+      ]
+    },
+    {
+      "id_empresa": "4", "fantasia_empresa": "MARKETPLACE FICTICIO", "id_nota_saida": "600",
+      "pedido": "301", "data_emissao": "2026-09-10", "id_vendedor": "1604", "vendedor": "VENDEDOR ONLINE",
+      "id_cliente": "21", "razsocial_cliente": "CLIENTE FICTICIO", "cidade": "ATIBAIA", "sigla": "SP",
+      "canal": "SHOPEE", "cfop": "6.102", "nat_operacao": "Venda", "tipo_documento": "NF", "nf_cancelada": "NAO", "vrtotal_geral": "50.00",
+      "nota_saida_itens": [
+        { "id_produto": "2", "descricao_produto": "PRODUTO ONLINE", "descricao_marca": "MARCA ONLINE", "qtde": "1", "total_liquido": "48.00", "valor_unitario": "48", "custo_produto": "20" }
+      ]
+    }
+  ],
+  "products": [
+    { "id_produto": "1", "cod_barra": "0074468051034", "descricao": "PRODUTO TESTE", "descricao_marca": "MARCA TESTE", "unidade": "UN", "estoque_disponivel": "7", "estoque": "10", "estoque_minimo": "2", "estoque_maximo": "20", "custo": "10.1234", "preço_venda": "20.5678" }
+  ]
+}

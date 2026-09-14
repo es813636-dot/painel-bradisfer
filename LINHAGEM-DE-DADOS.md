@@ -6,6 +6,8 @@
 
 ## Visão geral do fluxo
 
+**Carga paralela BigQuery (14/09/2026):** infraestrutura e rotina separada em [`bigquery/README.md`](bigquery/README.md), ainda sem ativação GCP. Consome `listaPedidosNotasSaida` (empresas 1/3/4) e, opcionalmente, o catálogo de estoque; lê `VendasBradisfer` e `VendasOnline_Resumo` somente para conciliação. O workflow novo é exclusivamente manual. Os fluxos atuais abaixo e a fonte de produção do Power BI permanecem intactos. Projeto, datasets, região e permissões pendentes estão registrados no roteiro de ativação.
+
 ```mermaid
 flowchart LR
     SYS[("Sysemp (ERP)")]

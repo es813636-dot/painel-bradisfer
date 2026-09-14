@@ -1,0 +1,7 @@
+node_modules/
+output/
+gha-creds-*.json
+*.tfstate*
+.terraform/
+*.tfvars
+!example.tfvars
