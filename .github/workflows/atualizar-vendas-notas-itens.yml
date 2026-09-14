@@ -21,6 +21,30 @@ on:
         description: Data final opcional (AAAA-MM-DD)
         required: false
         type: string
+      incluir_b2b:
+        description: Incluir vendas B2B
+        required: true
+        default: '0'
+        type: choice
+        options:
+          - '0'
+          - '1'
+      incluir_online:
+        description: Incluir vendas online
+        required: true
+        default: '1'
+        type: choice
+        options:
+          - '0'
+          - '1'
+      so_simular:
+        description: Apenas consultar, sem alterar a planilha
+        required: true
+        default: '0'
+        type: choice
+        options:
+          - '0'
+          - '1'
 
 concurrency:
   group: atualizar-vendas-notas-itens
@@ -54,5 +78,6 @@ jobs:
           DATA_INICIO: ${{ inputs.data_inicio }}
           DATA_FIM: ${{ inputs.data_fim }}
           JANELA_DIAS: '7'
-          INCLUIR_B2B: '0'
-          INCLUIR_ONLINE: '1'
+          INCLUIR_B2B: ${{ github.event_name == 'workflow_dispatch' && inputs.incluir_b2b || '0' }}
+          INCLUIR_ONLINE: ${{ github.event_name == 'workflow_dispatch' && inputs.incluir_online || '1' }}
+          SO_SIMULAR: ${{ github.event_name == 'workflow_dispatch' && inputs.so_simular || '0' }}
