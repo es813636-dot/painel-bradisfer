@@ -6,7 +6,7 @@ const SHEET_ID = '1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A';
 const NOTES_URL = 'https://api.sysemp.com.br/163/listaPedidosNotasSaida';
 const TAB_B2B_NOTES = 'VendasB2B_Notas';
 const TAB_B2B_ITEMS = 'VendasB2B_Itens';
-const TAB_B2B_SUMMARY = 'VendasB2B_Resumo';
+const TAB_B2B_SUMMARY = 'VendasBradisfer';
 const TAB_B2B_CONTROL = 'ConciliacaoB2B';
 const TAB_ONLINE_SUMMARY = 'VendasOnline_Resumo';
 const TAB_ONLINE_ITEMS = 'VendasOnline_Itens';
@@ -526,7 +526,7 @@ function firstChangedRow(before, after) {
 }
 
 function mergeWindow(existing, header, newRows, dateColumnIndex, start, end, mode) {
-  if (existing.length && JSON.stringify(existing[0]) !== JSON.stringify(header)) {
+  if (mode !== 'historico' && existing.length && JSON.stringify(existing[0]) !== JSON.stringify(header)) {
     throw new Error(`Cabeçalho inesperado em ${header[0]}.`);
   }
   const preserved = mode === 'historico' ? [] : existing.slice(1).filter(row => {
@@ -564,10 +564,10 @@ function projectedGridCellCount(tabs, targets) {
   for (const [name, properties] of tabs) {
     const target = targetByName.get(name);
     const rows = target
-      ? Math.max(properties.gridProperties.rowCount, target.after.length, 1)
+      ? (target.shrinkGrid ? Math.max(target.after.length, 1) : Math.max(properties.gridProperties.rowCount, target.after.length, 1))
       : properties.gridProperties.rowCount;
     const columns = target
-      ? Math.max(properties.gridProperties.columnCount, target.columns, 1)
+      ? (target.shrinkGrid ? Math.max(target.columns, 1) : Math.max(properties.gridProperties.columnCount, target.columns, 1))
       : properties.gridProperties.columnCount;
     cells += rows * columns;
     targetByName.delete(name);
@@ -607,7 +607,7 @@ async function readTab(sheets, tabs, name, columns) {
   return response.data.values || [];
 }
 
-async function writeExact(sheets, tabs, name, values, currentValues = []) {
+async function writeExact(sheets, tabs, name, values, currentValues = [], shrinkGrid = false) {
   const neededRows = Math.max(values.length, 1);
   const neededColumns = Math.max(...values.map(row => row.length), 1);
   const properties = await ensureTab(sheets, tabs, name, neededRows, neededColumns);
@@ -637,6 +637,16 @@ async function writeExact(sheets, tabs, name, values, currentValues = []) {
       spreadsheetId: SHEET_ID,
       range: `${name}!A${values.length + 1}:${columnName(properties.gridProperties.columnCount)}${properties.gridProperties.rowCount}`,
     });
+  }
+  if (shrinkGrid && (properties.gridProperties.rowCount !== neededRows || properties.gridProperties.columnCount !== neededColumns)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests: [{
+      updateSheetProperties: {
+        properties: { sheetId: properties.sheetId, gridProperties: { rowCount: neededRows, columnCount: neededColumns } },
+        fields: 'gridProperties(rowCount,columnCount)',
+      },
+    }] } });
+    properties.gridProperties.rowCount = neededRows;
+    properties.gridProperties.columnCount = neededColumns;
   }
 }
 
@@ -682,7 +692,7 @@ async function main() {
     }
   }
 
-  const needsBootstrap = (includeB2B && (!beforeB2BSummary.length
+  const needsBootstrap = (includeB2B && ((!beforeB2BSummary.length || JSON.stringify(beforeB2BSummary[0]) !== JSON.stringify(B2B_SUMMARY_HEADER))
       || (includeB2BDetails && (!beforeB2BNotes.length || !beforeB2BItems.length))))
     || (includeOnline && (!beforeOnlineSummary.length || !beforeOnlineItems.length));
   const mode = simulate ? requestedMode : (needsBootstrap ? 'historico' : requestedMode);
@@ -749,7 +759,7 @@ async function main() {
 
   const targets = [];
   if (includeB2B) targets.push(
-    { name: TAB_B2B_SUMMARY, before: beforeB2BSummary, after: finalB2BSummary, columns: B2B_SUMMARY_HEADER.length },
+    { name: TAB_B2B_SUMMARY, before: beforeB2BSummary, after: finalB2BSummary, columns: B2B_SUMMARY_HEADER.length, shrinkGrid: true },
     { name: TAB_B2B_CONTROL, before: beforeB2BControl, after: finalB2BControl, columns: CONTROL_HEADER.length },
   );
   if (includeB2B && includeB2BDetails) targets.push(
@@ -770,7 +780,7 @@ async function main() {
   try {
     for (const target of targets) {
       changed.push(target);
-      await writeExact(sheets, tabs, target.name, target.after, target.before);
+      await writeExact(sheets, tabs, target.name, target.after, target.before, target.shrinkGrid);
       const actual = await readTab(sheets, tabs, target.name, target.columns);
       if (gridHash(actual) !== gridHash(target.after)) throw new Error(`Conferência após gravação falhou em ${target.name}.`);
       console.log(`${target.name}: ${target.after.length - 1} linha(s), gravação conferida.`);

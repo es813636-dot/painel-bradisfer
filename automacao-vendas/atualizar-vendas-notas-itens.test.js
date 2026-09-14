@@ -156,6 +156,12 @@ test('carga histórica descarta todas as linhas anteriores', () => {
   assert.deepEqual(result, [ITEMS_HEADER, fresh]);
 });
 
+test('carga histórica permite substituir uma aba do formato anterior', () => {
+  const fresh = Array(B2B_SUMMARY_HEADER.length).fill(''); fresh[4] = '2026-09-14';
+  const result = mergeWindow([['CabecalhoAntigo'], ['valor']], B2B_SUMMARY_HEADER, [fresh], 4, '2026-01-02', '2026-09-14', 'historico');
+  assert.deepEqual(result, [B2B_SUMMARY_HEADER, fresh]);
+});
+
 test('gera lista diária inclusiva e valida a janela', () => {
   assert.deepEqual(dateList('2026-09-12', '2026-09-14'), ['2026-09-12', '2026-09-13', '2026-09-14']);
   assert.throws(() => dateList('2026-09-14', '2026-09-12'), /inválida/);
@@ -164,10 +170,10 @@ test('gera lista diária inclusiva e valida a janela', () => {
 test('projeta células usando a grade existente e a expansão necessária', () => {
   const tabs = new Map([
     ['Existente', { gridProperties: { rowCount: 100, columnCount: 10 } }],
-    ['Alvo', { gridProperties: { rowCount: 50, columnCount: 8 } }],
+    ['Alvo', { gridProperties: { rowCount: 50, columnCount: 20 } }],
   ]);
   const targets = [
-    { name: 'Alvo', after: Array(70), columns: 12 },
+    { name: 'Alvo', after: Array(70), columns: 12, shrinkGrid: true },
     { name: 'Nova', after: Array(1500), columns: 28 },
   ];
   assert.equal(projectedGridCellCount(tabs, targets), 1000 + 840 + 42000);
