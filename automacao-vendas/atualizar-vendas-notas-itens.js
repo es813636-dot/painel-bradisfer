@@ -340,6 +340,54 @@ function validatePrepared(prepared, { excludeMarcus = true } = {}) {
   return { fiscalCents, itemCents, adjustmentCents, allocatedFiscalCents, differenceCents: fiscalCents - allocatedFiscalCents };
 }
 
+function summarizeByCompany(prepared) {
+  const companies = new Map();
+  const getCompany = (companyId, company) => {
+    const current = companies.get(companyId) || {
+      companyId, company, notes: 0, itemRows: 0, quantity: 0,
+      fiscalCents: 0, liquidCents: 0, adjustmentCents: 0, costCents: 0,
+      sellers: new Set(), clients: new Set(), products: new Set(),
+    };
+    companies.set(companyId, current);
+    return current;
+  };
+  for (const note of prepared.notes.values()) {
+    const current = getCompany(note.companyId, note.company);
+    current.notes += 1;
+    current.fiscalCents += note.noteTotalCents;
+    current.liquidCents += note.itemTotalCents;
+    current.adjustmentCents += note.adjustmentCents;
+    if (note.sellerId && note.sellerId !== 'SEM_VENDEDOR') current.sellers.add(note.sellerId);
+    const clientId = note.row?.[13];
+    if (clientId) current.clients.add(clientId);
+  }
+  for (const item of prepared.items.values()) {
+    const current = getCompany(item.companyId, item.company);
+    current.itemRows += 1;
+    current.quantity += item.quantity;
+    current.costCents += item.costCents;
+    if (item.productId) current.products.add(item.productId);
+  }
+  return [...companies.values()]
+    .sort((a, b) => a.companyId.localeCompare(b.companyId, 'pt-BR', { numeric: true }))
+    .map(value => ({
+      companyId: value.companyId,
+      company: value.company,
+      sales: value.notes,
+      itemRows: value.itemRows,
+      quantity: amount(Math.round(value.quantity * 100)),
+      products: value.products.size,
+      clients: value.clients.size,
+      sellers: value.sellers.size,
+      fiscalTotal: amount(value.fiscalCents),
+      itemTotal: amount(value.liquidCents),
+      adjustment: amount(value.adjustmentCents),
+      costTotal: amount(value.costCents),
+      grossMargin: amount(value.fiscalCents - value.costCents),
+      grossMarginPct: value.fiscalCents ? Math.round((value.fiscalCents - value.costCents) * 10000 / value.fiscalCents) / 100 : 0,
+    }));
+}
+
 async function postNotes(token, body, attempt = 1) {
   try {
     const response = await fetch(NOTES_URL, {
@@ -621,7 +669,7 @@ async function main() {
   });
   const result = {
     mode, start, end, segments: { b2b: includeB2B, online: includeOnline },
-    b2b: segmentResult('b2b'),
+    b2b: { ...segmentResult('b2b'), byCompany: summarizeByCompany(prepared.b2b) },
     online: { ...segmentResult('online'), summaryRows: newOnlineSummary.length, itemSummaryRows: newOnlineItems.length },
     plannedDataCells: (includeB2B ? (newB2BNotes.length * NOTES_HEADER.length) + (newB2BItems.length * ITEMS_HEADER.length) : 0)
       + (includeOnline ? (newOnlineSummary.length * ONLINE_SUMMARY_HEADER.length) + (newOnlineItems.length * ONLINE_ITEMS_HEADER.length) : 0),
@@ -695,7 +743,7 @@ module.exports = {
   NOTES_HEADER, ITEMS_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER, CONTROL_HEADER,
   MARCUS_ID, prepareData, summarizeOnline, validatePrepared,
   mergeWindow, noteKey, itemKey, isSaleNote, classifyNote, dateList, allocateAdjustment,
-  projectedGridCellCount, firstChangedRow,
+  projectedGridCellCount, firstChangedRow, summarizeByCompany,
 };
 
 if (require.main === module) main().catch(error => {
