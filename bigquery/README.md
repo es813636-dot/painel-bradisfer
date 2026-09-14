@@ -1,6 +1,6 @@
-# BigQuery — carga paralela Bradisfer
+# BigQuery — carga incremental Bradisfer
 
-Implementação inicial do [plano 007](../plans/007-migracao-google-sheets-bigquery-powerbi.md). O dashboard, o Power BI, as abas e os workflows existentes permanecem intactos. Nenhuma rotina deste diretório escreve no Sheets.
+Implementação em produção do [plano 007](../plans/007-migracao-google-sheets-bigquery-powerbi.md). Desde 14/09/2026, as seis tabelas de vendas, clientes e datas do Power BI leem o BigQuery. As quatro tabelas manuais continuam no Sheets e nenhuma rotina deste diretório escreve na planilha.
 
 A carga incremental consulta diretamente a API a cada 15 minutos, na janela móvel dos últimos sete dias. Ela concilia notas com itens, valida staging contra a API e publica em uma transação idempotente. O disparo manual continua disponível para simulação, reprocessamento e auditoria contra o Sheets.
 
@@ -17,7 +17,7 @@ node run.js --fixture test/fixture.json --start 2026-09-10 --end 2026-09-10 --st
 
 Fixtures contêm somente dados fictícios. Simulação não inicializa cliente BigQuery, não carrega ADC e não publica nada. O relatório registra `NAO_VALIDADO` para serviços que não foram consultados; sucesso de fixture não comprova conciliação real. Relatórios ficam em `output/<execucao>.json`, ignorados pelo Git. Não são gravados payloads, nomes de clientes ou credenciais nos relatórios.
 
-Validação local em 14/09/2026: 72 testes passaram ao executar `node --test bigquery/test/*.test.js automacao-vendas/*.test.js` na raiz do repositório; `terraform validate` passou com Terraform 1.9.8 e provider Google 6.50.0. Esses testes exercitam transformação, falhas e orquestração com doubles; execução e idempotência do SQL no serviço BigQuery continuam pendentes da infraestrutura real.
+Validação em 14/09/2026: 72 testes passaram ao executar `node --test bigquery/test/*.test.js automacao-vendas/*.test.js` na raiz do repositório; `terraform validate` passou com Terraform 1.9.8 e provider Google 6.50.0. A infraestrutura real, a carga histórica, a repetição idempotente e a atualização integral do modelo Power BI também foram executadas com sucesso.
 
 Para consultar a API existente sem escrever, disponibilize `SYSEMP_TOKEN` no ambiente:
 
@@ -47,7 +47,7 @@ Datas omitidas usam hoje em São Paulo e os seis dias anteriores. Há limite de 
 | `comercial.conciliacao_cargas` | Valores esperados/observados e diferença por fonte/grupo/execução |
 | `staging.*_<execucao>` | Tabelas isoladas de cada tentativa, com expiração em 24 horas |
 
-`vw_vendas_bradisfer`, `vw_vendas_online_resumo` e `vw_vendas_online_itens` preservam os nomes de colunas dos resumos fiscais atuais. Os tipos são nativos do BigQuery. A compatibilidade com consultas M e medidas DAX reais ainda precisa ser validada em cópia do modelo. Estas views não alteram a fonte de produção.
+`vw_vendas_bradisfer`, `vw_vendas_online_resumo` e `vw_vendas_online_itens` preservam os nomes de colunas dos resumos fiscais atuais. Os tipos são nativos do BigQuery. As consultas M, os relacionamentos e as medidas DAX foram validados no modelo real após a atualização integral.
 
 Dados raw representam a última versão da janela, e não um arquivo imutável de todas as versões. Os hashes, horários e registros de execução permitem rastrear a carga. Não há bucket adicional ou streaming insert; são usados load jobs com esquema explícito e tolerância zero a registros inválidos.
 
@@ -78,19 +78,17 @@ OIDC restringe IDs numéricos do repositório e proprietário, branch, caminho d
 
 Não é criada chave permanente do escritor GitHub. Não se reutiliza `GOOGLE_SERVICE_ACCOUNT_KEY` das automações atuais. A chave/leitura Power BI deve ser configurada apenas no serviço Power BI quando houver autorização para testar uma cópia; nunca no GitHub. Se o conector escolhido precisar da Storage Read API, um administrador poderá acrescentar `roles/bigquery.readSessionUser` ao leitor no projeto, após validar essa necessidade. A CLI aceita `BQ_SHEETS_READER_KEY` como alternativa para uma conta exclusiva de leitura; o workflow prefere ADC/OIDC sem chave.
 
-## O que falta para executar no GCP
+## Estado implantado
 
-Nenhum valor abaixo foi presumido ou provisionado nesta entrega:
+Concluído em 14/09/2026:
 
-- Projeto GCP dedicado (`BQ_PROJECT_ID`) e conta de cobrança vinculada.
-- Região confirmada (`BQ_LOCATION`) e nomes definitivos dos três datasets (`BQ_RAW_DATASET`, `BQ_COMERCIAL_DATASET`, `BQ_STAGING_DATASET`). Os nomes no exemplo são sugestões.
-- Operador com permissão para ativar APIs, criar datasets/papéis/contas/federação e aplicar o DDL.
-- Aplicar Terraform; obter `BQ_WORKLOAD_IDENTITY_PROVIDER` e `BQ_WRITER_SERVICE_ACCOUNT` dos outputs.
-- Criar environment GitHub `bigquery-paralelo`, com restrição de branch e revisão apropriada, e cadastrar essas variáveis. O workflow deve estar integrado à branch principal para o disparo manual padrão.
-- Definir `BQ_SHEETS_ID` (planilha atual: `1KThPNCmslfoK3zpzxhK6Jh8taj5tKEiNkmsbHTWnV-A`) e compartilhar como Leitor com o escritor GCP; disponibilizar o secret existente `SYSEMP_TOKEN` ao environment. Não é possível extrair o valor de secrets do GitHub para testes locais.
-- Configurar orçamento e alertas de R$ 20 / R$ 50 na conta de cobrança e destinatários. **Orçamentos alertam; não são um bloqueio automático de gastos.** `BQ_MAX_BYTES` limita cada query (padrão 1 GB), não o custo mensal total nem armazenamento; definir também quotas operacionais conforme volume real.
-- Identificar abas e contrato de metas, carteiras e ajustes manuais. A tabela de metas fica vazia até esse mapeamento; nenhum dado manual é presumido.
-- Validar SQL, IAM/OIDC, permissões de leitura Sheets, carga real repetida, cancelamento/correção, custos e Power BI em cópia durante os sete dias de paralelo previstos. Nenhuma dessas verificações em nuvem é substituída pelos testes locais.
+- Projeto `bradisfer-bi`, datasets `bradisfer_raw`, `bradisfer_staging` e `bradisfer_comercial`, APIs, IAM e federação OIDC.
+- Carga histórica de 02/01/2026 a 13/09/2026 e carga incremental do dia 14/09/2026.
+- Workflow de carga direta da API a cada 15 minutos, com janela móvel de sete dias e escrita idempotente.
+- Migração de `Fact_Vendas`, `Dim_Cliente`, `Dim_Data`, `Fact_VendasOnline`, `Fact_OnlineResumo` e `Fact_ItensOnline` para o BigQuery.
+- Atualização integral do Power BI, validação das datas de 02/01/2026 a 14/09/2026 e ausência de chaves duplicadas nas quatro tabelas fato.
+
+Continuam manuais no Sheets: `Dim_Vendedor`, `Dim_Carteira`, `Meta_Marca` e `Clientes_Revisao_Manual`. `Meta_Vendedor` permanece embutida no modelo. A publicação do conjunto de dados no Power BI Service e a configuração das credenciais BigQuery no serviço são etapas do operador quando o relatório for publicado.
 
 Sequência do operador, a partir de `bigquery/`, com variáveis acima configuradas:
 
@@ -113,6 +111,6 @@ O workflow `bigquery-paralelo.yml` aceita `workflow_dispatch` e `schedule`. No d
 
 Em divergência: consultar o relatório, resolver a fonte ou esperar o Sheets e reexecutar a mesma janela. Em job pendente: consultar seu resultado antes de qualquer nova carga. Em erro dentro da transação: dados anteriores são preservados. Em erro após uma publicação comprovadamente incorreta: corrigir transformação/origem e reprocessar a janela; não apagar raw/comercial indiscriminadamente.
 
-Interromper o uso do novo workflow basta para suspender o paralelo. Sheets e Power BI continuam operando pela arquitetura existente. A virada exige uma tarefa posterior expressamente autorizada, sete dias de evidência e validação das consultas/DAX em cópia.
+Para suspender novas cargas, desabilitar o workflow `BigQuery - carga incremental`. Os dados já publicados permanecem no BigQuery e o Power BI continua consultando a última versão disponível.
 
 Referências técnicas: [transações BigQuery](https://docs.cloud.google.com/bigquery/docs/transactions), [MERGE](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax), [papéis IAM](https://docs.cloud.google.com/bigquery/docs/access-control), [federação para pipelines](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines).
