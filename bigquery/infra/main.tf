@@ -98,7 +98,8 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "google.subject"          = "assertion.sub"
     "attribute.repository_id" = "assertion.repository_id"
   }
-  attribute_condition = "assertion.repository_owner_id == '${var.github_owner_id}' && assertion.repository_id == '${var.github_repository_id}' && assertion.ref == '${var.github_ref}' && assertion.workflow_ref == '${var.github_repository}/.github/workflows/bigquery-paralelo.yml@${var.github_ref}' && assertion.sub == 'repo:${var.github_repository}:environment:bigquery-paralelo'"
+  # GitHub repositories created after 2026-07-15 use immutable IDs in sub.
+  attribute_condition = "assertion.repository_owner_id == '${var.github_owner_id}' && assertion.repository_id == '${var.github_repository_id}' && assertion.ref == '${var.github_ref}' && assertion.workflow_ref == '${var.github_repository}/.github/workflows/bigquery-paralelo.yml@${var.github_ref}' && assertion.sub == 'repo:${split("/", var.github_repository)[0]}@${var.github_owner_id}/${split("/", var.github_repository)[1]}@${var.github_repository_id}:environment:bigquery-paralelo'"
   oidc { issuer_uri = "https://token.actions.githubusercontent.com" }
 }
 resource "google_service_account_iam_member" "oidc" {
