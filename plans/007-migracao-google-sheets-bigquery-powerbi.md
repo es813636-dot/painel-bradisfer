@@ -4,7 +4,7 @@
 **Escopo:** vendas B2B e marketplace, itens vendidos, estoque, metas e dimensões comerciais  
 **Recomendação:** Google BigQuery como banco analítico; Google Sheets mantido apenas para entradas manuais
 
-**Status:** implementação local da carga paralela iniciada em 14/09/2026, por solicitação expressa. Infraestrutura, esquemas, carga, conciliação, testes e workflow manual em `bigquery/`; ativação GCP e validação real pendentes dos dados e acessos listados em [bigquery/README.md](../bigquery/README.md). A arquitetura atual permanece em produção. Etapas de virada e limpeza não estão autorizadas nesta execução.
+**Status:** infraestrutura, esquema, carga histórica e conciliação real concluídos em 14/09/2026. A carga paralela incremental passa a ser disparada após cada atualização fiscal bem-sucedida do Sheets e continua bloqueando publicações divergentes. A arquitetura atual permanece em produção; a troca da fonte do Power BI depende do período de validação paralela.
 
 ## 1. Motivo da migração
 
