@@ -39,10 +39,10 @@ resource "google_project_service" "apis" {
 }
 
 resource "google_bigquery_dataset" "data" {
-  for_each                   = toset([var.raw_dataset, var.comercial_dataset, var.staging_dataset])
-  dataset_id                 = each.key
-  location                   = var.location
-  delete_contents_on_destroy = false
+  for_each                    = toset([var.raw_dataset, var.comercial_dataset, var.staging_dataset])
+  dataset_id                  = each.key
+  location                    = var.location
+  delete_contents_on_destroy  = false
   default_table_expiration_ms = each.key == var.staging_dataset ? 86400000 : null
   lifecycle { prevent_destroy = true }
   depends_on = [google_project_service.apis]
@@ -89,7 +89,7 @@ resource "google_project_iam_member" "jobs" {
 
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "bradisfer-github"
-  depends_on               = [google_project_service.apis]
+  depends_on                = [google_project_service.apis]
 }
 resource "google_iam_workload_identity_pool_provider" "github" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
@@ -103,8 +103,8 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 }
 resource "google_service_account_iam_member" "oidc" {
   service_account_id = google_service_account.writer.name
-  role              = "roles/iam.workloadIdentityUser"
-  member            = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository_id/${var.github_repository_id}"
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository_id/${var.github_repository_id}"
 }
 
 output "workload_identity_provider" { value = google_iam_workload_identity_pool_provider.github.name }

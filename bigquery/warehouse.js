@@ -23,7 +23,7 @@ function publicationSQL(c, data, runId) {
     if (tables[name].partition) sql.push(`ASSERT NOT EXISTS(SELECT 1 FROM ${stage} S WHERE NOT (${windowFilter('S')})) AS 'Janela inválida';`);
     // Match by key; the boundary check above prevents writes outside the window.
     sql.push(`MERGE ${target} T USING ${stage} S ON T.chave = S.chave
-      WHEN MATCHED THEN UPDATE SET ${tables[name].fields.filter(f => f.name !== 'chave').map(f => `T.${f.name} = S.${f.name}`).join(', ')}
+      WHEN MATCHED THEN UPDATE SET ${tables[name].fields.filter(f => f.name !== 'chave').map(f => `${f.name} = S.${f.name}`).join(', ')}
       WHEN NOT MATCHED THEN INSERT (${cols}) VALUES (${tables[name].fields.map(f => `S.${f.name}`).join(', ')})
       WHEN NOT MATCHED BY SOURCE${tables[name].partition ? ` AND ${windowFilter('T')}` : ''} THEN DELETE;`);
     const where = tables[name].partition ? ' WHERE data_emissao BETWEEN @start AND @end' : '';

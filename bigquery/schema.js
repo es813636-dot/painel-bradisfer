@@ -53,22 +53,28 @@ function ddl(c) {
     cidade Cidade, uf UF, canal Canal, marca Marca, quantidade Quantidade, faturamento Faturamento,
     chave ChaveResumo, atualizado_em AtualizadoEm FROM ${s} WHERE segmento = 'b2b'`);
   view('vw_vendas_online_resumo', `WITH custos AS (SELECT chave_nota, SUM(custo_total) custo FROM ${i} GROUP BY 1)
-    SELECT empresa_id EmpresaId, empresa Empresa, data_emissao DataEmissao, canal Canal,
+    SELECT empresa_id EmpresaId, MAX(empresa) Empresa, data_emissao DataEmissao, canal Canal,
     COUNT(*) Vendas, SUM(total_fiscal) Faturamento, SUM(total_fiscal-ajuste_fiscal) ReceitaLiquidaItens,
     SUM(ajuste_fiscal) AjusteFiscal, SUM(COALESCE(custo,0)) CustoTotalItens,
     ROUND(SAFE_DIVIDE(SUM(total_fiscal),COUNT(*)),2) TicketMedio,
     CONCAT(empresa_id,'|',CAST(data_emissao AS STRING),'|',canal) ChaveResumo,
     MAX(atualizado_em) AtualizadoEm FROM ${n} LEFT JOIN custos ON chave=chave_nota
-    WHERE segmento = 'online' GROUP BY 1,2,3,4`);
-  view('vw_vendas_online_itens', `SELECT empresa_id EmpresaId, empresa Empresa, data_emissao DataEmissao, canal Canal,
-    cfop CFOP, produto_id IdProduto, produto Produto, marca Marca, grupo Grupo, categoria Categoria,
+    WHERE segmento = 'online' GROUP BY 1,3,4`);
+  view('vw_vendas_online_itens', `WITH itens AS (SELECT *,
+    IF(produto_id != '',produto_id,CONCAT(REGEXP_REPLACE(NORMALIZE(UPPER(produto),NFD),r'\\p{M}',''),'|',REGEXP_REPLACE(NORMALIZE(UPPER(marca),NFD),r'\\p{M}',''))) produto_chave
+    FROM ${i} WHERE segmento='online')
+    SELECT empresa_id EmpresaId, MAX(empresa) Empresa, data_emissao DataEmissao, canal Canal,
+    cfop CFOP, MAX(produto_id) IdProduto,
+    ARRAY_AGG(produto ORDER BY chave LIMIT 1)[OFFSET(0)] Produto,
+    ARRAY_AGG(marca ORDER BY chave LIMIT 1)[OFFSET(0)] Marca,
+    ARRAY_AGG(grupo ORDER BY chave LIMIT 1)[OFFSET(0)] Grupo,
+    ARRAY_AGG(categoria ORDER BY chave LIMIT 1)[OFFSET(0)] Categoria,
     SUM(quantidade) Quantidade, COUNT(DISTINCT chave_nota) PedidosComProduto, SUM(valor_liquido) ValorLiquidoItem,
     SUM(ajuste_fiscal_alocado) AjusteFiscalAlocado, SUM(valor_faturado) ValorFaturado, SUM(custo_total) CustoTotalItem,
     SUM(valor_faturado-custo_total) MargemBruta,
-    CONCAT(empresa_id,'|',CAST(data_emissao AS STRING),'|',canal,'|',cfop,'|',
-      IF(produto_id != '',produto_id,CONCAT(REGEXP_REPLACE(NORMALIZE(UPPER(produto),NFD),r'\\pM',''),'|',REGEXP_REPLACE(NORMALIZE(UPPER(marca),NFD),r'\\pM','')))) ChaveResumoItem,
+    CONCAT(empresa_id,'|',CAST(data_emissao AS STRING),'|',canal,'|',cfop,'|',produto_chave) ChaveResumoItem,
     MAX(atualizado_em) AtualizadoEm
-    FROM ${i} WHERE segmento='online' GROUP BY 1,2,3,4,5,6,7,8,9,10`);
+    FROM itens GROUP BY empresa_id,data_emissao,canal,cfop,produto_chave`);
   view('dim_produto', `WITH produtos AS (
     SELECT produto_id, produto, marca, grupo, categoria, atualizado_em, chave FROM ${i}
     UNION ALL SELECT produto_id, produto, marca, grupo, subgrupo categoria, atualizado_em, chave FROM ${ref(c, 'fato_estoque_atual')})

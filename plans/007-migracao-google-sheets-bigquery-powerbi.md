@@ -4,7 +4,7 @@
 **Escopo:** vendas B2B e marketplace, itens vendidos, estoque, metas e dimensões comerciais  
 **Recomendação:** Google BigQuery como banco analítico; Google Sheets mantido apenas para entradas manuais
 
-**Status:** aguardando execução. Iniciar quando a planilha atingir o limite de células, uma carga for recusada por falta de capacidade ou o desempenho das atualizações se tornar inadequado. Até esse momento, manter a arquitetura atual e conservar este documento como roteiro aprovado para a migração.
+**Status:** implementação local da carga paralela iniciada em 14/09/2026, por solicitação expressa. Infraestrutura, esquemas, carga, conciliação, testes e workflow manual em `bigquery/`; ativação GCP e validação real pendentes dos dados e acessos listados em [bigquery/README.md](../bigquery/README.md). A arquitetura atual permanece em produção. Etapas de virada e limpeza não estão autorizadas nesta execução.
 
 ## 1. Motivo da migração
 
@@ -154,7 +154,7 @@ O Supabase Pro oferece PostgreSQL gerenciado a partir de US$ 25/mês, aproximada
 - As consultas antigas ficam preservadas por 30 dias.
 - Toda carga registra quantidade, valor e diferença de conciliação.
 - O GitHub Actions falha antes de publicar dados quando encontra divergência.
-- Um orçamento no Google Cloud limita e alerta sobre consumo inesperado.
+- Um orçamento no Google Cloud alerta sobre consumo inesperado; não bloqueia gastos automaticamente. Limites de consultas e quotas devem ser configurados separadamente.
 
 ## 7. Referências de preço e compatibilidade
 
