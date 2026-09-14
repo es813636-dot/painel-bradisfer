@@ -2,7 +2,7 @@
 
 Implementação em produção do [plano 007](../plans/007-migracao-google-sheets-bigquery-powerbi.md). Desde 14/09/2026, as seis tabelas de vendas, clientes e datas do Power BI leem o BigQuery. As quatro tabelas manuais continuam no Sheets e nenhuma rotina deste diretório escreve na planilha.
 
-A carga incremental consulta diretamente a API a cada 15 minutos, na janela móvel dos últimos sete dias. Ela concilia notas com itens, valida staging contra a API e publica em uma transação idempotente. O disparo manual continua disponível para simulação, reprocessamento e auditoria contra o Sheets.
+A carga incremental consulta diretamente a API a cada 5 minutos, somente para o dia atual. Uma reconciliação diária às 04:30 reprocessa a janela móvel dos últimos sete dias para capturar cancelamentos e correções retroativas. As duas rotinas conciliam notas com itens, validam staging contra a API e publicam em uma transação idempotente. O disparo manual continua disponível para simulação, reprocessamento e auditoria contra o Sheets.
 
 ## Executar sem credenciais
 
@@ -84,7 +84,7 @@ Concluído em 14/09/2026:
 
 - Projeto `bradisfer-bi`, datasets `bradisfer_raw`, `bradisfer_staging` e `bradisfer_comercial`, APIs, IAM e federação OIDC.
 - Carga histórica de 02/01/2026 a 13/09/2026 e carga incremental do dia 14/09/2026.
-- Workflow de carga direta da API a cada 15 minutos, com janela móvel de sete dias e escrita idempotente.
+- Workflow de carga direta da API a cada 5 minutos para o dia atual, mais reconciliação móvel de sete dias uma vez por madrugada, com escrita idempotente.
 - Migração de `Fact_Vendas`, `Dim_Cliente`, `Dim_Data`, `Fact_VendasOnline`, `Fact_OnlineResumo` e `Fact_ItensOnline` para o BigQuery.
 - Atualização integral do Power BI, validação das datas de 02/01/2026 a 14/09/2026 e ausência de chaves duplicadas nas quatro tabelas fato.
 
@@ -105,7 +105,7 @@ node run.js --start 2026-09-02 --end 2026-09-02 --sheets --write
 
 Comandos acima são exemplos de shell POSIX; no PowerShell, defina variáveis com `$env:NOME`. Revisar o SQL gerado antes de executá-lo com a identidade de bootstrap. DDL usa `CREATE TABLE IF NOT EXISTS`: não substitui tabelas existentes nem migra automaticamente um esquema incompatível. Views são criadas/atualizadas apenas por esse operador. Não usar o bootstrap no workflow de carga.
 
-O workflow `bigquery-paralelo.yml` aceita `workflow_dispatch` e `schedule`. No disparo manual, começa por fixtures/testes e tem `origem=fixture`/`modo=simulacao` como padrão; modo `publicar` exige origem API e conciliação Sheets, enquanto `publicar_api` é a recuperação operacional explícita sem Sheets. No agendamento, fixa origem API, `publicar_api` e o modo `--api-only`. O cron roda aos minutos 07, 22, 37 e 52 entre 05:00 e 23:59 no horário de São Paulo. A concorrência impede sobreposição.
+O workflow `bigquery-paralelo.yml` aceita `workflow_dispatch` e `schedule`. No disparo manual, começa por fixtures/testes e tem `origem=fixture`/`modo=simulacao` como padrão; modo `publicar` exige origem API e conciliação Sheets, enquanto `publicar_api` é a recuperação operacional explícita sem Sheets. No agendamento, fixa origem API, `publicar_api` e o modo `--api-only`. O cron consulta o dia atual a cada 5 minutos entre 05:00 e 23:55 e reprocessa os últimos sete dias às 04:30, no horário de São Paulo. A concorrência impede sobreposição.
 
 ## Recuperação e aceite
 
