@@ -15,7 +15,7 @@ node run.js --fixture test/fixture.json --start 2026-09-10 --end 2026-09-10 --st
 
 Fixtures contêm somente dados fictícios. Simulação não inicializa cliente BigQuery, não carrega ADC e não publica nada. O relatório registra `NAO_VALIDADO` para serviços que não foram consultados; sucesso de fixture não comprova conciliação real. Relatórios ficam em `output/<execucao>.json`, ignorados pelo Git. Não são gravados payloads, nomes de clientes ou credenciais nos relatórios.
 
-Validação local em 14/09/2026: 71 testes passaram ao executar `node --test bigquery/test/*.test.js automacao-vendas/*.test.js` na raiz do repositório; `terraform validate` passou com Terraform 1.9.8 e provider Google 6.50.0. Esses testes exercitam transformação, falhas e orquestração com doubles; execução e idempotência do SQL no serviço BigQuery continuam pendentes da infraestrutura real.
+Validação local em 14/09/2026: 72 testes passaram ao executar `node --test bigquery/test/*.test.js automacao-vendas/*.test.js` na raiz do repositório; `terraform validate` passou com Terraform 1.9.8 e provider Google 6.50.0. Esses testes exercitam transformação, falhas e orquestração com doubles; execução e idempotência do SQL no serviço BigQuery continuam pendentes da infraestrutura real.
 
 Para consultar a API existente sem escrever, disponibilize `SYSEMP_TOKEN` no ambiente:
 

@@ -180,6 +180,13 @@ test('ambiguous job submission recovers same job ID without a second insert', as
   assert.deepEqual(ids, ['fixed_job_id', 'fixed_job_id']);
 });
 
+test('loss of job polling is reported as uncertain, never as a confirmed failure', async () => {
+  const warehouse = new Warehouse(config(env), { jobs: {
+    insert: async () => ({}), get: async () => { throw new Error('network'); },
+  } });
+  await assert.rejects(warehouse.query('SELECT 1', {}, 'poll_job'), error => error.pending === true && error.message.includes('poll_job'));
+});
+
 test('successful publication stages all tables and reconciles server-side totals before commit', async () => {
   const warehouse = new Warehouse(config(env), {}), queries = [], stages = [];
   warehouse.query = async sql => { queries.push(sql); };

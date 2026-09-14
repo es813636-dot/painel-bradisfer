@@ -66,7 +66,10 @@ class Warehouse {
     }
     const deadline = Date.now() + 20 * 60 * 1000;
     while (Date.now() < deadline) {
-      const { data } = await this.api.jobs.get(reference);
+      let data;
+      try { ({ data } = await this.api.jobs.get(reference)); } catch {
+        throw Object.assign(new Error(`Consulta de status interrompida: conferir BigQuery job ${jobId}`), { pending: true });
+      }
       if (data.status.state === 'DONE') {
         if (data.status.errorResult) throw Object.assign(new Error(`BigQuery job ${jobId}: ${data.status.errorResult.reason}`), { jobFailed: true });
         return reference;

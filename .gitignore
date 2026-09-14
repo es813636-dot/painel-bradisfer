@@ -10,3 +10,6 @@ skills-lock.json
 # automacao-vendas/testar-apis-novas.js — contêm dado real de pedido/venda,
 # não devem ir pro repositório público.
 amostra_*.json
+
+# Credenciais efêmeras geradas pelo google-github-actions/auth.
+gha-creds-*.json
