@@ -1,0 +1,87 @@
+name: Gamma - relatório mensal dos vendedores
+on:
+  workflow_dispatch:
+    inputs:
+      mes:
+        description: 'Mês encerrado (AAAA-MM); vazio = mês anterior'
+        required: false
+        type: string
+      modo:
+        description: 'Preparar valida os dados sem consumir créditos; gerar cria a apresentação'
+        type: choice
+        default: preparar
+        options: [preparar, gerar, retomar]
+      generation_id:
+        description: 'ID existente para retomar; não cria outra apresentação'
+        required: false
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gamma-relatorio-mensal
+  cancel-in-progress: false
+jobs:
+  relatorio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Definir mês e impedir geração repetida
+        id: periodo
+        env:
+          INPUT_MONTH: ${{ inputs.mes }}
+          MODE: ${{ inputs.modo }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          month="${INPUT_MONTH:-$(TZ=America/Sao_Paulo date -d "$(TZ=America/Sao_Paulo date +%Y-%m-01) -1 month" +%Y-%m)}"
+          [[ "$month" =~ ^[0-9]{4}-(0[1-9]|1[0-2])$ ]] || exit 1
+          echo "month=$month" >> "$GITHUB_OUTPUT"
+          if [[ "$MODE" == gerar ]]; then
+            count=$(gh api --paginate "repos/$GH_REPO/actions/artifacts?per_page=100" --jq ".artifacts[] | select(.name == \"gamma-reserva-$month\") | .id" | wc -l)
+            [[ "$count" == 0 ]] || { echo "Mês já reservado. Retome pelo ID da geração existente para evitar novo consumo de créditos."; exit 1; }
+          fi
+      - name: Consultar vendas e metas
+        if: inputs.modo != 'retomar'
+        id: dados
+        env:
+          REPORT_MONTH: ${{ steps.periodo.outputs.month }}
+          SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
+        run: node gamma/relatorio.cjs
+      - name: Reservar geração
+        if: inputs.modo == 'gerar'
+        env:
+          MONTH: ${{ steps.periodo.outputs.month }}
+        run: printf '%s' "$MONTH" > "$RUNNER_TEMP/gamma-reserva.txt"
+      - uses: actions/upload-artifact@v4
+        if: inputs.modo == 'gerar'
+        with:
+          name: gamma-reserva-${{ steps.periodo.outputs.month }}
+          path: ${{ runner.temp }}/gamma-reserva.txt
+          retention-days: 90
+      - name: Gerar ou retomar apresentação
+        if: inputs.modo == 'gerar' || inputs.modo == 'retomar'
+        env:
+          REPORT_MONTH: ${{ steps.periodo.outputs.month }}
+          GENERATION_ID: ${{ inputs.generation_id }}
+          MODE: ${{ inputs.modo }}
+          GAMMA_API_KEY: ${{ secrets.GAMMA_API_KEY }}
+          GAMMA_TEMPLATE_ID: ${{ vars.GAMMA_TEMPLATE_ID || 'g_1nbzbz920ocjuts' }}
+        run: |
+          [[ "$MODE" != retomar || -n "$GENERATION_ID" ]] || exit 1
+          node gamma/gerar.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gamma-resultado-${{ github.run_id }}
+          path: ${{ runner.temp }}/gamma-generation.json
+          if-no-files-found: ignore
+          retention-days: 90
+      - name: Remover conteúdo temporário
+        if: always()
+        run: rm -f "$RUNNER_TEMP/gamma-input.md"
