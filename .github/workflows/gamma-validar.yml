@@ -1,0 +1,21 @@
+name: Gamma - validar acesso
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Validar acesso sem gerar apresentação
+        env:
+          GAMMA_API_KEY: ${{ secrets.GAMMA_API_KEY }}
+        run: node gamma/validar-chave.cjs
