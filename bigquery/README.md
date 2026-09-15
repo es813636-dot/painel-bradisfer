@@ -2,7 +2,7 @@
 
 Implementação em produção do [plano 007](../plans/007-migracao-google-sheets-bigquery-powerbi.md). Desde 14/09/2026, as seis tabelas de vendas, clientes e datas do Power BI leem o BigQuery. As quatro tabelas manuais continuam no Sheets e nenhuma rotina deste diretório escreve na planilha.
 
-A carga incremental consulta diretamente a API a cada 5 minutos, somente para o dia atual. Uma reconciliação diária às 04:30 reprocessa a janela móvel dos últimos sete dias para capturar cancelamentos e correções retroativas. As duas rotinas conciliam notas com itens, validam staging contra a API e publicam em uma transação idempotente. O disparo manual continua disponível para simulação, reprocessamento e auditoria contra o Sheets.
+A carga incremental consulta diretamente a API a cada 5 minutos, para hoje e ontem. Uma reconciliação diária às 04:30 reprocessa a janela móvel dos últimos sete dias para capturar cancelamentos e correções retroativas. As duas rotinas conciliam notas com itens, validam staging contra a API e publicam em uma transação idempotente. O disparo manual continua disponível para simulação, reprocessamento e auditoria contra o Sheets.
 
 ## Executar sem credenciais
 
