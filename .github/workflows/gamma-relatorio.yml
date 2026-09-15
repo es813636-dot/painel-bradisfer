@@ -1,5 +1,7 @@
 name: Gamma - relatório mensal dos vendedores
 on:
+  schedule:
+    - cron: '0 12 2 * *'
   workflow_dispatch:
     inputs:
       mes:
@@ -18,6 +20,8 @@ on:
 permissions:
   contents: read
   actions: read
+env:
+  REPORT_MODE: ${{ github.event_name == 'schedule' && 'gerar' || inputs.modo }}
 concurrency:
   group: gamma-relatorio-mensal
   cancel-in-progress: false
@@ -34,7 +38,7 @@ jobs:
         id: periodo
         env:
           INPUT_MONTH: ${{ inputs.mes }}
-          MODE: ${{ inputs.modo }}
+          MODE: ${{ env.REPORT_MODE }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
@@ -47,29 +51,29 @@ jobs:
             [[ "$count" == 0 ]] || { echo "Mês já reservado. Retome pelo ID da geração existente para evitar novo consumo de créditos."; exit 1; }
           fi
       - name: Consultar vendas e metas
-        if: inputs.modo != 'retomar'
+        if: env.REPORT_MODE != 'retomar'
         id: dados
         env:
           REPORT_MONTH: ${{ steps.periodo.outputs.month }}
           SYSEMP_TOKEN: ${{ secrets.SYSEMP_TOKEN }}
         run: node gamma/relatorio.cjs
       - name: Reservar geração
-        if: inputs.modo == 'gerar'
+        if: env.REPORT_MODE == 'gerar'
         env:
           MONTH: ${{ steps.periodo.outputs.month }}
         run: printf '%s' "$MONTH" > "$RUNNER_TEMP/gamma-reserva.txt"
       - uses: actions/upload-artifact@v4
-        if: inputs.modo == 'gerar'
+        if: env.REPORT_MODE == 'gerar'
         with:
           name: gamma-reserva-${{ steps.periodo.outputs.month }}
           path: ${{ runner.temp }}/gamma-reserva.txt
           retention-days: 90
       - name: Gerar ou retomar apresentação
-        if: inputs.modo == 'gerar' || inputs.modo == 'retomar'
+        if: env.REPORT_MODE == 'gerar' || env.REPORT_MODE == 'retomar'
         env:
           REPORT_MONTH: ${{ steps.periodo.outputs.month }}
           GENERATION_ID: ${{ inputs.generation_id }}
-          MODE: ${{ inputs.modo }}
+          MODE: ${{ env.REPORT_MODE }}
           GAMMA_API_KEY: ${{ secrets.GAMMA_API_KEY }}
           GAMMA_TEMPLATE_ID: ${{ vars.GAMMA_TEMPLATE_ID || 'g_1nbzbz920ocjuts' }}
         run: |

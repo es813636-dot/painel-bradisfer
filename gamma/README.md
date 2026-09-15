@@ -10,4 +10,4 @@ O conteúdo financeiro fica apenas em arquivo temporário, apagado ao final, sem
 
 Não há repetição automática de POST. Reserva por mês em artefato impede novas criações nos 90 dias de retenção. Uma falha depois da reserva deve ser investigada, retomando pelo ID, quando disponível. Falha de rede durante o POST pode deixar a criação incerta: conferir a conta Gamma antes de remover uma reserva. Não existe garantia de deduplicação após a retenção ou exclusão dos artefatos.
 
-Agendamento mensal será ligado depois de validar a primeira execução e a apresentação. O workflow atual é manual.
+Agendamento mensal: dia 2, às 09h de Brasília (12h UTC), referente ao mês anterior. O GitHub pode atrasar a execução. Manter metas vendedor/marca do mês cadastradas e revisar a apresentação antes de apresentar; metas ausentes interrompem a geração sem consumir créditos. Também é possível executar manualmente.
