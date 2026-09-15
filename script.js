@@ -4083,6 +4083,7 @@ const GOOGLE_CLIENT_ID = '590352840411-7m1aq5q5limp271h49iasmsq5d0v4llr.apps.goo
 const EMAILS_PERMITIDOS = [
   'marcusmatos19@gmail.com',
   'bradisferdistribuuidora@gmail.com',
+  'junior.matos.bradisfer@gmail.com',
 ];
 const CHAVE_LOCALSTORAGE_LOGIN = 'bradisfer_login';
 const VALIDADE_LOGIN_MS = 12 * 60 * 60 * 1000; // 12h -- depois disso pede login de novo
