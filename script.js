@@ -3103,13 +3103,22 @@ function extrairLinhaTabelaPdf(itens, larguraPagina, pagina, numeroLinha) {
   const codigoItem = ordenados.slice(indiceItem + 1).find(item =>
     item.x < larguraPagina * 0.20 && /^\d{5,14}$/.test(item.texto));
   if (!codigoItem) return null;
-  const precoItem = ordenados.find(item =>
-    item.x > larguraPagina * 0.48 && /^(?:R\$\s*)?-?\d+(?:\.\d{3})*,\d{2,4}$|^(?:R\$\s*)?-?\d+\.\d{2,4}$/.test(item.texto));
-  if (!precoItem) return null;
+  const quantidadeItem = ordenados.find(item =>
+    item.x > larguraPagina * 0.47 && item.x < larguraPagina * 0.52 && /^\d+(?:[.,]\d+)?$/.test(item.texto));
+  const valoresMonetarios = ordenados.filter(item =>
+    item.x > larguraPagina * 0.52 && /^(?:R\$\s*)?-?\d+(?:\.\d{3})*,\d{2,4}$|^(?:R\$\s*)?-?\d+\.\d{2,4}$/.test(item.texto));
+  const valorTotalItem = valoresMonetarios[valoresMonetarios.length - 1];
+  if (!quantidadeItem || !valorTotalItem) return null;
+  const quantidade = parseNumeroPlanilhaImportada(quantidadeItem.texto);
+  const valorTotalComImpostos = parseNumeroPlanilhaImportada(valorTotalItem.texto);
+  if (!(quantidade > 0) || !(valorTotalComImpostos > 0)) return null;
+  const precoUnitarioComImpostos = valorTotalComImpostos / quantidade;
   const codigo = codigoItem.texto;
   const linha = {
     'Descrição PDF': ordenados.map(item => item.texto).filter(Boolean).join(' '),
-    'Preço unitário detectado': precoItem.texto,
+    'Preço unitário com impostos': precoUnitarioComImpostos.toFixed(4).replace('.', ','),
+    'Quantidade detectada': quantidadeItem.texto,
+    'Valor total com impostos': valorTotalItem.texto,
     'Página': pagina,
     'Linha': numeroLinha,
   };
@@ -3383,7 +3392,7 @@ function renderizarAbaCotacoes() {
 
     '<div class="panel" style="margin-bottom:16px;">' +
       '<h2 style="margin:0;">' + icon('uploadSimple', 'icon-sm') + 'Importar arquivo de cotação</h2>' +
-      '<p class="hint" style="margin-top:10px;">Importe PDF pesquisável, Excel, ODS, CSV ou TSV. O arquivo é processado neste navegador; o painel casa por código e deixa as linhas incertas para conferência.</p>' +
+      '<p class="hint" style="margin-top:10px;">Importe PDF pesquisável, Excel, ODS, CSV ou TSV. Em cotações PDF como a da OVD, o preço comparado é o valor total com impostos dividido pela quantidade. O arquivo é processado neste navegador.</p>' +
       (!importCotacoesArquivoNome
         ? '<input type="file" id="input-planilha-cotacao" accept=".pdf,.xlsx,.xls,.xlsm,.ods,.csv,.tsv" style="display:none;">' +
           '<button class="refresh-btn" id="selecionar-planilha-cotacao-btn">' + icon('uploadSimple', 'icon-sm') + ' Escolher arquivo</button>'
