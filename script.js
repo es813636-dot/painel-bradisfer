@@ -3334,6 +3334,9 @@ function renderizarAbaCotacoes() {
         .slice(0, 8)
     : [];
 
+  // Mantém a ordem original da cotação. Nas importações, `cotacoes` recebe
+  // os itens na mesma sequência do arquivo e o localStorage preserva essa
+  // ordem após recarregar a página.
   const linhas = cotacoes.map(c => {
     const produtoAtual = dadosCompletos.find(d =>
       (c.codigoInterno && d.codigoInterno === c.codigoInterno)
@@ -3344,10 +3347,6 @@ function renderizarAbaCotacoes() {
     const diferencaPct = (custoTotal !== null && custoTotal > 0) ? (diferenca / custoTotal) * 100 : null;
     const curva = produtoAtual && produtoAtual.analise && produtoAtual.analise.curva ? produtoAtual.analise.curva : '';
     return Object.assign({}, c, { custoTotal, custoTotalData, diferenca, diferencaPct, curva });
-  }).sort((a, b) => {
-    if (a.diferencaPct === null) return 1;
-    if (b.diferencaPct === null) return -1;
-    return b.diferencaPct - a.diferencaPct; // maior economia primeiro
   });
 
   const comEconomia = linhas.filter(l => l.diferenca !== null && l.diferenca > 0);
