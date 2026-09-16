@@ -3301,7 +3301,7 @@ function montarResultadoImportacaoCotacoes() {
     '</label>' +
     (casados.length > 0
       ? '<table style="margin-bottom:16px;"><thead><tr><th>Produto (casado)</th><th class="num">Curva</th><th>Código usado</th><th class="num">Preço cotado</th></tr></thead><tbody>' +
-          casados.map(c => '<tr><td>' + escapeHtml(c.produto.produto) + '</td><td class="num">' + (c.produto.analise && c.produto.analise.curva ? c.produto.analise.curva : '—') + '</td><td>' + escapeHtml(c.codigoUsado) + '</td><td class="num">' + fmtMoeda(c.precoCotado) + '</td></tr>').join('') +
+          casados.map(c => '<tr><td>' + escapeHtml(c.produto.produto) + '</td><td class="num">' + (c.produto.analise && c.produto.analise.curva ? c.produto.analise.curva : '—') + '</td><td>' + escapeHtml(c.codigoUsado) + '</td><td class="num">' + fmtCustoTotal(c.precoCotado) + '</td></tr>').join('') +
         '</tbody></table>'
       : '') +
     (naoCasados.length > 0
@@ -3411,7 +3411,7 @@ function renderizarAbaCotacoes() {
                 '<td>' + escapeHtml(l.produto) + '</td>' +
                 '<td class="num">' + (l.curva || '—') + '</td>' +
                 '<td>' + escapeHtml(l.fornecedor) + '</td>' +
-                '<td class="num">' + fmtMoeda(l.precoCotado) + '</td>' +
+                '<td class="num">' + fmtCustoTotal(l.precoCotado) + '</td>' +
                 '<td class="num">' + (l.custoTotal !== null ? fmtCustoTotal(l.custoTotal) + (l.custoTotalData ? '<br><span class="hint">ref. ' + formatarDataISO_BR(l.custoTotalData) + '</span>' : '') : '<span class="hint">sem Custo Total</span>') + '</td>' +
                 '<td class="num">' + (l.diferencaPct !== null
                   ? (l.diferenca > 0
