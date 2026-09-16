@@ -642,13 +642,13 @@
   .legend-bar-fill { height: 100%; border-radius: 999px; }
 
   .filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
-  select, input[type=search], input[type=text] {
+  select, input[type=search], input[type=text], .panel input[type=number] {
     padding: 8px 12px; border: 1px solid var(--glass-border); border-radius: 8px;
     background: var(--glass); color: var(--text); font-size: 13px; font-family: var(--font-body);
   }
-  input[type=search], input[type=text] { width: 200px; }
+  input[type=search], input[type=text], .panel input[type=number] { width: 200px; }
   select option { background: var(--bg-page); color: var(--text); }
-  input[type=search]::placeholder, input[type=text]::placeholder { color: var(--text-faint); }
+  input[type=search]::placeholder, input[type=text]::placeholder, .panel input[type=number]::placeholder { color: var(--text-faint); }
   select:focus, input:focus { outline: 1px solid var(--gold); outline-offset: 1px; }
   input.input-pedido-aberto {
     padding: 4px 8px; border: 1px solid var(--glass-border); border-radius: 6px;
@@ -966,7 +966,7 @@
 
     .filters { gap: 8px; }
     .filters > .autocomplete-wrap,
-    input[type=search], input[type=text] { width: 100%; }
+    input[type=search], input[type=text], .panel input[type=number] { width: 100%; }
     .clear-link { margin-left: 0; }
 
     /* Tabelas viram roláveis na horizontal em vez de espremer ou vazar da tela */
