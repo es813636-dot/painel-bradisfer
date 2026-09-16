@@ -3030,6 +3030,24 @@ function normalizarCodigoComparacao(v) {
   return String(v).trim().replace(/\.0+$/, '');
 }
 
+// Alguns fornecedores imprimem um código próprio na cotação, diferente de
+// barras, interno, fabricante e auxiliar cadastrados no SYSEMP. Os vínculos
+// abaixo foram conferidos pela descrição, marca, medida e unidade no PDF OVD
+// 4143242 e na aba Produtos. O casamento continua exato, sem aproximação por nome.
+const CODIGOS_FORNECEDOR_POR_INTERNO = new Map([
+  ['8068124100', '7079'], // Tela hexagonal pinteiro 1", BWG24, 1,00 m x 50 m Vonder
+  ['2880172100', '3046'], // Prego polido Gerdau 17x21 C/C 1 kg
+  ['7499014210', '3052'], // Arame galvanizado Gerdau BWG 14 1 kg
+  ['7499016165', '3053'], // Arame galvanizado Gerdau BWG 16 1 kg
+  ['2880151500', '3045'], // Prego polido Gerdau 15x15 C/C 1 kg
+  ['2880183000', '4015'], // Prego polido Gerdau 18x30 C/C 1 kg
+  ['7499012276', '3051'], // Arame galvanizado Gerdau BWG 12 1 kg
+  ['2890182700', '3253'], // Prego polido Gerdau telheiro 18x27 C/C 500 g
+  ['3199091000', '3437'], // Grampo polido Gerdau 1 kg
+  ['2887182700', '4014'], // Prego polido Gerdau 18x27 cabeça dupla 1 kg
+  ['2880151800', '3435'], // Prego polido Gerdau 15x18 C/C 1 kg
+]);
+
 function construirIndicesCodigosProduto() {
   const porBarras = new Map(), porInterno = new Map(), porFabricante = new Map(), porAuxiliar = new Map();
   dadosCompletos.forEach(d => {
@@ -3037,6 +3055,10 @@ function construirIndicesCodigosProduto() {
     if (d.codigoInterno) porInterno.set(normalizarCodigoComparacao(d.codigoInterno), d);
     if (d.codigoFabricante) porFabricante.set(normalizarCodigoComparacao(d.codigoFabricante), d);
     if (d.codigoAuxiliar) porAuxiliar.set(normalizarCodigoComparacao(d.codigoAuxiliar), d);
+  });
+  CODIGOS_FORNECEDOR_POR_INTERNO.forEach((codigoInterno, codigoFornecedor) => {
+    const produto = porInterno.get(normalizarCodigoComparacao(codigoInterno));
+    if (produto) porFabricante.set(normalizarCodigoComparacao(codigoFornecedor), produto);
   });
   return { porBarras, porInterno, porFabricante, porAuxiliar };
 }
