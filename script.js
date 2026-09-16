@@ -17,6 +17,8 @@ const VENDAS_VIVO_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID
 // inspecionar/testar ao vivo é risco alto demais pra pouco ganho.
 const PRODUTOS_SHEET_NAME = 'Produtos';
 const PRODUTOS_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(PRODUTOS_SHEET_NAME);
+const CUSTOS_PRODUTOS_SHEET_NAME = 'CustosProdutos';
+const CUSTOS_PRODUTOS_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent(CUSTOS_PRODUTOS_SHEET_NAME);
 // Aba "PedidosAberto" (gravada pela automação, ver automacao-vendas/
 // atualizar-pedidos-aberto.js -- listarPedidoCompras da Sysemp) — quanto já
 // está pedido e ainda não recebido, por produto. Casa por Código Interno
@@ -222,13 +224,13 @@ function obterPedidoEmAberto(produto) {
 
 // ----------------------------------------------------------------------
 // Cotações de fornecedor -- comparação manual entre o preço cotado e o
-// custo atual (Sysemp). Casamento por nome é sempre manual (usuário busca
+// Custo Total fiscal (Sysemp). Casamento por nome é sempre manual (usuário busca
 // e confirma o produto): testado com um orçamento real da COMPEL e o
 // casamento automático por palavra errou ~30% das vezes (ex. confundiu
 // "Rolo Espuma POP" com "Rolo Espuma POLIESTER", "Trincha 1½" com "2½")
 // -- automático não é confiável o bastante pra decisão de compra.
 // ----------------------------------------------------------------------
-let cotacoes = []; // [{ id, codigoBarras, produto, marca, fornecedor, precoCotado, data }]
+let cotacoes = []; // [{ id, codigoBarras, codigoInterno, produto, marca, fornecedor, precoCotado, data }]
 const CHAVE_LOCALSTORAGE_COTACOES = 'bradisfer_cotacoes';
 function salvarCotacoesNoLocalStorage() {
   try {
@@ -270,6 +272,10 @@ let minMaxPlanilhaPersistente = new Map();
 // Mesma lógica de persistência que minMaxPlanilhaPersistente, só que pra
 // venda AO VIVO em lote (chave: código de barras).
 let vendasVivoPersistente = new Map();
+// Último custo fiscal unitário (`nota_saida_itens.custo_produto`) por ID
+// de produto. É a referência chamada de "Custo Total" no SYSEMP e não
+// deve ser confundida com o custo atual do cadastro/BaseLooker.
+let custosTotaisPersistente = new Map();
 // Idem, pra pedido de compra em aberto sincronizado automático (chave:
 // Código Interno / id_produto). Ver obterPedidoEmAberto() -- é só a base;
 // uma edição manual no campo da tela (pedidosEmAberto, por nome de
@@ -508,7 +514,16 @@ const ROTINA_COMPRAS = [
 ];
 
 function fmtMoeda(v) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }); }
+function fmtMoedaPrecisa(v) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtNum(v) { return v.toLocaleString('pt-BR'); }
+function fmtCustoTotal(v) {
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+function formatarDataISO_BR(valor) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(valor || ''))
+    ? new Date(valor + 'T00:00:00').toLocaleDateString('pt-BR')
+    : String(valor || '');
+}
 
 // Escapa texto vindo da planilha/API (produto, marca, fornecedor...) antes de
 // jogar em innerHTML — sem isso, um nome de produto com "<" ou "&" quebra o
@@ -794,12 +809,13 @@ async function carregarDados() {
   document.getElementById('subtitle').textContent = 'conectando...';
 
   try {
-    const [respBase, respAnalise, respVendasVivo, respProdutos, respPedidosAberto] = await Promise.all([
+    const [respBase, respAnalise, respVendasVivo, respProdutos, respPedidosAberto, respCustosProdutos] = await Promise.all([
       fetch(CSV_URL + '&t=' + Date.now()),
       fetch(ANALISE_CSV_URL + '&t=' + Date.now()).catch(() => null), // fonte opcional — não trava o painel se falhar
       fetch(VENDAS_VIVO_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem
       fetch(PRODUTOS_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem — só pra Código Interno/Fabricante/Auxiliar
       fetch(PEDIDOS_ABERTO_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem — pedido de compra em aberto
+      fetch(CUSTOS_PRODUTOS_CSV_URL + '&t=' + Date.now()).catch(() => null), // idem — último Custo Total fiscal por produto
     ]);
     if (!respBase.ok) throw new Error('HTTP ' + respBase.status);
     const textoBase = await respBase.text();
@@ -900,7 +916,29 @@ async function carregarDados() {
       });
     }
 
-    // ---- fonte 5 (opcional): Pedido de compra em aberto sincronizado da
+    // ---- fonte 5 (opcional): Custo Total fiscal por Código Interno ----
+    // A automação fiscal mantém uma linha por produto com o custo_produto
+    // mais recente e sua data. O Map persiste se o Google Sheets falhar
+    // durante uma atualização automática do painel.
+    const custosTotais = new Map();
+    if (respCustosProdutos && respCustosProdutos.ok) {
+      const textoCustosProdutos = await respCustosProdutos.text();
+      const linhasCustosProdutos = parseCSV(textoCustosProdutos);
+      linhasCustosProdutos.forEach(r => {
+        const codigoInterno = String(r['IdProduto'] || '').trim();
+        const valor = parseNumeroBR(r['CustoTotalUnitario']);
+        if (!codigoInterno || !(valor > 0)) return;
+        custosTotais.set(codigoInterno, {
+          valor,
+          dataReferencia: String(r['DataReferencia'] || '').trim(),
+        });
+      });
+    }
+    const custosTotaisEhRazoavel = custosTotais.size > 0 &&
+      (custosTotaisPersistente.size === 0 || custosTotais.size >= custosTotaisPersistente.size * 0.5);
+    if (custosTotaisEhRazoavel) custosTotaisPersistente = custosTotais;
+
+    // ---- fonte 6 (opcional): Pedido de compra em aberto sincronizado da
     // Sysemp (aba "PedidosAberto", ver automacao-vendas/
     // atualizar-pedidos-aberto.js) -- substitui a importação manual como
     // fonte principal; casa por Código Interno, não por nome de produto
@@ -949,8 +987,10 @@ async function carregarDados() {
       const precoMargem = precoMargemDoProduto(codigoBarras); // [margemLiquida, precoVenda] ou null se não achou na tabela de preços
       const vendasAoVivoLote = codigoBarras ? (vendasVivoPersistente.get(codigoBarras) || null) : null;
       const extras = codigoBarras ? codigosExtras.get(codigoBarras) : null;
+      const custoTotalFiscal = extras && extras.codigoInterno ? (custosTotaisPersistente.get(String(extras.codigoInterno)) || null) : null;
       return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras, estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null, margemLucro: precoMargem ? precoMargem[0] : null, precoVenda: precoMargem ? precoMargem[1] : null, vendasAoVivoLote,
-        codigoInterno: extras ? extras.codigoInterno : '', codigoFabricante: extras ? extras.codigoFabricante : '', codigoAuxiliar: extras ? extras.codigoAuxiliar : '' };
+        codigoInterno: extras ? extras.codigoInterno : '', codigoFabricante: extras ? extras.codigoFabricante : '', codigoAuxiliar: extras ? extras.codigoAuxiliar : '',
+        custoTotal: custoTotalFiscal ? custoTotalFiscal.valor : null, custoTotalData: custoTotalFiscal ? custoTotalFiscal.dataReferencia : '' };
     });
 
     const totalAntesExclusao = dadosCompletos.length;
@@ -3008,7 +3048,7 @@ function autoMapearColunasCotacao(colunas) {
   return {
     produto: achar(/produto|descri/),
     preco: achar(/pre[çc]o|valor|vl\.?\s*un|unit/),
-    codBarras: achar(/barra|ean|gtin/),
+    codBarras: achar(/barra|ean|gtin|c[oó]digo detectado/),
     codInterno: achar(/interno/),
     codFabricante: achar(/fabric/),
     codAuxiliar: achar(/auxiliar/),
@@ -3020,13 +3060,62 @@ function parseNumeroPlanilhaImportada(v) {
   return parseNumeroBR(v);
 }
 
+function extrairCamposLinhaPdf(texto, pagina, numeroLinha) {
+  const codigosLongos = [...String(texto).matchAll(/\b\d{8,14}\b/g)].map(m => m[0]);
+  const valores = [...String(texto).matchAll(/(?:R\$\s*)?-?\d+(?:\.\d{3})*,\d{2,4}|(?:R\$\s*)?-?\d+\.\d{2,4}/g)].map(m => m[0]);
+  if (!valores.length) return null;
+  const linha = {
+    'Descrição PDF': String(texto).trim(),
+    'Código detectado': codigosLongos.sort((a, b) => b.length - a.length)[0] || '',
+    'Página': pagina,
+    'Linha': numeroLinha,
+  };
+  valores.forEach((valor, index) => { linha['Preço detectado ' + (index + 1)] = valor; });
+  return linha;
+}
+
+async function lerCotacaoPdf(dados) {
+  if (!window.pdfjsLib) throw new Error('O leitor de PDF não carregou. Recarregue a página e tente novamente.');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await window.pdfjsLib.getDocument({ data: dados }).promise;
+  const linhas = [];
+  for (let paginaNumero = 1; paginaNumero <= pdf.numPages; paginaNumero++) {
+    const pagina = await pdf.getPage(paginaNumero);
+    const conteudo = await pagina.getTextContent();
+    const grupos = new Map();
+    conteudo.items.forEach(item => {
+      const y = Math.round(Number(item.transform && item.transform[5] || 0) / 3) * 3;
+      const grupo = grupos.get(y) || [];
+      grupo.push({ x: Number(item.transform && item.transform[4] || 0), texto: String(item.str || '').trim() });
+      grupos.set(y, grupo);
+    });
+    let numeroLinha = 0;
+    [...grupos.entries()].sort((a, b) => b[0] - a[0]).forEach(([, itens]) => {
+      numeroLinha++;
+      const texto = itens.sort((a, b) => a.x - b.x).map(item => item.texto).filter(Boolean).join(' ');
+      const linha = extrairCamposLinhaPdf(texto, paginaNumero, numeroLinha);
+      if (linha) linhas.push(linha);
+    });
+  }
+  if (!linhas.length) {
+    throw new Error('Não encontrei linhas com preços. Se o PDF for uma imagem escaneada, peça ao fornecedor um PDF pesquisável, Excel, ODS ou CSV.');
+  }
+  return linhas;
+}
+
 function processarArquivoCotacoesSelecionado(arquivo) {
   const leitor = new FileReader();
-  leitor.onload = evt => {
+  leitor.onload = async evt => {
     try {
       const dados = new Uint8Array(evt.target.result);
-      const wb = XLSX.read(dados, { type: 'array' });
-      const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      const ehPdf = arquivo.name.toLowerCase().endsWith('.pdf');
+      let linhas;
+      if (ehPdf) {
+        linhas = await lerCotacaoPdf(dados);
+      } else {
+        const wb = XLSX.read(dados, { type: 'array' });
+        linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      }
       if (linhas.length === 0) { alert('Planilha vazia ou sem dados na primeira aba.'); return; }
       importCotacoesLinhasBrutas = linhas;
       importCotacoesColunas = Object.keys(linhas[0]);
@@ -3035,7 +3124,7 @@ function processarArquivoCotacoesSelecionado(arquivo) {
       importCotacoesResultado = null;
       renderizarAbaCotacoes();
     } catch (erro) {
-      alert('Não consegui ler essa planilha (' + erro.message + '). Confirme que é um .xlsx ou .csv válido.');
+      alert('Não consegui ler esse arquivo (' + erro.message + ').');
     }
   };
   leitor.readAsArrayBuffer(arquivo);
@@ -3096,6 +3185,7 @@ function confirmarImportacaoCotacoes() {
     cotacoes.push({
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
       codigoBarras: c.produto.codigoBarras,
+      codigoInterno: c.produto.codigoInterno,
       produto: c.produto.produto,
       marca: c.produto.marca,
       fornecedor,
@@ -3158,8 +3248,9 @@ function montarResultadoImportacaoCotacoes() {
     '</div>';
 }
 
-// Aba "Cotações" -- compara preço cotado por fornecedor com o custo atual
-// (Sysemp). Casamento manual (busca + confirma) pra cadastro avulso, ou
+// Aba "Cotações" -- compara preço cotado por fornecedor com o Custo Total
+// fiscal do Sysemp (`nota_saida_itens.custo_produto`). Casamento manual
+// (busca + confirma) pra cadastro avulso, ou
 // importação em lote por código pra planilha de fornecedor (ver funções
 // acima) -- nunca casamento automático por NOME, que testamos com um
 // orçamento real da COMPEL e errou ~30% das vezes (confundiu "Rolo Espuma
@@ -3170,17 +3261,24 @@ function renderizarAbaCotacoes() {
   const buscaLower = buscaProdutoCotacaoTexto.toLowerCase();
   const sugestoesProduto = buscaProdutoCotacaoTexto
     ? dadosCompletos
-        .filter(d => d.codigoBarras && (d.produto.toLowerCase().includes(buscaLower) || d.codigoBarras.includes(buscaProdutoCotacaoTexto)))
+        .filter(d => d.produto.toLowerCase().includes(buscaLower)
+          || d.codigoBarras.includes(buscaProdutoCotacaoTexto)
+          || String(d.codigoInterno || '').includes(buscaProdutoCotacaoTexto)
+          || String(d.codigoFabricante || '').toLowerCase().includes(buscaLower)
+          || String(d.codigoAuxiliar || '').toLowerCase().includes(buscaLower))
         .slice(0, 8)
     : [];
 
   const linhas = cotacoes.map(c => {
-    const produtoAtual = dadosCompletos.find(d => d.codigoBarras === c.codigoBarras);
-    const custoAtual = produtoAtual ? (produtoAtual.custo || 0) : null;
-    const diferenca = custoAtual !== null ? custoAtual - c.precoCotado : null;
-    const diferencaPct = (custoAtual !== null && custoAtual > 0) ? (diferenca / custoAtual) * 100 : null;
+    const produtoAtual = dadosCompletos.find(d =>
+      (c.codigoInterno && d.codigoInterno === c.codigoInterno)
+      || (c.codigoBarras && d.codigoBarras === c.codigoBarras));
+    const custoTotal = produtoAtual && Number.isFinite(produtoAtual.custoTotal) ? produtoAtual.custoTotal : null;
+    const custoTotalData = produtoAtual ? produtoAtual.custoTotalData : '';
+    const diferenca = custoTotal !== null ? custoTotal - c.precoCotado : null;
+    const diferencaPct = (custoTotal !== null && custoTotal > 0) ? (diferenca / custoTotal) * 100 : null;
     const curva = produtoAtual && produtoAtual.analise && produtoAtual.analise.curva ? produtoAtual.analise.curva : '';
-    return Object.assign({}, c, { custoAtual, diferenca, diferencaPct, curva });
+    return Object.assign({}, c, { custoTotal, custoTotalData, diferenca, diferencaPct, curva });
   }).sort((a, b) => {
     if (a.diferencaPct === null) return 1;
     if (b.diferencaPct === null) return -1;
@@ -3189,16 +3287,16 @@ function renderizarAbaCotacoes() {
 
   const comEconomia = linhas.filter(l => l.diferenca !== null && l.diferenca > 0);
   const maisCaras = linhas.filter(l => l.diferenca !== null && l.diferenca < 0);
-  const economiaTotalUnitaria = comEconomia.reduce((s, l) => s + l.diferenca, 0);
+  const semCustoTotal = linhas.filter(l => l.custoTotal === null);
 
   document.getElementById('app').innerHTML =
     barraAbas() +
 
     '<div class="kpi-grid">' +
       '<div class="kpi-card hero"><div class="label">Cotações registradas</div><div class="value">' + fmtNum(linhas.length) + '</div></div>' +
-      '<div class="kpi-card accent-blue"><div class="label">Mais baratas que o custo atual</div><div class="value">' + fmtNum(comEconomia.length) + '</div></div>' +
-      '<div class="kpi-card accent-red"><div class="label">Mais caras que o custo atual</div><div class="value">' + fmtNum(maisCaras.length) + '</div></div>' +
-      '<div class="kpi-card hero"><div class="label">Economia potencial (por unidade)</div><div class="value" title="' + fmtMoeda(economiaTotalUnitaria) + '">' + fmtMoedaCompacta(economiaTotalUnitaria) + '</div></div>' +
+      '<div class="kpi-card accent-blue"><div class="label">Abaixo do Custo Total</div><div class="value">' + fmtNum(comEconomia.length) + '</div></div>' +
+      '<div class="kpi-card accent-red"><div class="label">Acima do Custo Total</div><div class="value">' + fmtNum(maisCaras.length) + '</div></div>' +
+      '<div class="kpi-card hero"><div class="label">Sem Custo Total</div><div class="value">' + fmtNum(semCustoTotal.length) + '</div></div>' +
     '</div>' +
 
     '<div class="panel" style="margin-bottom:16px;">' +
@@ -3210,13 +3308,16 @@ function renderizarAbaCotacoes() {
           (mostrarSugestoesProdutoCotacao ? (
             '<div class="autocomplete-list">' +
               (sugestoesProduto.length
-                ? sugestoesProduto.map(d => '<div class="autocomplete-item" data-codigo-cotacao="' + escapeHtml(d.codigoBarras) + '">' + escapeHtml(d.produto) + ' <span style="color:var(--text-faint);">(' + escapeHtml(d.marca) + ')</span></div>').join('')
+                ? sugestoesProduto.map(d => '<div class="autocomplete-item" data-id-cotacao="' + escapeHtml(d.codigoInterno ? 'I:' + d.codigoInterno : 'B:' + d.codigoBarras) + '">' + escapeHtml(d.produto) + ' <span style="color:var(--text-faint);">(' + escapeHtml(d.marca) + ')</span></div>').join('')
                 : '<div class="autocomplete-empty">Nenhum produto encontrado</div>') +
             '</div>'
           ) : '') +
         '</div>' +
         (produtoSelecionadoCotacao
-          ? '<p class="hint">Selecionado: <b style="color:var(--text);">' + escapeHtml(produtoSelecionadoCotacao.produto) + '</b> — custo atual ' + fmtMoeda(produtoSelecionadoCotacao.custo || 0) + '</p>'
+          ? '<p class="hint">Selecionado: <b style="color:var(--text);">' + escapeHtml(produtoSelecionadoCotacao.produto) + '</b> — ' +
+              (produtoSelecionadoCotacao.custoTotal !== null
+                ? 'Custo Total ' + fmtCustoTotal(produtoSelecionadoCotacao.custoTotal) + (produtoSelecionadoCotacao.custoTotalData ? ' · ref. ' + formatarDataISO_BR(produtoSelecionadoCotacao.custoTotalData) : '')
+                : '<span style="color:var(--red-a);">sem Custo Total fiscal disponível</span>') + '</p>'
           : '') +
         '<input type="text" id="fornecedor-cotacao" placeholder="Fornecedor (ex. COMPEL)" aria-label="Fornecedor">' +
         '<input type="number" id="preco-cotacao" placeholder="Preço cotado (R$)" min="0" step="0.01" aria-label="Preço cotado">' +
@@ -3226,32 +3327,32 @@ function renderizarAbaCotacoes() {
 
     '<div class="panel" style="margin-bottom:16px;">' +
       '<h2 style="margin:0;">' + icon('uploadSimple', 'icon-sm') + 'Importar planilha de cotação</h2>' +
-      '<p class="hint" style="margin-top:10px;">Casa por código (barras, interno, fabricante ou auxiliar) em vez de nome — muito mais confiável. Aceita .xlsx ou .csv.</p>' +
+      '<p class="hint" style="margin-top:10px;">Importe PDF pesquisável, Excel, ODS, CSV ou TSV. O arquivo é processado neste navegador; o painel casa por código e deixa as linhas incertas para conferência.</p>' +
       (!importCotacoesArquivoNome
-        ? '<input type="file" id="input-planilha-cotacao" accept=".xlsx,.xls,.csv" style="display:none;">' +
-          '<button class="refresh-btn" id="selecionar-planilha-cotacao-btn">' + icon('uploadSimple', 'icon-sm') + ' Escolher planilha</button>'
+        ? '<input type="file" id="input-planilha-cotacao" accept=".pdf,.xlsx,.xls,.xlsm,.ods,.csv,.tsv" style="display:none;">' +
+          '<button class="refresh-btn" id="selecionar-planilha-cotacao-btn">' + icon('uploadSimple', 'icon-sm') + ' Escolher arquivo</button>'
         : (!importCotacoesResultado ? montarFormularioMapeamentoCotacoes() : montarResultadoImportacaoCotacoes())
       ) +
     '</div>' +
 
     '<div class="panel">' +
-      '<h2 style="margin:0;">Cotações x custo atual (' + fmtNum(linhas.length) + ')</h2>' +
-      '<p class="hint" style="margin-top:10px;">Ordenado da maior economia pro maior aumento.</p>' +
+      '<h2 style="margin:0;">Cotações × Custo Total SYSEMP (' + fmtNum(linhas.length) + ')</h2>' +
+      '<p class="hint" style="margin-top:10px;">Compara com o último <code>custo_produto</code> fiscal do item. Sem essa referência, a cotação permanece visível e não recebe comparação automática.</p>' +
       (linhas.length === 0
         ? '<p class="hint" style="text-align:center;padding:20px 0;">Nenhuma cotação registrada ainda.</p>'
-        : '<table><thead><tr><th>Produto</th><th class="num">Curva</th><th>Fornecedor</th><th class="num">Preço cotado</th><th class="num">Custo atual</th><th class="num">Diferença</th><th>Data</th><th></th></tr></thead><tbody>' +
+        : '<table><thead><tr><th>Produto</th><th class="num">Curva</th><th>Fornecedor</th><th class="num">Preço cotado</th><th class="num">Custo Total</th><th class="num">Diferença</th><th>Data</th><th></th></tr></thead><tbody>' +
             linhas.map(l =>
               '<tr>' +
                 '<td>' + escapeHtml(l.produto) + '</td>' +
                 '<td class="num">' + (l.curva || '—') + '</td>' +
                 '<td>' + escapeHtml(l.fornecedor) + '</td>' +
                 '<td class="num">' + fmtMoeda(l.precoCotado) + '</td>' +
-                '<td class="num">' + (l.custoAtual !== null ? fmtMoeda(l.custoAtual) : '<span class="hint">não encontrado</span>') + '</td>' +
+                '<td class="num">' + (l.custoTotal !== null ? fmtCustoTotal(l.custoTotal) + (l.custoTotalData ? '<br><span class="hint">ref. ' + formatarDataISO_BR(l.custoTotalData) + '</span>' : '') : '<span class="hint">sem Custo Total</span>') + '</td>' +
                 '<td class="num">' + (l.diferencaPct !== null
                   ? (l.diferenca > 0
-                      ? '<span class="badge badge-ok">' + Math.abs(l.diferencaPct).toFixed(1) + '% mais barato</span>'
+                      ? '<span class="badge badge-ok">' + fmtMoedaPrecisa(Math.abs(l.diferenca)) + ' abaixo · ' + Math.abs(l.diferencaPct).toFixed(1) + '%</span>'
                       : (l.diferenca < 0
-                          ? '<span class="badge badge-ruptura">' + Math.abs(l.diferencaPct).toFixed(1) + '% mais caro</span>'
+                          ? '<span class="badge badge-ruptura">' + fmtMoedaPrecisa(Math.abs(l.diferenca)) + ' acima · ' + Math.abs(l.diferencaPct).toFixed(1) + '%</span>'
                           : '<span class="badge badge-baixo">igual</span>'))
                   : '—') + '</td>' +
                 '<td>' + escapeHtml(l.data || '') + '</td>' +
@@ -3271,6 +3372,7 @@ function renderizarAbaCotacoes() {
     cotacoes.push({
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
       codigoBarras: produtoSelecionadoCotacao.codigoBarras,
+      codigoInterno: produtoSelecionadoCotacao.codigoInterno,
       produto: produtoSelecionadoCotacao.produto,
       marca: produtoSelecionadoCotacao.marca,
       fornecedor,
@@ -3305,9 +3407,16 @@ function renderizarAbaCotacoes() {
       }
     });
   }
-  document.querySelectorAll('[data-codigo-cotacao]').forEach(item => item.addEventListener('click', () => {
-    const produto = dadosCompletos.find(d => d.codigoBarras === item.dataset.codigoCotacao);
-    if (produto) produtoSelecionadoCotacao = { codigoBarras: produto.codigoBarras, produto: produto.produto, marca: produto.marca, custo: produto.custo };
+  document.querySelectorAll('[data-id-cotacao]').forEach(item => item.addEventListener('click', () => {
+    const id = item.dataset.idCotacao || '';
+    const produto = id.startsWith('I:')
+      ? dadosCompletos.find(d => d.codigoInterno === id.slice(2))
+      : dadosCompletos.find(d => d.codigoBarras === id.slice(2));
+    if (produto) produtoSelecionadoCotacao = {
+      codigoBarras: produto.codigoBarras, codigoInterno: produto.codigoInterno,
+      produto: produto.produto, marca: produto.marca,
+      custoTotal: produto.custoTotal, custoTotalData: produto.custoTotalData,
+    };
     buscaProdutoCotacaoTexto = '';
     mostrarSugestoesProdutoCotacao = false;
     renderizarAbaCotacoes();

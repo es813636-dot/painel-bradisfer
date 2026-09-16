@@ -11,6 +11,7 @@ const TAB_B2B_CONTROL = 'ConciliacaoB2B';
 const TAB_ONLINE_SUMMARY = 'VendasOnline_Resumo';
 const TAB_ONLINE_ITEMS = 'VendasOnline_Itens';
 const TAB_ONLINE_CONTROL = 'ConciliacaoOnline';
+const TAB_PRODUCT_COSTS = 'CustosProdutos';
 const START_DATE = '2026-01-02';
 const PAGE_SIZE = 100;
 const DAY_CONCURRENCY = 8;
@@ -73,6 +74,11 @@ const CONTROL_HEADER = [
   'LinhasItensGravadasJanela', 'TotalFiscalJanela',
   'TotalItensJanela', 'AjusteFiscalJanela', 'SemVendedorQtd', 'SemVendedorValor',
   'MarcusExcluidoQtd', 'MarcusExcluidoValor', 'DiferencaFinal',
+];
+
+const PRODUCT_COSTS_HEADER = [
+  'IdProduto', 'Produto', 'Marca', 'CustoTotalUnitario', 'DataReferencia',
+  'EmpresaId', 'IdNota', 'ChaveItem', 'AtualizadoEm',
 ];
 
 const text = value => String(value ?? '').trim();
@@ -151,7 +157,7 @@ function allocateAdjustment(groupedItems, adjustmentCents, noteTotalCents, noteK
   for (const item of ordered) item.fiscalCents = item.liquidCents + item.adjustmentCents;
 }
 
-function prepareData(rawRows, updatedAt, segment = 'b2b', storeNoteRows = true) {
+function prepareData(rawRows, updatedAt, segment = 'b2b', storeNoteRows = true, excludeMarcus = segment === 'b2b') {
   if (!['b2b', 'online'].includes(segment)) throw new Error(`Segmento inválido: ${segment}`);
   const notes = new Map();
   const items = new Map();
@@ -175,7 +181,7 @@ function prepareData(rawRows, updatedAt, segment = 'b2b', storeNoteRows = true) 
     const key = noteKey(companyId, noteId);
     const noteTotalCents = cents(row.vrtotal_geral);
     const sellerIdRaw = text(row.id_vendedor);
-    if (segment === 'b2b' && sellerIdRaw === MARCUS_ID) {
+    if (segment === 'b2b' && excludeMarcus && sellerIdRaw === MARCUS_ID) {
       stats.marcusExcludedCount += 1;
       stats.marcusExcludedCents += noteTotalCents;
       continue;
@@ -204,11 +210,12 @@ function prepareData(rawRows, updatedAt, segment = 'b2b', storeNoteRows = true) 
         keyItem, productId, product, brand,
         group: text(apiItem.descricao_grupo) || 'SEM GRUPO',
         category: text(apiItem.descricao_categoria) || 'SEM CATEGORIA',
-        quantity: 0, liquidCents: 0, costCents: 0, grossUnitCents: 0,
+        quantity: 0, liquidCents: 0, costCents: 0, costTenThousandths: 0, grossUnitCents: 0,
       };
       current.quantity += quantity;
       current.liquidCents += liquidCents;
       current.costCents += Math.round(quantity * unitCost * 100);
+      current.costTenThousandths += Math.round(quantity * unitCost * 10000);
       current.grossUnitCents += Math.round(quantity * apiUnitPrice * 100);
       groupedItems.set(keyItem, current);
     }
@@ -240,6 +247,7 @@ function prepareData(rawRows, updatedAt, segment = 'b2b', storeNoteRows = true) 
     for (const item of groupedItems.values()) {
       const averageUnitCents = item.quantity ? Math.round(item.grossUnitCents / item.quantity) : 0;
       const averageCostCents = item.quantity ? Math.round(item.costCents / item.quantity) : 0;
+      const unitCostTotal = item.quantity ? item.costTenThousandths / item.quantity / 10000 : 0;
       items.set(item.keyItem, {
         key: item.keyItem,
         noteKey: key,
@@ -248,6 +256,7 @@ function prepareData(rawRows, updatedAt, segment = 'b2b', storeNoteRows = true) 
         adjustmentCents: item.adjustmentCents,
         fiscalCents: item.fiscalCents,
         costCents: item.costCents,
+        unitCostTotal,
         companyId, company, channel: normalize(row.canal), cfop: text(row.cfop),
         productId: item.productId, product: item.product, brand: item.brand,
         group: item.group, category: item.category, quantity: item.quantity,
@@ -267,6 +276,33 @@ function prepareData(rawRows, updatedAt, segment = 'b2b', storeNoteRows = true) 
   stats.marcusExcludedValue = amount(stats.marcusExcludedCents);
   stats.withoutSellerValue = amount(stats.withoutSellerCents);
   return { notes, items, stats };
+}
+
+function summarizeLatestProductCosts(prepared, previousRows, updatedAt) {
+  const latest = new Map();
+  if (previousRows.length) {
+    if (JSON.stringify(previousRows[0]) !== JSON.stringify(PRODUCT_COSTS_HEADER)) {
+      throw new Error(`Cabeçalho inesperado em ${TAB_PRODUCT_COSTS}.`);
+    }
+    for (const row of previousRows.slice(1)) {
+      const productId = text(row[0]);
+      if (productId) latest.set(productId, row);
+    }
+  }
+  const sources = prepared.costs ? [prepared.costs] : [prepared.b2b, prepared.online];
+  for (const source of sources) for (const item of source.items.values()) {
+    if (!item.productId || !(item.quantity > 0) || !(item.unitCostTotal > 0)) continue;
+    const candidate = [
+      item.productId, item.product, item.brand, item.unitCostTotal, item.emissionDate,
+      item.companyId, source.notes.get(item.noteKey)?.noteId || '', item.key, updatedAt,
+    ];
+    const current = latest.get(item.productId);
+    if (!current || String(candidate[4]) > String(current[4])
+      || (String(candidate[4]) === String(current[4]) && String(candidate[7]).localeCompare(String(current[7])) > 0)) {
+      latest.set(item.productId, candidate);
+    }
+  }
+  return [PRODUCT_COSTS_HEADER, ...[...latest.values()].sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'pt-BR', { numeric: true }))];
 }
 
 function summarizeB2B(prepared, updatedAt) {
@@ -489,7 +525,7 @@ function mergePrepared(target, source) {
 
 async function fetchPreparedWindow(token, start, end, updatedAt, { includeB2B = true, includeOnline = true } = {}) {
   const dates = dateList(start, end);
-  const result = { b2b: emptyPrepared(), online: emptyPrepared() };
+  const result = { b2b: emptyPrepared(), online: emptyPrepared(), costs: emptyPrepared() };
   const companyIds = new Set();
   if (includeB2B) ['1', '3'].forEach(id => companyIds.add(id));
   if (includeOnline) ['3', '4'].forEach(id => companyIds.add(id));
@@ -498,8 +534,14 @@ async function fetchPreparedWindow(token, start, end, updatedAt, { includeB2B = 
       const batch = dates.slice(index, index + DAY_CONCURRENCY);
       const pages = await Promise.all(batch.map(date => fetchDay(token, companyId, date)));
       const rawRows = pages.flat();
-      if (includeB2B && (companyId === '1' || companyId === '3')) mergePrepared(result.b2b, prepareData(rawRows, updatedAt, 'b2b', true));
-      if (includeOnline && (companyId === '3' || companyId === '4')) mergePrepared(result.online, prepareData(rawRows, updatedAt, 'online', false));
+      if (includeB2B && (companyId === '1' || companyId === '3')) {
+        mergePrepared(result.b2b, prepareData(rawRows, updatedAt, 'b2b', true));
+        mergePrepared(result.costs, prepareData(rawRows, updatedAt, 'b2b', false, false));
+      }
+      if (includeOnline && (companyId === '3' || companyId === '4')) {
+        mergePrepared(result.online, prepareData(rawRows, updatedAt, 'online', false));
+        mergePrepared(result.costs, prepareData(rawRows, updatedAt, 'online', false, false));
+      }
       console.log(`API fiscal empresa ${companyId}: ${Math.min(index + batch.length, dates.length)}/${dates.length} dias; B2B ${result.b2b.notes.size} nota(s), online ${result.online.notes.size} nota(s).`);
     }
   }
@@ -670,6 +712,7 @@ async function main() {
   let beforeOnlineSummary = [];
   let beforeOnlineItems = [];
   let beforeOnlineControl = [];
+  let beforeProductCosts = [];
   if (!simulate) {
     const credential = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || 'null');
     if (!credential?.client_email || !credential?.private_key) throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY inválido.');
@@ -690,6 +733,7 @@ async function main() {
       beforeOnlineItems = await readTab(sheets, tabs, TAB_ONLINE_ITEMS, ONLINE_ITEMS_HEADER.length);
       beforeOnlineControl = await readTab(sheets, tabs, TAB_ONLINE_CONTROL, CONTROL_HEADER.length);
     }
+    beforeProductCosts = await readTab(sheets, tabs, TAB_PRODUCT_COSTS, PRODUCT_COSTS_HEADER.length);
   }
 
   const needsBootstrap = (includeB2B && ((!beforeB2BSummary.length || JSON.stringify(beforeB2BSummary[0]) !== JSON.stringify(B2B_SUMMARY_HEADER))
@@ -756,6 +800,7 @@ async function main() {
   };
   const finalB2BControl = makeControl(beforeB2BControl, 'b2b', TAB_B2B_CONTROL);
   const finalOnlineControl = makeControl(beforeOnlineControl, 'online', TAB_ONLINE_CONTROL);
+  const finalProductCosts = summarizeLatestProductCosts(prepared, beforeProductCosts, updatedAt);
 
   const targets = [];
   if (includeB2B) targets.push(
@@ -771,6 +816,7 @@ async function main() {
     { name: TAB_ONLINE_ITEMS, before: beforeOnlineItems, after: finalOnlineItems, columns: ONLINE_ITEMS_HEADER.length },
     { name: TAB_ONLINE_CONTROL, before: beforeOnlineControl, after: finalOnlineControl, columns: CONTROL_HEADER.length },
   );
+  targets.push({ name: TAB_PRODUCT_COSTS, before: beforeProductCosts, after: finalProductCosts, columns: PRODUCT_COSTS_HEADER.length, shrinkGrid: true });
   const projectedCells = projectedGridCellCount(tabs, targets);
   if (projectedCells > SHEET_CELL_SAFETY_LIMIT) {
     throw new Error(`Carga projetaria ${projectedCells.toLocaleString('pt-BR')} células na planilha, acima do limite seguro de ${SHEET_CELL_SAFETY_LIMIT.toLocaleString('pt-BR')}. Use uma planilha separada para os itens online.`);
@@ -799,10 +845,10 @@ async function main() {
 }
 
 module.exports = {
-  NOTES_HEADER, ITEMS_HEADER, B2B_SUMMARY_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER, CONTROL_HEADER,
+  NOTES_HEADER, ITEMS_HEADER, B2B_SUMMARY_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER, CONTROL_HEADER, PRODUCT_COSTS_HEADER,
   MARCUS_ID, prepareData, summarizeB2B, summarizeOnline, validatePrepared,
   mergeWindow, noteKey, itemKey, isSaleNote, classifyNote, dateList, allocateAdjustment,
-  projectedGridCellCount, firstChangedRow, summarizeByCompany,
+  projectedGridCellCount, firstChangedRow, summarizeByCompany, summarizeLatestProductCosts,
 };
 
 if (require.main === module) main().catch(error => {

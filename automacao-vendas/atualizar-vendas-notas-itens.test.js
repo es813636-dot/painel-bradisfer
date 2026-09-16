@@ -3,9 +3,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  NOTES_HEADER, ITEMS_HEADER, B2B_SUMMARY_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER,
+  NOTES_HEADER, ITEMS_HEADER, B2B_SUMMARY_HEADER, ONLINE_SUMMARY_HEADER, ONLINE_ITEMS_HEADER, PRODUCT_COSTS_HEADER,
   MARCUS_ID, prepareData, summarizeB2B, summarizeOnline, validatePrepared,
   mergeWindow, isSaleNote, classifyNote, dateList, projectedGridCellCount, firstChangedRow,
+  summarizeLatestProductCosts,
 } = require('./atualizar-vendas-notas-itens');
 
 function note(overrides = {}) {
@@ -119,6 +120,34 @@ test('mantém vendedor 1604 no marketplace e concilia o rateio fiscal', () => {
   assert.equal(summarized.summaryRows[0][5], 100.01);
   assert.equal(summarized.itemRows[0][11], 1);
   assert.equal(summarized.itemRows[0][14], 100.01);
+});
+
+test('mantém quatro casas do Custo Total fiscal e escolhe a referência mais recente', () => {
+  const antiga = note({
+    id_nota_saida: '499', data_emissao: '2026-08-31',
+    nota_saida_itens: [{ id_produto: 7339, descricao_produto: 'TELA HEXAGONAL', descricao_marca: 'VONDER', qtde: 2, valor_unitario: 360, total_liquido: 720, custo_produto: 286.1234 }],
+  });
+  const recente = note({
+    id_nota_saida: '500', data_emissao: '2026-09-10',
+    nota_saida_itens: [{ id_produto: 7339, descricao_produto: 'TELA HEXAGONAL', descricao_marca: 'VONDER', qtde: 3, valor_unitario: 360, total_liquido: 1080, custo_produto: 287.265 }],
+  });
+  const costs = prepareData([antiga, recente], 'agora', 'b2b', false, false);
+  const rows = summarizeLatestProductCosts({ costs }, [], 'agora');
+  assert.deepEqual(rows[0], PRODUCT_COSTS_HEADER);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1][0], '7339');
+  assert.equal(rows[1][3], 287.265);
+  assert.equal(rows[1][4], '2026-09-10');
+});
+
+test('Custo Total inclui vendas do Marcus sem recolocá-las no B2B', () => {
+  const vendaMarcus = note({
+    id_vendedor: MARCUS_ID, vendedor: 'MARCUS',
+    nota_saida_itens: [{ id_produto: 7339, descricao_produto: 'TELA HEXAGONAL', descricao_marca: 'VONDER', qtde: 1, valor_unitario: 360, total_liquido: 360, custo_produto: 287.265 }],
+  });
+  assert.equal(prepareData([vendaMarcus], 'agora').items.size, 0);
+  const costs = prepareData([vendaMarcus], 'agora', 'b2b', false, false);
+  assert.equal(summarizeLatestProductCosts({ costs }, [], 'agora')[1][3], 287.265);
 });
 
 test('consolida vendas online por data, empresa, canal e produto', () => {
