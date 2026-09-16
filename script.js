@@ -3101,10 +3101,10 @@ function extrairLinhaTabelaPdf(itens, larguraPagina, pagina, numeroLinha) {
   const indiceItem = ordenados.findIndex(item => item.x < larguraPagina * 0.06 && /^\d{1,3}$/.test(item.texto));
   if (indiceItem < 0) return null;
   const codigoItem = ordenados.slice(indiceItem + 1).find(item =>
-    item.x < larguraPagina * 0.20 && /^\d{5,14}$/.test(item.texto));
+    item.x < larguraPagina * 0.20 && /^\d[\d.]{3,17}\d$/.test(item.texto));
   if (!codigoItem) return null;
   const quantidadeItem = ordenados.find(item =>
-    item.x > larguraPagina * 0.47 && item.x < larguraPagina * 0.52 && /^\d+(?:[.,]\d+)?$/.test(item.texto));
+    item.x > larguraPagina * 0.40 && item.x < larguraPagina * 0.52 && /^\d+(?:[.,]\d+)?$/.test(item.texto));
   const valoresMonetarios = ordenados.filter(item =>
     item.x > larguraPagina * 0.52 && /^(?:R\$\s*)?-?\d+(?:\.\d{3})*,\d{2,4}$|^(?:R\$\s*)?-?\d+\.\d{2,4}$/.test(item.texto));
   const valorTotalItem = valoresMonetarios[valoresMonetarios.length - 1];
@@ -3113,7 +3113,7 @@ function extrairLinhaTabelaPdf(itens, larguraPagina, pagina, numeroLinha) {
   const valorTotalComImpostos = parseNumeroPlanilhaImportada(valorTotalItem.texto);
   if (!(quantidade > 0) || !(valorTotalComImpostos > 0)) return null;
   const precoUnitarioComImpostos = valorTotalComImpostos / quantidade;
-  const codigo = codigoItem.texto;
+  const codigo = codigoItem.texto.replace(/\D/g, '');
   const linha = {
     'Descrição PDF': ordenados.map(item => item.texto).filter(Boolean).join(' '),
     'Preço unitário com impostos': precoUnitarioComImpostos.toFixed(4).replace('.', ','),
@@ -3137,18 +3137,22 @@ async function lerCotacaoPdf(dados) {
     const pagina = await pdf.getPage(paginaNumero);
     const conteudo = await pagina.getTextContent();
     const grupos = new Map();
+    const paginaRotacionada = Math.abs(Number(pagina.rotate || 0)) % 180 === 90;
     conteudo.items.forEach(item => {
-      const y = Math.round(Number(item.transform && item.transform[5] || 0) / 3) * 3;
-      const grupo = grupos.get(y) || [];
-      grupo.push({ x: Number(item.transform && item.transform[4] || 0), texto: String(item.str || '').trim() });
-      grupos.set(y, grupo);
+      const eixoLinha = Number(item.transform && item.transform[paginaRotacionada ? 4 : 5] || 0);
+      const eixoColuna = Number(item.transform && item.transform[paginaRotacionada ? 5 : 4] || 0);
+      const chaveLinha = Math.round(eixoLinha / 3) * 3;
+      const grupo = grupos.get(chaveLinha) || [];
+      grupo.push({ x: eixoColuna, texto: String(item.str || '').trim() });
+      grupos.set(chaveLinha, grupo);
     });
     let numeroLinha = 0;
-    [...grupos.entries()].sort((a, b) => b[0] - a[0]).forEach(([, itens]) => {
+    [...grupos.entries()].sort((a, b) => paginaRotacionada ? a[0] - b[0] : b[0] - a[0]).forEach(([, itens]) => {
       numeroLinha++;
       const ordenados = itens.sort((a, b) => a.x - b.x);
       const texto = ordenados.map(item => item.texto).filter(Boolean).join(' ');
-      const estruturada = extrairLinhaTabelaPdf(ordenados, Number(pagina.view && pagina.view[2] || 0), paginaNumero, numeroLinha);
+      const larguraTabela = Number(pagina.view && pagina.view[paginaRotacionada ? 3 : 2] || 0);
+      const estruturada = extrairLinhaTabelaPdf(ordenados, larguraTabela, paginaNumero, numeroLinha);
       if (estruturada) linhasEstruturadas.push(estruturada);
       else {
         const generica = extrairCamposLinhaPdf(texto, paginaNumero, numeroLinha);
