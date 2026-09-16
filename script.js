@@ -3229,6 +3229,8 @@ function rodarMatchImportacaoCotacoes() {
 
 function confirmarImportacaoCotacoes() {
   if (!importCotacoesResultado) return;
+  const inputFornecedor = document.getElementById('fornecedor-importacao-cotacao');
+  if (inputFornecedor) importCotacoesFornecedor = inputFornecedor.value;
   const fornecedor = importCotacoesFornecedor.trim();
   if (!fornecedor) { alert('Informe o fornecedor antes de confirmar.'); return; }
   const dataHoje = new Date().toLocaleDateString('pt-BR');
@@ -3285,6 +3287,9 @@ function montarFormularioMapeamentoCotacoes() {
 function montarResultadoImportacaoCotacoes() {
   const { casados, naoCasados } = importCotacoesResultado;
   return '<p class="hint">' + fmtNum(casados.length) + ' linha(s) casada(s) por código, ' + fmtNum(naoCasados.length) + ' não encontrada(s).</p>' +
+    '<label style="display:flex;flex-direction:column;gap:4px;max-width:320px;margin:10px 0 14px;font-size:12px;color:var(--text-muted);">Fornecedor *' +
+      '<input type="text" id="fornecedor-importacao-cotacao" placeholder="Ex.: OVD" aria-label="Fornecedor" value="' + escapeHtml(importCotacoesFornecedor) + '">' +
+    '</label>' +
     (casados.length > 0
       ? '<table style="margin-bottom:16px;"><thead><tr><th>Produto (casado)</th><th class="num">Curva</th><th>Código usado</th><th class="num">Preço cotado</th></tr></thead><tbody>' +
           casados.map(c => '<tr><td>' + escapeHtml(c.produto.produto) + '</td><td class="num">' + (c.produto.analise && c.produto.analise.curva ? c.produto.analise.curva : '—') + '</td><td>' + escapeHtml(c.codigoUsado) + '</td><td class="num">' + fmtMoeda(c.precoCotado) + '</td></tr>').join('') +
