@@ -3074,11 +3074,34 @@ function extrairCamposLinhaPdf(texto, pagina, numeroLinha) {
   return linha;
 }
 
+function extrairLinhaTabelaPdf(itens, larguraPagina, pagina, numeroLinha) {
+  const ordenados = [...itens].sort((a, b) => a.x - b.x);
+  const indiceItem = ordenados.findIndex(item => item.x < larguraPagina * 0.06 && /^\d{1,3}$/.test(item.texto));
+  if (indiceItem < 0) return null;
+  const codigoItem = ordenados.slice(indiceItem + 1).find(item =>
+    item.x < larguraPagina * 0.20 && /^\d{5,14}$/.test(item.texto));
+  if (!codigoItem) return null;
+  const precoItem = ordenados.find(item =>
+    item.x > larguraPagina * 0.48 && /^(?:R\$\s*)?-?\d+(?:\.\d{3})*,\d{2,4}$|^(?:R\$\s*)?-?\d+\.\d{2,4}$/.test(item.texto));
+  if (!precoItem) return null;
+  const codigo = codigoItem.texto;
+  const linha = {
+    'Descrição PDF': ordenados.map(item => item.texto).filter(Boolean).join(' '),
+    'Preço unitário detectado': precoItem.texto,
+    'Página': pagina,
+    'Linha': numeroLinha,
+  };
+  if (codigo.length >= 13) linha['Código de Barras detectado'] = codigo;
+  else linha['Código Fabricante detectado'] = codigo;
+  return linha;
+}
+
 async function lerCotacaoPdf(dados) {
   if (!window.pdfjsLib) throw new Error('O leitor de PDF não carregou. Recarregue a página e tente novamente.');
   window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const pdf = await window.pdfjsLib.getDocument({ data: dados }).promise;
-  const linhas = [];
+  const linhasEstruturadas = [];
+  const linhasGenericas = [];
   for (let paginaNumero = 1; paginaNumero <= pdf.numPages; paginaNumero++) {
     const pagina = await pdf.getPage(paginaNumero);
     const conteudo = await pagina.getTextContent();
@@ -3092,11 +3115,17 @@ async function lerCotacaoPdf(dados) {
     let numeroLinha = 0;
     [...grupos.entries()].sort((a, b) => b[0] - a[0]).forEach(([, itens]) => {
       numeroLinha++;
-      const texto = itens.sort((a, b) => a.x - b.x).map(item => item.texto).filter(Boolean).join(' ');
-      const linha = extrairCamposLinhaPdf(texto, paginaNumero, numeroLinha);
-      if (linha) linhas.push(linha);
+      const ordenados = itens.sort((a, b) => a.x - b.x);
+      const texto = ordenados.map(item => item.texto).filter(Boolean).join(' ');
+      const estruturada = extrairLinhaTabelaPdf(ordenados, Number(pagina.view && pagina.view[2] || 0), paginaNumero, numeroLinha);
+      if (estruturada) linhasEstruturadas.push(estruturada);
+      else {
+        const generica = extrairCamposLinhaPdf(texto, paginaNumero, numeroLinha);
+        if (generica) linhasGenericas.push(generica);
+      }
     });
   }
+  const linhas = linhasEstruturadas.length ? linhasEstruturadas : linhasGenericas;
   if (!linhas.length) {
     throw new Error('Não encontrei linhas com preços. Se o PDF for uma imagem escaneada, peça ao fornecedor um PDF pesquisável, Excel, ODS ou CSV.');
   }
@@ -3326,7 +3355,7 @@ function renderizarAbaCotacoes() {
     '</div>' +
 
     '<div class="panel" style="margin-bottom:16px;">' +
-      '<h2 style="margin:0;">' + icon('uploadSimple', 'icon-sm') + 'Importar planilha de cotação</h2>' +
+      '<h2 style="margin:0;">' + icon('uploadSimple', 'icon-sm') + 'Importar arquivo de cotação</h2>' +
       '<p class="hint" style="margin-top:10px;">Importe PDF pesquisável, Excel, ODS, CSV ou TSV. O arquivo é processado neste navegador; o painel casa por código e deixa as linhas incertas para conferência.</p>' +
       (!importCotacoesArquivoNome
         ? '<input type="file" id="input-planilha-cotacao" accept=".pdf,.xlsx,.xls,.xlsm,.ods,.csv,.tsv" style="display:none;">' +
