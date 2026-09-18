@@ -38,7 +38,7 @@ flowchart LR
 
 | Endpoint | Consumido por | Frequência | O que traz |
 |---|---|---|---|
-| `listaProdutosComEstoquePrecoVendaCusto` | `automacao-vendas/atualizar-estoque.js` (GitHub Actions) | A cada 10 min (5h–23h59 e 0h–2h Brasília) | Catálogo inteiro: estoque, mín/máx, custo, preço de venda, código de barras |
+| `listaProdutosComEstoquePrecoVendaCusto` | `automacao-vendas/atualizar-estoque.js` (GitHub Actions) | A cada 10 min (5h–23h59 e 0h–2h Brasília) | Catálogo inteiro: estoque, mín/máx, custo total, margem líquida, preço de venda, código de barras |
 | `listarVendasMediaPorProduto` (sem `cod_barra`) | `automacao-vendas/atualizar-vendas.js` (GitHub Actions) | A cada 20 min (mesma janela) | Catálogo inteiro: média mensal e total vendido (12 meses), por produto |
 | `listarComprasPorProduto` / `listarVendasMediaPorProduto` (1 produto) | **Cloudflare Worker** `cloudflare-worker/produto-detalhe.js` (`rough-dust-49b2.bradisferdistribuuidora.workers.dev`) | Sob demanda, a cada clique no modal de produto | Últimas compras e venda AO VIVO de 1 produto só |
 | `listarPedidoCompras` | `automacao-vendas/atualizar-pedidos-aberto.js` (GitHub Actions, só empresa 1) | A cada 30 min (mesma janela) | Pedido de compra em aberto (saldo a receber), agregado por Código Interno — substitui a importação manual como fonte principal, ver `CONTEXTO.md` |
@@ -54,13 +54,13 @@ flowchart LR
 
 | Aba | Como é preenchida | Dono / atualizador | Validade | Consumida por |
 |---|---|---|---|---|
-| **Produtos** | Escrita direta (`values.clear` + `values.update`, RAW) por `atualizar-estoque.js` | Automação (GitHub Actions) | Sempre fresca (~10 min) | Aba `Base` (fórmula) **e, desde 01/09/2026, também `script.js` diretamente** (só pra `Código Interno`/`Código Fabricante`/`Código Auxiliar` — ver nota abaixo) |
+| **Produtos** | Escrita direta (`values.clear` + `values.update`, RAW) por `atualizar-estoque.js` | Automação (GitHub Actions) | Sempre fresca (~10 min) | Aba `Base` (fórmula) **e, desde 01/09/2026, também `script.js` diretamente** (`Código Interno`/`Código Fabricante`/`Código Auxiliar`; desde 18/09/2026 também `Margem Líquida` e custo total vivo — ver nota abaixo) |
 | **Base** | Fórmula `=SE(Produtos!Bxxxx="";"";Produtos!Bxxxx)` célula a célula, referenciando `Produtos` | Ninguém edita manualmente — nota na própria aba: *"BASE — calculada automaticamente a partir da aba Produtos. Não editar manualmente."* | Reflete `Produtos` quase em tempo real (recálculo de fórmula do Sheets) | Aba `BaseLooker` (fórmula) |
 | **BaseLooker** | Fórmula `={Base!A2:O5502}` (array, espelha `Base` inteira) | Idem — não editar manualmente | Idem `Base` | **`script.js`** (fonte principal do painel, via CSV público) |
 | **AnaliseMinMax** | Import manual único (Excel → Sheets), feito uma vez | Ninguém — **congelada desde a importação original** (~meados de agosto/2026) | ⚠️ **Estática, não atualiza sozinha.** Só fallback pra produtos ainda não cobertos por `VendasAoVivo` | `script.js` (fallback + Curva ABC/Nível de Atendimento informativos) |
 | **VendasAoVivo** | Escrita direta por `atualizar-vendas.js` (upsert por código de barras) | Automação (GitHub Actions) | Fresca (~20 min) | `script.js` (fonte principal de sugestão de compra) |
 | **PedidosAberto** | Escrita direta (`values.clear` + `values.update`, RAW, aba inteira sobrescrita) por `atualizar-pedidos-aberto.js` — cria a aba sozinha na 1ª execução, se ainda não existir | Automação (GitHub Actions) | Fresca (~30 min) | `script.js` (`obterPedidoEmAberto()` — casa por Código Interno, sempre atrás de uma eventual edição manual do usuário na tela) |
-| **CustosProdutos** | `atualizar-vendas-notas-itens.js` mantém uma linha por `IdProduto`, escolhendo o `nota_saida_itens.custo_produto` da nota fiscal mais recente e preservando quatro casas decimais | Automação fiscal (GitHub Actions, ~15 min) | Fresca conforme a última venda fiscal do produto | Aba **Cotações** do painel (`script.js`), como referência exclusiva de **Custo Total SYSEMP** |
+| **CustosProdutos** | `atualizar-vendas-notas-itens.js` mantém uma linha por `IdProduto`, escolhendo o `nota_saida_itens.custo_produto` da nota fiscal mais recente e preservando quatro casas decimais | Automação fiscal (GitHub Actions, ~15 min) | Fresca conforme a última venda fiscal do produto | Aba **Cotações** do painel (`script.js`), como fallback quando o endpoint de estoque ainda não trouxer **Custo Total SYSEMP** para o produto |
 | **Relatorio Comparativo** | Escrita direta por `automacao-vendas/relatorio-comparativo.js` | Manual — só quando alguém dispara o workflow `Relatorio Comparativo (Julho x Agosto)` | Só reflete o momento em que foi gerado, não atualiza sozinha | Ninguém automaticamente — leitura manual na planilha |
 | **Painel** | ⚠️ **Não mapeado.** Existe na planilha (visível na lista de abas), mas nenhum script deste repositório (nem `script.js`, nem as automações) lê ou escreve nela | Desconhecido | Desconhecido | Desconhecido — **investigar antes de assumir que está em uso ou que pode ser removida** |
 | **VendasOnline** | v2 (02/09/2026): `values.append` (só linha nova, dedup por `ChaveDedup`) por `atualizar-vendas-online.js` — aba criada automaticamente na 1ª execução; carga inicial (1x) limpa e recarrega desde 2026-01-01, depois disso só incremental | Automação (GitHub Actions, a cada 5 min) | Fresca (~5 min, atrás do checkpoint por empresa em `VendasOnlineControle`) | **Nenhum consumidor no painel HTML.** Alimenta um **Power BI separado** (vendas de marketplace — Shopee, TikTok, Mercado Livre — das empresas CONSTRUBRAG e SS CONSTRUCASA); `script.js` nunca lê essa aba |
@@ -83,7 +83,7 @@ Até 01/09/2026, `script.js` só lia `BaseLooker`/`AnaliseMinMax`/`VendasAoVivo`
 
 | O quê | Onde | Origem | Validade |
 |---|---|---|---|
-| `TABELA_PRECOS` | `script.js` (constante grande, embutida no código-fonte) | Export manual da Sysemp ("manutenção da tabela de preços"), colado no código em 18/08/2026 | ⚠️ **Foto estática do dia da exportação.** Preço/margem mudam com reajuste e isso não atualiza sozinho. Ideal: migrar pra uma aba própria da planilha (mesmo padrão de `VendasAoVivo`), ainda não feito |
+| `TABELA_PRECOS` | `script.js` (constante grande, embutida no código-fonte) | Export manual da Sysemp ("manutenção da tabela de preços"), colado no código em 18/08/2026 | Fallback legado. Desde 18/09/2026, o painel prefere preço/margem vindos da aba `Produtos`, alimentada pelo endpoint vivo da Sysemp; esta constante fica só para cobrir produtos ainda sem o campo novo |
 
 ## Camadas de acesso e proteção
 
@@ -106,7 +106,7 @@ Até 01/09/2026, `script.js` só lia `BaseLooker`/`AnaliseMinMax`/`VendasAoVivo`
 ## Lacunas conhecidas (não resolvidas ainda)
 
 1. **Aba "Painel" não mapeada** — precisa investigar o que é antes de mexer em qualquer coisa perto dela.
-2. **`TABELA_PRECOS` congelada** desde 18/08/2026, embutida no código em vez de numa aba viva.
+2. **`TABELA_PRECOS` congelada** desde 18/08/2026, mas agora é fallback: preço/margem vivos vêm da aba `Produtos` quando o endpoint retorna os novos campos.
 3. **`AnaliseMinMax` congelada** desde a importação original — só fallback, mas ainda influencia Curva ABC/Nível de Atendimento exibidos.
 4. **CSV público sem proteção real** — só a tela do painel tem login, os dados brutos continuam acessíveis por quem souber a URL.
 5. **Apps Script "Estoque" 100% desativado, mas ainda existe** — desde 25/08/2026 (migração do `doGet` pro Cloudflare Worker), nenhuma parte do Apps Script está mais em uso pelo painel: `atualizarEstoque`/`atualizarVendasAoVivo` já tinham os gatilhos removidos antes, e agora o `doGet` também não é mais chamado por `script.js`. O projeto e o código continuam existindo no Apps Script (não foi excluído), só não roda mais nada. Considerar excluir a implantação Web App lá (Gerenciar implantações → Arquivar) pra deixar claro que está desativado, ou pelo menos anotar isso no próprio arquivo do projeto.

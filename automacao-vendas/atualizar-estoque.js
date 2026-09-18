@@ -39,6 +39,7 @@ const COLUNAS_PLANILHA = [
   'Código Interno', 'Código Barras', 'Código Fabricante', 'Produto',
   'Marca', 'Grupo', 'SubGrupo', 'Unidade', 'Estoque Bradisfer',
   'EstMinimo1', 'EstMaximo1', 'Custo Atual', 'Preço', 'Código Auxiliar',
+  'Margem Líquida',
 ];
 
 const MAPEAMENTO_CAMPOS = {
@@ -56,10 +57,12 @@ const MAPEAMENTO_CAMPOS = {
   'Custo Atual': 'custo',
   'Preço': 'preço_venda',
   'Código Auxiliar': 'codigo_auxiliar',
+  'Margem Líquida': ['margem_liquida', 'margem líquida', 'margem_liq', 'margem'],
 };
 
 const COLUNAS_NUMERICAS = new Set([
   'Estoque Bradisfer', 'EstMinimo1', 'EstMaximo1', 'Custo Atual', 'Preço',
+  'Margem Líquida',
 ]);
 
 // Duas correcoes pro codigo de barras, as duas confirmadas com casos
@@ -93,6 +96,15 @@ function valorConvertido(coluna, valor) {
     return isNaN(num) ? '' : num;
   }
   return valor;
+}
+
+function valorCampo(registro, coluna) {
+  const campo = MAPEAMENTO_CAMPOS[coluna];
+  const opcoes = Array.isArray(campo) ? campo : [campo];
+  for (const nome of opcoes) {
+    if (registro[nome] !== undefined && registro[nome] !== null && registro[nome] !== '') return registro[nome];
+  }
+  return '';
 }
 
 function dormir(ms) {
@@ -236,7 +248,7 @@ async function main() {
   }
 
   const linhas = registros.map((reg) =>
-    COLUNAS_PLANILHA.map((coluna) => valorConvertido(coluna, reg[MAPEAMENTO_CAMPOS[coluna]]))
+    COLUNAS_PLANILHA.map((coluna) => valorConvertido(coluna, valorCampo(reg, coluna)))
   );
 
   // Limpa a área reservada inteira antes de escrever (mesmo comportamento
@@ -247,7 +259,7 @@ async function main() {
   await garantirLarguraDaAba(sheets, colunaAvisoNum);
 
   console.log('Limpando área reservada e gravando ' + linhas.length + ' produtos...');
-  const ultimaColuna = letraColuna(COLUNAS_PLANILHA.length); // 14 colunas = 'N'
+  const ultimaColuna = letraColuna(COLUNAS_PLANILHA.length);
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SHEET_ID,
     range: NOME_ABA + '!A' + LINHA_INICIO_DADOS + ':' + ultimaColuna + (LINHA_INICIO_DADOS + MAX_LINHAS_RESERVADAS - 1),

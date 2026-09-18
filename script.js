@@ -711,6 +711,18 @@ function parseCSV(texto) {
   });
 }
 
+function valorPrimeiroCampo(obj, nomes) {
+  for (const nome of nomes) {
+    if (obj[nome] !== undefined && obj[nome] !== null && String(obj[nome]).trim() !== '') return obj[nome];
+  }
+  return '';
+}
+
+function parseNumeroOpcional(obj, nomes) {
+  const valor = valorPrimeiroCampo(obj, nomes);
+  return valor === '' ? null : parseNumeroBR(valor);
+}
+
 // A automacao grava o codigo de barras com uma aspa simples na FRENTE do
 // valor (ex. "'0074468051034") -- nao como dica de formatacao do Sheets
 // (isso so funciona digitando na UI ou com USER_ENTERED, e mesmo assim o
@@ -912,6 +924,9 @@ async function carregarDados() {
           codigoInterno: valores[0] || '',
           codigoFabricante: r['Código Fabricante'] || '',
           codigoAuxiliar: r['Código Auxiliar'] || '',
+          custoTotal: parseNumeroOpcional(r, ['Custo Atual', 'Custo Total', 'Custo Total SYSEMP']),
+          precoVenda: parseNumeroOpcional(r, ['Preço', 'Preco', 'preço_venda', 'preco_venda']),
+          margemLiquida: parseNumeroOpcional(r, ['Margem Líquida', 'Margem Liquida', 'margem_liquida', 'margem']),
         });
       });
     }
@@ -966,7 +981,6 @@ async function carregarDados() {
 
     dadosCompletos = linhas.map(r => {
       const estoque = parseNumeroBR(r['Estoque Atual']);
-      const custo = parseNumeroBR(r['Custo Unitário']);
 
       let minimo = parseNumeroBR(r['Estoque Mínimo']);
       let maximo = parseNumeroBR(r['Estoque Máximo']);
@@ -980,17 +994,21 @@ async function carregarDados() {
         qtdComOverride++;
       }
 
-      const situacao = estoque <= 0 ? 'RUPTURA' : (estoque < minimo ? 'BAIXO' : (estoque > maximo ? 'EXCESSO' : 'OK'));
-      const valorEstoque = Math.max(0, estoque) * custo; // estoque negativo (venda além do saldo) não vira valor negativo
-      const valorRepor = (situacao === 'RUPTURA' || situacao === 'BAIXO') ? Math.max(0, (minimo - estoque) * custo) : 0;
       const codigoBarras = limparCodigoBarras(r['Código Barras']);
       const precoMargem = precoMargemDoProduto(codigoBarras); // [margemLiquida, precoVenda] ou null se não achou na tabela de preços
       const vendasAoVivoLote = codigoBarras ? (vendasVivoPersistente.get(codigoBarras) || null) : null;
       const extras = codigoBarras ? codigosExtras.get(codigoBarras) : null;
       const custoTotalFiscal = extras && extras.codigoInterno ? (custosTotaisPersistente.get(String(extras.codigoInterno)) || null) : null;
-      return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras, estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null, margemLucro: precoMargem ? precoMargem[0] : null, precoVenda: precoMargem ? precoMargem[1] : null, vendasAoVivoLote,
+      const custoTotal = extras && extras.custoTotal !== null ? extras.custoTotal : (custoTotalFiscal ? custoTotalFiscal.valor : null);
+      const custo = custoTotal !== null ? custoTotal : parseNumeroBR(r['Custo Unitário']);
+      const margemLucro = extras && extras.margemLiquida !== null ? extras.margemLiquida : (precoMargem ? precoMargem[0] : null);
+      const precoVenda = extras && extras.precoVenda !== null ? extras.precoVenda : (precoMargem ? precoMargem[1] : null);
+      const situacao = estoque <= 0 ? 'RUPTURA' : (estoque < minimo ? 'BAIXO' : (estoque > maximo ? 'EXCESSO' : 'OK'));
+      const valorEstoque = Math.max(0, estoque) * custo; // estoque negativo (venda além do saldo) não vira valor negativo
+      const valorRepor = (situacao === 'RUPTURA' || situacao === 'BAIXO') ? Math.max(0, (minimo - estoque) * custo) : 0;
+      return { produto: r['Produto'] || '', marca: r['Marca'] || '', grupo: r['Grupo'] || '(sem grupo)', codigoBarras, estoque, minimo, maximo, custo, situacao, valorEstoque, valorRepor, fonteMinMax, analise: overridePlanilha || null, margemLucro, precoVenda, vendasAoVivoLote,
         codigoInterno: extras ? extras.codigoInterno : '', codigoFabricante: extras ? extras.codigoFabricante : '', codigoAuxiliar: extras ? extras.codigoAuxiliar : '',
-        custoTotal: custoTotalFiscal ? custoTotalFiscal.valor : null, custoTotalData: custoTotalFiscal ? custoTotalFiscal.dataReferencia : '' };
+        custoTotal, custoTotalData: custoTotalFiscal ? custoTotalFiscal.dataReferencia : '' };
     });
 
     const totalAntesExclusao = dadosCompletos.length;
@@ -3318,7 +3336,8 @@ function montarResultadoImportacaoCotacoes() {
 }
 
 // Aba "Cotações" -- compara preço cotado por fornecedor com o Custo Total
-// fiscal do Sysemp (`nota_saida_itens.custo_produto`). Casamento manual
+// do Sysemp. Prioriza o endpoint de estoque; o custo fiscal por item de NF
+// permanece como fallback para produtos ainda sem o campo novo. Casamento manual
 // (busca + confirma) pra cadastro avulso, ou
 // importação em lote por código pra planilha de fornecedor (ver funções
 // acima) -- nunca casamento automático por NOME, que testamos com um
@@ -3405,7 +3424,7 @@ function renderizarAbaCotacoes() {
 
     '<div class="panel">' +
       '<h2 style="margin:0;">Cotações × Custo Total SYSEMP (' + fmtNum(linhas.length) + ')</h2>' +
-      '<p class="hint" style="margin-top:10px;">Compara com o último <code>custo_produto</code> fiscal do item. Sem essa referência, a cotação permanece visível e não recebe comparação automática.</p>' +
+      '<p class="hint" style="margin-top:10px;">Compara com o Custo Total vindo do SYSEMP. Se o produto ainda não vier com esse campo, usa o último custo fiscal conhecido como fallback.</p>' +
       (linhas.length === 0
         ? '<p class="hint" style="text-align:center;padding:20px 0;">Nenhuma cotação registrada ainda.</p>'
         : '<table><thead><tr><th>Produto</th><th class="num">Curva</th><th>Fornecedor</th><th class="num">Preço cotado</th><th class="num">Custo Total</th><th class="num">Diferença</th><th>Data</th><th></th></tr></thead><tbody>' +

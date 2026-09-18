@@ -45,11 +45,12 @@ Catálogo inteiro, paginado por `offset` (a Sysemp controla o tamanho de página
   "estoque": "300.0000",
   "preço_venda": "11.8450",
   "custo": "6.1847",
+  "margem_liquida": "40.5",
   "produto pai": null
 }
 ```
 
-**Quem chama**: `automacao-vendas/atualizar-estoque.js` (GitHub Actions, a cada 10 min) — busca todas as páginas em paralelo (`PAGINAS_EM_PARALELO=8`), grava na aba `Produtos`.
+**Quem chama**: `automacao-vendas/atualizar-estoque.js` (GitHub Actions, a cada 10 min) — busca todas as páginas em paralelo (`PAGINAS_EM_PARALELO=8`), grava na aba `Produtos`. Desde 18/09/2026, o campo `custo` deve representar o **Custo Total** da tabela de preços no Sysemp; `margem_liquida` também é gravada quando vier no retorno.
 
 **Quirk conhecido**: `cod_barra` às vezes some o zero à esquerda **não** na API (confirmado 25/08/2026 que o valor bruto já vem certo) — o problema era o Google Sheets reformatando a coluna sozinho; ver `LINHAGEM-DE-DADOS.md` e o histórico em `CONTEXTO.md`.
 
